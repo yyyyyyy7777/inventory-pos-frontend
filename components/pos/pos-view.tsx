@@ -66,7 +66,11 @@ const categories = [
 ]
 
 export function POSView({ cabinet, username }: POSViewProps) {
+<<<<<<< HEAD
   const { getProductsByCabinet, updateProduct } = useProducts()
+=======
+  const { getProductsByCabinet, updateProduct, refetch, getOnShelfStock } = useProducts()
+>>>>>>> clean-branch
   const products = getProductsByCabinet(cabinet)
   const { addSale, refreshSales } = useSales()
   const { addToast } = useToast()
@@ -92,6 +96,10 @@ export function POSView({ cabinet, username }: POSViewProps) {
   const [priceEditingEnabled, setPriceEditingEnabled] = useState(false)
   const [discountConfirmDialog, setDiscountConfirmDialog] = useState(false)
   const [discountTimeouts, setDiscountTimeouts] = useState<Map<string, NodeJS.Timeout>>(new Map())
+<<<<<<< HEAD
+=======
+  const [onShelfStock, setOnShelfStock] = useState<Record<string, number>>({})
+>>>>>>> clean-branch
 
   // Update time every second
   useEffect(() => {
@@ -115,6 +123,25 @@ export function POSView({ cabinet, username }: POSViewProps) {
     console.log('Current cabinet:', cabinet);
   }, [products, cabinet])
 
+<<<<<<< HEAD
+=======
+  // Fetch on-shelf stock for all products
+  useEffect(() => {
+    const fetchOnShelfStock = async () => {
+      const stockMap: Record<string, number> = {}
+      for (const product of products) {
+        const onShelfQty = await getOnShelfStock(product.id, cabinet)
+        stockMap[product.id] = onShelfQty
+      }
+      setOnShelfStock(stockMap)
+    }
+    
+    if (products.length > 0) {
+      fetchOnShelfStock()
+    }
+  }, [products, cabinet])
+
+>>>>>>> clean-branch
   const filteredProducts = products.filter((product) => {
     // Check if product matches search query
     const matchesSearch = 
@@ -124,14 +151,26 @@ export function POSView({ cabinet, username }: POSViewProps) {
     // Check if product matches selected category
     const matchesCategory = selectedCategory === "All Categories" || product.category === selectedCategory;
     
+<<<<<<< HEAD
+=======
+    // Check if product has on-shelf stock
+    const onShelfQty = onShelfStock[product.id] || 0
+    const hasOnShelfStock = onShelfQty > 0
+    
+>>>>>>> clean-branch
     // If showing out of stock items, include all matching products
     if (showOutOfStock) {
       return matchesSearch && matchesCategory;
     }
     
+<<<<<<< HEAD
     // Otherwise, only include in-stock products that match the search and category
     const inStock = product.stock > 0;
     return matchesSearch && matchesCategory && inStock;
+=======
+    // Otherwise, only include products with on-shelf stock
+    return matchesSearch && matchesCategory && hasOnShelfStock;
+>>>>>>> clean-branch
   })
 
   const addToCart = (product: Product) => {
@@ -142,6 +181,16 @@ export function POSView({ cabinet, username }: POSViewProps) {
       return;
     }
 
+<<<<<<< HEAD
+=======
+    // Check if product has on-shelf stock available
+    const availableOnShelf = onShelfStock[product.id] || 0
+    if (availableOnShelf <= 0) {
+      addToast(`${product.name} is not available on shelf. Please transfer from storage first.`, "error");
+      return;
+    }
+
+>>>>>>> clean-branch
     // Check if product is in stock
     if (product.stock <= 0) {
       console.log('Cannot add out of stock product to cart');
@@ -672,6 +721,7 @@ export function POSView({ cabinet, username }: POSViewProps) {
       
       console.log('Sale added successfully, refreshing sales...');
       
+<<<<<<< HEAD
       // Refresh sales to ensure the latest data is loaded
       await refreshSales(cabinet);
       
@@ -731,13 +781,31 @@ export function POSView({ cabinet, username }: POSViewProps) {
           }
         }
       }
+=======
+      // Show success message immediately for better UX
+      addToast("Sale completed successfully!", "success");
+      
+      // Refresh sales in background (non-blocking)
+      refreshSales(cabinet).catch(err => console.error('Failed to refresh sales:', err));
+      
+      // Immediately refresh products to show updated stock
+      refetch().catch(err => console.error('Failed to refresh products:', err));
+      
+      console.log('Sales refresh initiated');
+      
+      // Note: Stock deduction is already handled by createSale() in pg-direct.ts
+      // Do NOT call stock-deduction API here to avoid double deduction
+>>>>>>> clean-branch
       
       setCart([]);
       setReceiptTime(null); // Reset receipt time after successful sale
       setReferenceNumber(''); // Reset reference number after successful sale
       setCashAmount(''); // Reset cash amount after successful sale
       setChange(0); // Reset change after successful sale
+<<<<<<< HEAD
       addToast("Sale completed successfully!", "success");
+=======
+>>>>>>> clean-branch
       
       // Log the sale activity with detailed information
       const activityItemsList = cart.map(item => `${item.name} (${item.quantity}x @ ₱${item.price})`).join(', ');

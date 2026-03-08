@@ -15,7 +15,11 @@ export function ToastContainer() {
       case "warning":
         return "bg-gradient-to-r from-yellow-500 to-yellow-600 text-white border-yellow-200 shadow-yellow-500/25"
       case "info":
+<<<<<<< HEAD
         return "bg-gradient-to-r from-blue-500 to-blue-600 text-white border-blue-200 shadow-blue-500/25"
+=======
+        return "bg-gradient-to-r from-violet-500 to-violet-600 text-white border-violet-200 shadow-violet-500/25"
+>>>>>>> clean-branch
       default:
         return "bg-gradient-to-r from-gray-500 to-gray-600 text-white border-gray-200 shadow-gray-500/25"
     }

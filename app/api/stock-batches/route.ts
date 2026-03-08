@@ -95,6 +95,76 @@ export async function POST(request: NextRequest) {
       costPerUnit: costPerUnit ? parseFloat(costPerUnit) : undefined,
     });
 
+<<<<<<< HEAD
+=======
+    // AUTO BATCH TRANSFER: Check if there's a depleted batch that should be transferred
+    console.log('=== CHECKING BATCH TRANSFER AFTER RESTOCK ===');
+    
+    // Get all batches for this product (including storage) ordered by date
+    const allBatches = await query(
+      'SELECT id, quantity, status, "batchDate" FROM stockbatch WHERE "productId" = $1 AND cabinet = $2 ORDER BY "batchDate" ASC',
+      [parseInt(productId), cabinet || 'main']
+    ) as any[];
+    
+    console.log('All batches after restock:', allBatches.map(b => ({ id: b.id, quantity: b.quantity, status: b.status })));
+    
+    // Find ALL batches that are 'on-shelf' or 'in-storage' with 0 quantity
+    const depletedOnShelfBatches = allBatches.filter(batch => ['on-shelf', 'in-storage'].includes(batch.status) && Number(batch.quantity) === 0);
+    
+    console.log('Depleted on-shelf batches found:', depletedOnShelfBatches.length);
+    
+    if (depletedOnShelfBatches.length > 0) {
+      console.log(`Processing ${depletedOnShelfBatches.length} depleted batches...`);
+      
+      for (const depletedBatch of depletedOnShelfBatches) {
+        console.log(`Processing depleted batch ${depletedBatch.id}...`);
+        
+        // Find the next batch with quantity > 0 (could be 'storage' or 'on-shelf')
+        const depletedBatchIndex = allBatches.findIndex(batch => batch.id === depletedBatch.id);
+        const remainingBatches = allBatches.slice(depletedBatchIndex + 1);
+        
+        console.log('Remaining batches after depleted batch:', remainingBatches.map(b => ({ id: b.id, quantity: b.quantity, status: b.status })));
+        
+        // Find the next batch that has stock
+        const nextBatch = remainingBatches.find(batch => Number(batch.quantity) > 0);
+        
+        if (nextBatch) {
+          console.log(`Found next batch ${nextBatch.id} with ${nextBatch.quantity} units, status: ${nextBatch.status}`);
+          
+          // Update the depleted batch to 'depleted' status
+          console.log(`Updating batch ${depletedBatch.id} from '${depletedBatch.status}' to 'depleted'`);
+          await query(
+            'UPDATE stockbatch SET status = $1, "updatedAt" = NOW() WHERE id = $2',
+            ['depleted', depletedBatch.id]
+          );
+          
+          // Promote the next batch to the depleted batch's status (on-shelf or in-storage)
+          console.log(`Updating batch ${nextBatch.id} from '${nextBatch.status}' to '${depletedBatch.status}'`);
+          await query(
+            'UPDATE stockbatch SET status = $1, "updatedAt" = NOW() WHERE id = $2',
+            [depletedBatch.status, nextBatch.id]
+          );
+          
+          console.log(`✅ Batch transfer complete: ${depletedBatch.id} -> ${nextBatch.id}`);
+          
+          // Update the allBatches array to reflect the change
+          const updatedNextBatch = allBatches.find(batch => batch.id === nextBatch.id);
+          if (updatedNextBatch) {
+            updatedNextBatch.status = depletedBatch.status;
+          }
+          const updatedDepletedBatch = allBatches.find(batch => batch.id === depletedBatch.id);
+          if (updatedDepletedBatch) {
+            updatedDepletedBatch.status = 'depleted';
+          }
+        } else {
+          console.log(`❌ No next batch available with stock for depleted batch ${depletedBatch.id}`);
+        }
+      }
+    } else {
+      console.log('✅ No depleted on-shelf batches found, no transfer needed');
+    }
+
+>>>>>>> clean-branch
     // Update the product's stock
     await query(
       'UPDATE product SET stock = stock + $1, "updatedAt" = NOW() WHERE id = $2',

@@ -1,7 +1,14 @@
 "use client"
 
+<<<<<<< HEAD
 import { Button } from "@/components/ui/button"
 import { LogOut } from "lucide-react"
+=======
+import { useState } from "react"
+import { Button } from "@/components/ui/button"
+import { LogOut } from "lucide-react"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+>>>>>>> clean-branch
 
 interface StaffSidebarProps {
   currentView: string
@@ -11,6 +18,10 @@ interface StaffSidebarProps {
 }
 
 export function StaffSidebar({ currentView, onViewChange, onLogout, username }: StaffSidebarProps) {
+<<<<<<< HEAD
+=======
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+>>>>>>> clean-branch
   const menuItems = [
     { id: "dashboard", label: "Dashboard", icon: "📊" },
     { id: "inventory", label: "Inventory", icon: "🗂️" },
@@ -57,12 +68,47 @@ export function StaffSidebar({ currentView, onViewChange, onLogout, username }: 
           <p className="text-sm font-semibold text-sidebar-foreground">{username}</p>
         </div>
         <Button
+<<<<<<< HEAD
           onClick={onLogout}
+=======
+          onClick={() => setShowLogoutConfirm(true)}
+>>>>>>> clean-branch
           className="w-full bg-destructive hover:bg-destructive/90 text-destructive-foreground flex items-center gap-2"
         >
           <LogOut size={16} />
           Logout
         </Button>
+<<<<<<< HEAD
+=======
+
+        <ConfirmDialog
+          open={showLogoutConfirm}
+          title="Confirm Logout"
+          description="Are you sure you want to logout?"
+          confirmText="Logout"
+          cancelText="Cancel"
+          isDangerous={true}
+          onConfirm={async () => {
+            setShowLogoutConfirm(false)
+            
+            // Call logout API to update last logout
+            try {
+              await fetch('/api/auth/logout', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ username }),
+              });
+            } catch (error) {
+              console.error('Error updating logout time:', error);
+            }
+            
+            onLogout()
+          }}
+          onCancel={() => setShowLogoutConfirm(false)}
+        />
+>>>>>>> clean-branch
       </div>
     </div>
   )

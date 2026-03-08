@@ -60,13 +60,21 @@ export async function setupDatabase() {
         username VARCHAR(255) NOT NULL UNIQUE,
         password VARCHAR(255) NOT NULL,
         role VARCHAR(50) DEFAULT 'staff',
-        status VARCHAR(20) DEFAULT 'active',
         "joinDate" DATE,
+        "lastLogin" TIMESTAMP,
         "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
     console.log('✓ Employee table created/verified');
+    
+    // Add lastLogin column if it doesn't exist (migration for existing tables)
+    try {
+      await query(`ALTER TABLE employee ADD COLUMN IF NOT EXISTS "lastLogin" TIMESTAMP`);
+      console.log('✓ lastLogin column added to employee table (if not exists)');
+    } catch (alterError) {
+      console.log('✓ lastLogin column already exists');
+    }
     
     // Create sales table if it doesn't exist - Note: must be named 'sale' not 'sales'
     await query(`

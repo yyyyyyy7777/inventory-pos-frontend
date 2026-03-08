@@ -11,6 +11,10 @@ import { useToast } from "@/contexts/toast-context"
 import { useActivity } from "@/contexts/activity-context"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { EmptyState } from "@/components/ui/empty-state"
+<<<<<<< HEAD
+=======
+import { useEffect } from "react"
+>>>>>>> clean-branch
 
 interface Employee {
   id: number
@@ -18,7 +22,10 @@ interface Employee {
   username: string
   role: "admin" | "staff"
   joinDate: string
+<<<<<<< HEAD
   status: "active" | "inactive"
+=======
+>>>>>>> clean-branch
 }
 
 interface EmployeeManagementProps {
@@ -27,7 +34,11 @@ interface EmployeeManagementProps {
 }
 
 export function EmployeeManagement({ username, cabinet }: EmployeeManagementProps) {
+<<<<<<< HEAD
   const { employees, loading, addEmployee, updateEmployee, deleteEmployee, updateUserCredentials } = useEmployees()
+=======
+  const { employees, loading, addEmployee, updateEmployee, deleteEmployee, updateUserCredentials, refreshEmployees } = useEmployees()
+>>>>>>> clean-branch
   const { addToast } = useToast()
   const { addActivity } = useActivity()
   const [searchQuery, setSearchQuery] = useState("")
@@ -40,6 +51,14 @@ export function EmployeeManagement({ username, cabinet }: EmployeeManagementProp
   const [newPassword, setNewPassword] = useState("")
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: number | null }>({ open: false, id: null })
 
+<<<<<<< HEAD
+=======
+  // Refresh employee data when component mounts
+  useEffect(() => {
+    refreshEmployees()
+  }, [])
+
+>>>>>>> clean-branch
   const filteredEmployees = employees.filter(
     (emp) =>
       emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -54,7 +73,10 @@ export function EmployeeManagement({ username, cabinet }: EmployeeManagementProp
           username: newEmployee.username,
           password: newEmployee.password,
           role: "staff",
+<<<<<<< HEAD
           status: "active",
+=======
+>>>>>>> clean-branch
         })
         addToast(`Employee "${newEmployee.name}" added successfully!`, "success")
         
@@ -119,6 +141,7 @@ export function EmployeeManagement({ username, cabinet }: EmployeeManagementProp
     }
   }
 
+<<<<<<< HEAD
   const toggleStatus = async (id: number) => {
     const employee = employees.find(emp => emp.id === id)
     if (employee) {
@@ -140,6 +163,8 @@ export function EmployeeManagement({ username, cabinet }: EmployeeManagementProp
     }
   }
 
+=======
+>>>>>>> clean-branch
   const handleEditEmployee = (employee: any) => {
     // Prevent editing of admin user details (only password can be changed)
     if (employee.role === 'admin') {
@@ -157,7 +182,10 @@ export function EmployeeManagement({ username, cabinet }: EmployeeManagementProp
         await updateEmployee(editingEmployee.id, {
           name: editingEmployee.name,
           username: editingEmployee.username,
+<<<<<<< HEAD
           status: editingEmployee.status,
+=======
+>>>>>>> clean-branch
         })
         addToast("Employee updated successfully!", "success")
         
@@ -165,7 +193,11 @@ export function EmployeeManagement({ username, cabinet }: EmployeeManagementProp
         addActivity({
           username: username || "Unknown User",
           activity: "Updated Employee",
+<<<<<<< HEAD
           details: `Updated details for "${editingEmployee.name}" (@${editingEmployee.username}) - Status: ${editingEmployee.status}`,
+=======
+          details: `Updated details for "${editingEmployee.name}" (@${editingEmployee.username})`,
+>>>>>>> clean-branch
           category: "employee",
           cabinet: cabinet || "main"
         })
@@ -354,7 +386,12 @@ export function EmployeeManagement({ username, cabinet }: EmployeeManagementProp
                     <th className="text-left py-3 px-4 font-semibold text-foreground">Name</th>
                     <th className="text-left py-3 px-4 font-semibold text-foreground">Username</th>
                     <th className="text-left py-3 px-4 font-semibold text-foreground">Join Date</th>
+<<<<<<< HEAD
                     <th className="text-left py-3 px-4 font-semibold text-foreground">Status</th>
+=======
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Last Login</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Last Logout</th>
+>>>>>>> clean-branch
                     <th className="text-left py-3 px-4 font-semibold text-foreground">Actions</th>
                   </tr>
                 </thead>
@@ -365,7 +402,11 @@ export function EmployeeManagement({ username, cabinet }: EmployeeManagementProp
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                         employee.role === "admin" 
                           ? "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200" 
+<<<<<<< HEAD
                           : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+=======
+                          : "bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-200"
+>>>>>>> clean-branch
                       }`}>
                         {employee.role === "admin" ? "Admin" : "Staff"}
                       </span>
@@ -379,6 +420,7 @@ export function EmployeeManagement({ username, cabinet }: EmployeeManagementProp
                         year: 'numeric' 
                       })}
                     </td>
+<<<<<<< HEAD
                     <td className="py-3 px-4">
                       <button
                         onClick={() => toggleStatus(employee.id)}
@@ -390,6 +432,13 @@ export function EmployeeManagement({ username, cabinet }: EmployeeManagementProp
                       >
                         {employee.status === "active" ? "Active" : "Inactive"}
                       </button>
+=======
+                    <td className="py-3 px-4 text-muted-foreground text-sm">
+                      {employee.lastLogin}
+                    </td>
+                    <td className="py-3 px-4 text-muted-foreground text-sm">
+                      {employee.lastLogout}
+>>>>>>> clean-branch
                     </td>
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-2">

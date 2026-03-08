@@ -3,6 +3,10 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { LogOut, Menu, X } from "lucide-react"
+<<<<<<< HEAD
+=======
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+>>>>>>> clean-branch
 
 interface AdminSidebarProps {
   currentView: string
@@ -13,6 +17,10 @@ interface AdminSidebarProps {
 
 export function AdminSidebar({ currentView, onViewChange, onLogout, username }: AdminSidebarProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+<<<<<<< HEAD
+=======
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+>>>>>>> clean-branch
 
   // Lock body scroll when sidebar is open on mobile
   useEffect(() => {
@@ -97,12 +105,54 @@ export function AdminSidebar({ currentView, onViewChange, onLogout, username }: 
           <p className="text-sm font-semibold text-sidebar-foreground">{username}</p>
         </div>
         <Button
+<<<<<<< HEAD
           onClick={onLogout}
+=======
+          onClick={() => setShowLogoutConfirm(true)}
+>>>>>>> clean-branch
           className="w-full bg-destructive hover:bg-destructive/90 text-destructive-foreground flex items-center gap-2"
         >
           <LogOut size={16} />
           Logout
         </Button>
+<<<<<<< HEAD
+=======
+
+      <ConfirmDialog
+        open={showLogoutConfirm}
+        title="Confirm Logout"
+        description="Are you sure you want to logout?"
+        confirmText="Logout"
+        cancelText="Cancel"
+        isDangerous={true}
+        onConfirm={async () => {
+          setShowLogoutConfirm(false)
+          
+          // Call logout API to update last logout
+          console.log('Admin sidebar: Calling logout API for username:', username);
+          try {
+            const response = await fetch('/api/auth/logout', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ username }),
+            });
+            
+            if (!response.ok) {
+              console.error('Logout API returned error:', response.status);
+            } else {
+              console.log('Admin sidebar: Logout API call successful');
+            }
+          } catch (error) {
+            console.error('Admin sidebar: Error updating logout time:', error);
+          }
+          
+          onLogout()
+        }}
+        onCancel={() => setShowLogoutConfirm(false)}
+      />
+>>>>>>> clean-branch
         </div>
       </div>
 

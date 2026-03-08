@@ -8,6 +8,7 @@ export const runtime = 'nodejs';
 
 export async function GET() {
   try {
+<<<<<<< HEAD
     console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'Set (hidden)' : 'NOT SET');
     const employees = await getAllEmployees();
     return NextResponse.json(employees);
@@ -16,6 +17,17 @@ export async function GET() {
     console.error('Error stack:', error.stack);
     return NextResponse.json(
       { error: 'Failed to fetch employees', details: error.message },
+=======
+    console.log('DATABASE_URL:', process.env.DATABASE_URL);
+    const employees = await getAllEmployees();
+    console.log('Employees fetched:', employees.length);
+    console.log('First employee lastLogin:', employees[0]?.lastLogin);
+    return NextResponse.json(employees);
+  } catch (error) {
+    console.error('Error fetching employees:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch employees' },
+>>>>>>> clean-branch
       { status: 500 }
     );
   }

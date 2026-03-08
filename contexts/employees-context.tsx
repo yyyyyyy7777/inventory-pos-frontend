@@ -9,7 +9,12 @@ export interface Employee {
   password: string;
   role: "admin" | "staff";
   joinDate: string;
+<<<<<<< HEAD
   status: "active" | "inactive";
+=======
+  lastLogin?: string;
+  lastLogout?: string;
+>>>>>>> clean-branch
   createdAt: string;
   updatedAt: string;
 }
