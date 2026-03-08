@@ -1,0 +1,13 @@
+name = "the-wheezard-ph"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[env.production]
+name = "the-wheezard-ph"
+
+[[env.production.routes]]
+pattern = "thewheezardph.com/*"
+zone_name = "thewheezardph.com"
+
+[env.preview]
+name = "the-wheezard-ph-preview"
