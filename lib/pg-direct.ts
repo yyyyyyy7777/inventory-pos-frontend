@@ -10,9 +10,16 @@ export async function getConnection() {
       pool = new Pool({
         connectionString: process.env.DATABASE_URL,
         ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-        max: 10, // Maximum number of clients in the pool
-        idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
-        connectionTimeoutMillis: 5000 // Return error after 5 seconds if connection not established
+        max: 3, // Reduced to prevent Supabase max clients error
+        idleTimeoutMillis: 10000, // Close idle clients after 10 seconds
+        connectionTimeoutMillis: 5000, // Return error after 5 seconds
+        allowExitOnIdle: true // Allow the pool to exit when idle
+      });
+      
+      // Handle pool errors
+      pool.on('error', (err) => {
+        console.error('Unexpected pool error:', err);
+        pool = null; // Reset pool on error
       });
       
       // Test the connection
@@ -22,11 +29,27 @@ export async function getConnection() {
       console.log('Database connected successfully');
     } catch (error: any) {
       console.error('Database connection failed:', error);
+      pool = null; // Reset pool on connection failure
       throw new Error(`Failed to connect to database: ${error.message || 'Unknown connection error'}`);
     }
   }
   return pool;
 }
+
+// Cleanup pool on process exit
+process.on('SIGTERM', async () => {
+  if (pool) {
+    await pool.end();
+    pool = null;
+  }
+});
+
+process.on('SIGINT', async () => {
+  if (pool) {
+    await pool.end();
+    pool = null;
+  }
+});
 
 export async function query(sql: string, params?: any[]) {
   try {
