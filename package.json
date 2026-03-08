@@ -10,13 +10,15 @@
     "start": "next start",
     "cloudflare:build": "next build",
     "cloudflare:deploy": "wrangler pages deploy out --project-name the-wheezard-ph",
-    "db:seed": "node prisma/seed.js"
+    "db:seed": "node prisma/seed.js",
+    "postinstall": "prisma generate"
   },
   "prisma": {
     "seed": "node prisma/seed.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
+    "@prisma/client": "^5.20.0",
     "@radix-ui/react-accordion": "1.2.2",
     "@radix-ui/react-alert-dialog": "1.1.4",
     "@radix-ui/react-aspect-ratio": "1.1.1",
@@ -73,7 +75,6 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@prisma/client": "^5.20.0",
     "@tailwindcss/postcss": "^4.1.9",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22",
