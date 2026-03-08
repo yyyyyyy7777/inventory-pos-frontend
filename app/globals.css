@@ -10,15 +10,6 @@
   --card-foreground: oklch(0.2 0.01 280);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.2 0.01 280);
-<<<<<<< HEAD
-  --primary: oklch(0.55 0.25 280);
-  --primary-foreground: oklch(0.98 0.01 280);
-  --secondary: oklch(0.92 0.08 280);
-  --secondary-foreground: oklch(0.55 0.25 280);
-  --muted: oklch(0.88 0.02 280);
-  --muted-foreground: oklch(0.5 0.05 280);
-  --accent: oklch(0.65 0.22 280);
-=======
   --primary: oklch(0.35 0.2 280);
   --primary-foreground: oklch(0.98 0.01 280);
   --secondary: oklch(0.25 0.08 280);
@@ -26,27 +17,17 @@
   --muted: oklch(0.88 0.02 280);
   --muted-foreground: oklch(0.5 0.05 280);
   --accent: oklch(0.45 0.18 280);
->>>>>>> clean-branch
   --accent-foreground: oklch(0.98 0.01 280);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.98 0.01 280);
   --border: oklch(0.92 0.02 280);
   --input: oklch(0.96 0.01 280);
-<<<<<<< HEAD
-  --ring: oklch(0.55 0.25 280);
-  --chart-1: oklch(0.55 0.25 280);
-  --chart-2: oklch(0.65 0.22 270);
-  --chart-3: oklch(0.45 0.15 290);
-  --chart-4: oklch(0.7 0.18 260);
-  --chart-5: oklch(0.5 0.2 300);
-=======
   --ring: oklch(0.35 0.2 280);
   --chart-1: oklch(0.35 0.2 280);
   --chart-2: oklch(0.45 0.18 270);
   --chart-3: oklch(0.3 0.15 290);
   --chart-4: oklch(0.5 0.16 260);
   --chart-5: oklch(0.4 0.18 300);
->>>>>>> clean-branch
   --radius: 0.5rem;
   --sidebar: oklch(0.15 0.02 280);
   --sidebar-foreground: oklch(0.98 0.01 280);
@@ -65,15 +46,6 @@
   --card-foreground: oklch(0.95 0.02 280);
   --popover: oklch(0.18 0.02 280);
   --popover-foreground: oklch(0.95 0.02 280);
-<<<<<<< HEAD
-  --primary: oklch(0.65 0.22 280);
-  --primary-foreground: oklch(0.12 0.02 280);
-  --secondary: oklch(0.25 0.05 280);
-  --secondary-foreground: oklch(0.95 0.02 280);
-  --muted: oklch(0.28 0.03 280);
-  --muted-foreground: oklch(0.7 0.08 280);
-  --accent: oklch(0.7 0.2 270);
-=======
   --primary: oklch(0.45 0.18 280);
   --primary-foreground: oklch(0.98 0.01 280);
   --secondary: oklch(0.35 0.05 280);
@@ -81,27 +53,17 @@
   --muted: oklch(0.28 0.03 280);
   --muted-foreground: oklch(0.7 0.08 280);
   --accent: oklch(0.55 0.15 280);
->>>>>>> clean-branch
   --accent-foreground: oklch(0.12 0.02 280);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.95 0.02 280);
   --border: oklch(0.28 0.03 280);
   --input: oklch(0.22 0.03 280);
-<<<<<<< HEAD
-  --ring: oklch(0.65 0.22 280);
-  --chart-1: oklch(0.65 0.22 280);
-  --chart-2: oklch(0.7 0.2 270);
-  --chart-3: oklch(0.6 0.18 290);
-  --chart-4: oklch(0.75 0.2 260);
-  --chart-5: oklch(0.65 0.22 300);
-=======
   --ring: oklch(0.45 0.18 280);
   --chart-1: oklch(0.45 0.18 280);
   --chart-2: oklch(0.55 0.15 270);
   --chart-3: oklch(0.4 0.12 290);
   --chart-4: oklch(0.6 0.14 260);
   --chart-5: oklch(0.5 0.16 300);
->>>>>>> clean-branch
   --sidebar: oklch(0.15 0.02 280);
   --sidebar-foreground: oklch(0.95 0.02 280);
   --sidebar-primary: oklch(0.65 0.22 280);
@@ -164,58 +126,41 @@
 
 /* Mobile-specific optimizations */
 @layer utilities {
-  /* Touch-friendly tap targets */
   .touch-target {
     @apply min-h-[44px] min-w-[44px];
   }
-  
-  /* Safe area for mobile devices */
   .safe-area-top {
     padding-top: env(safe-area-inset-top);
   }
-  
   .safe-area-bottom {
     padding-bottom: env(safe-area-inset-bottom);
   }
-  
-  /* Prevent horizontal scroll on mobile */
   .mobile-overflow-hidden {
     @apply overflow-x-hidden;
   }
-  
-  /* Improved text readability on mobile */
   .mobile-text {
     @apply text-sm leading-relaxed;
   }
 }
 
-/* Mobile viewport fixes */
 @media (max-width: 640px) {
   html, body {
     overflow-x: hidden;
     -webkit-text-size-adjust: 100%;
     -ms-text-size-adjust: 100%;
   }
-  
-  /* Improve scrolling performance */
   * {
     -webkit-overflow-scrolling: touch;
   }
-  
-  /* Prevent double-tap zoom */
   button, input, select, textarea {
     touch-action: manipulation;
   }
-  
-  /* Mobile sidebar specific fixes */
   .mobile-sidebar {
     height: 100vh;
     height: -webkit-fill-available;
     max-height: 100vh;
     max-height: -webkit-fill-available;
   }
-  
-  /* Ensure body doesn't scroll when sidebar is open */
   body.sidebar-open {
     overflow: hidden;
     position: fixed;
