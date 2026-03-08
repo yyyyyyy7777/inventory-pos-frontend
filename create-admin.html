@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Create Admin User</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 50px; }
+        .container { max-width: 500px; margin: 0 auto; }
+        .success { color: green; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Create Admin User</h1>
+        <button onclick="createAdmin()">Create Admin User</button>
+        <div id="result"></div>
+    </div>
+
+    <script>
+        async function createAdmin() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Creating admin user...';
+            
+            try {
+                const response = await fetch('/api/employees', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        name: 'Admin',
+                        username: 'admin',
+                        password: 'admin123',
+                        role: 'admin',
+                        status: 'active'
+                    })
+                });
+                
+                if (response.ok) {
+                    resultDiv.innerHTML = '<div class="success">✅ Admin user created successfully!<br>Username: admin<br>Password: admin123<br><br>You can now log in with these credentials.</div>';
+                } else {
+                    const error = await response.json();
+                    if (error.error && error.error.includes('Username already exists')) {
+                        resultDiv.innerHTML = '<div class="success">✅ Admin user already exists!<br>Username: admin<br>Password: admin123<br><br>You can now log in with these credentials.</div>';
+                    } else {
+                        resultDiv.innerHTML = '<div class="error">❌ Error: ' + (error.error || 'Unknown error') + '</div>';
+                    }
+                }
+            } catch (error) {
+                resultDiv.innerHTML = '<div class="error">❌ Error: ' + error.message + '</div>';
+            }
+        }
+    </script>
+</body>
+</html>

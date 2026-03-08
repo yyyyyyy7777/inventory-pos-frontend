@@ -1,0 +1,71 @@
+Sale ID,Date,Product Name,Category,Quantity,Unit Price,Total Price,Sold At,Payment Method,Reference Number,Staff Name
+58D5AA91-C6A6,2026-02-28T02:28:36.707Z,Sasuke ,Funko POP,1,₱800.00,₱800.00,Physical Store,Cash,,admin
+,,Naruto,Funko POP,1,₱700.00,₱700.00,,,,
+57B3B243-81ED,2026-02-28T02:26:56.886Z,Test Edit SKU,Test,1,₱600.00,₱600.00,Physical Store,Cash,,admin
+3E643F23-B9F5,2026-02-28T02:21:19.098Z,Harry Potter,Harry Potter Items,1,₱800.00,₱800.00,Physical Store,Cash,,admin
+A4E792DC-34B6,2026-02-28T02:19:42.997Z,Harry Potter,Harry Potter Items,38,₱800.00,₱30400.00,Physical Store,Cash,,admin
+B7B2D736-7D91,2026-02-26T16:29:08.888Z,Nezuko,Funko POP,1,₱600.00,₱600.00,Physical Store,Cash,,Yuri
+,,Tanjiro,Funko POP,1,₱700.00,₱700.00,,,,
+81144820-EE41,2026-02-26T16:27:07.505Z,Tanjiro,Funko POP,1,₱700.00,₱700.00,Physical Store,Cash,,admin
+,,Nezuko,Funko POP,1,₱600.00,₱600.00,,,,
+,,Sasuke ,Funko POP,1,₱800.00,₱800.00,,,,
+,,Naruto,Funko POP,1,₱700.00,₱700.00,,,,
+,,Luffy,Funko POP,1,₱700.00,₱700.00,,,,
+,,Spiderman,Funko POP,1,₱700.00,₱700.00,,,,
+,,Spongebob,Funko POP,1,₱800.00,₱800.00,,,,
+,,Test Edit SKU,Test,1,₱600.00,₱600.00,,,,
+CB7A75AB-5499,2026-02-26T16:18:59.979Z,Naruto,Funko POP,1,₱700.00,₱700.00,Physical Store,Cash,,admin
+,,Luffy,Funko POP,1,₱700.00,₱700.00,,,,
+4C0EF900-48E6,2026-02-26T16:16:46.361Z,Luffy,Funko POP,1,₱700.00,₱700.00,Physical Store,Cash,,admin
+1179E0F6-F537,2026-02-26T16:14:58.730Z,Naruto,Funko POP,1,₱700.00,₱700.00,Physical Store,Cash,,admin
+87037DE2-480F,2026-02-26T16:13:08.350Z,Spiderman,Funko POP,1,₱700.00,₱700.00,Physical Store,Cash,,admin
+9D0A950D-7784,2026-02-26T16:12:52.221Z,Sasuke ,Funko POP,1,₱800.00,₱800.00,Physical Store,Cash,,admin
+,,Naruto,Funko POP,1,₱700.00,₱700.00,,,,
+,,Luffy,Funko POP,1,₱700.00,₱700.00,,,,
+,,Spiderman,Funko POP,1,₱700.00,₱700.00,,,,
+6D2BFD52-BABA,2026-02-26T16:09:51.751Z,Naruto,Funko POP,1,₱700.00,₱700.00,Physical Store,Cash,,admin
+,,Sasuke ,Funko POP,1,₱800.00,₱800.00,,,,
+,,Luffy,Funko POP,1,₱700.00,₱700.00,,,,
+,,Spiderman,Funko POP,1,₱700.00,₱700.00,,,,
+,,Spongebob,Funko POP,1,₱800.00,₱800.00,,,,
+D98E9AC3-63AB,2026-02-26T15:13:29.854Z,Spongebob,Funko POP,1,₱800.00,₱800.00,Physical Store,Cash,,admin
+,,Test Edit SKU,Test,1,₱600.00,₱600.00,,,,
+,,Test Batch Product,Test,1,₱1000.00,₱1000.00,,,,
+,,Harry Potter,Harry Potter Items,1,₱800.00,₱800.00,,,,
+45428D92-DF56,2026-02-25T14:30:57.164Z,Harry Potter,Harry Potter Items,2,₱800.00,₱1600.00,Physical Store,Cash,,admin
+4F0956D4-12DB,2026-02-18T13:56:39.204Z,Test Batch Product,Test,1,₱1000.00,₱1000.00,Physical Store,QRPH,wgtwt2t2t2,admin
+,,3242,Five Star,1,₱220.00,₱220.00,,,,
+CB67B2F4-5B2A,2026-02-18T13:40:57.715Z,Test Edit SKU,Test,1,₱600.00,₱600.00,Physical Store,Cash,,admin
+7108A1E7-09F1,2026-02-18T12:52:15.499Z,Test Batch Product,Test,1,₱1000.00,₱1000.00,Physical Store,QRPH,12345678,Yuri
+,,Harry Potter,Harry Potter Items,1,₱800.00,₱800.00,,,,
+,,3242,Five Star,1,₱220.00,₱220.00,,,,
+ED2A9C23-40DE,2026-02-18T12:52:03.583Z,Harry Potter,Harry Potter Items,1,₱800.00,₱800.00,Physical Store,Cash,,Yuri
+,,Test Batch Product,Test,1,₱1000.00,₱1000.00,,,,
+,,3242,Five Star,1,₱220.00,₱220.00,,,,
+,,Test Edit SKU,Test,1,₱600.00,₱600.00,,,,
+041B5649-4819,2026-02-18T12:51:12.741Z,Harry Potter,Harry Potter Items,1,₱800.00,₱800.00,Physical Store,QRPH,35251515,admin
+,,Test Batch Product,Test,1,₱1000.00,₱1000.00,,,,
+B366A020-8542,2026-02-18T12:50:55.683Z,Harry Potter,Harry Potter Items,1,₱800.00,₱800.00,Physical Store,Cash,,admin
+,,Test Batch Product,Test,1,₱1000.00,₱1000.00,,,,
+177616CC-7F29,2026-02-18T12:14:50.759Z,Harry Potter,Harry Potter Items,1,₱800.00,₱800.00,Physical Store,QRPH,,admin
+,,Test Batch Product,Test,1,₱1000.00,₱1000.00,,,,
+FD24911C-1278,2026-02-18T12:10:33.892Z,Test Batch Product,Test,1,₱1000.00,₱1000.00,Online,QRPH,,admin
+,,Harry Potter,Harry Potter Items,1,₱800.00,₱800.00,,,,
+2A90BC0D-AFF1,2026-02-17T16:42:52.446Z,fsfsf,Five Star,1,₱5550.00,₱5550.00,Physical Store,QRPH,,admin
+,,Test Edit SKU,Test,1,₱600.00,₱600.00,,,,
+,,3242,Five Star,1,₱220.00,₱220.00,,,,
+69FBDA7B-0ED0,2026-01-30T06:32:01.429Z,SpongeBob SquarePants 25th Anniversary - Krusty Krab Pizza SpongeBob,Funko POP,1,₱1440.00,₱1440.00,Physical Store,QRPH,,Yuri
+7E3F58E1-C47F,2026-01-30T06:26:14.467Z,Generic Toy,Toys,1,₱199.00,₱199.00,Physical Store,QRPH,,admin
+AD56DF2F-9B06,2026-01-30T06:24:14.253Z,Spiderman - Far From Home,Funko POP,1,₱569.00,₱569.00,Physical Store,QRPH,,admin
+9DE647D9-9EB4,2026-01-30T06:23:41.506Z,Spiderman - Far From Home,Funko POP,1,₱569.00,₱569.00,Physical Store,QRPH,,admin
+CDDB1396-981C,2026-01-30T06:22:44.776Z,Spiderman - Far From Home,Funko POP,1,₱569.00,₱569.00,Physical Store,QRPH,,admin
+D37553DD-1128,2026-01-30T06:21:51.046Z,Spiderman - Far From Home,Funko POP,5,₱569.00,₱2845.00,Physical Store,Cash,,admin
+364B0F92-A3F2,2026-01-30T06:21:51.003Z,Spiderman - Far From Home,Funko POP,5,₱569.00,₱2845.00,Physical Store,Cash,,admin
+F83A995B-A04C,2026-01-29T17:24:38.894Z,SpongeBob SquarePants 25th Anniversary - Krusty Krab Pizza SpongeBob,Funko POP,1,₱1440.00,₱1440.00,Physical Store,Cash,,admin
+,,Spiderman - Far From Home,Funko POP,1,₱569.00,₱569.00,,,,
+4BAA6395-854D,2026-01-29T17:20:32.235Z,Generic Toy,Toys,1,₱199.00,₱199.00,Physical Store,QRPH,,admin
+,,Spiderman - Far From Home,Funko POP,1,₱569.00,₱569.00,,,,
+131A0021-1934,2026-01-29T17:17:41.393Z,Generic Toy,Toys,2,₱199.00,₱398.00,Physical Store,Cash,,admin
+,,Spiderman - Far From Home,Funko POP,1,₱569.00,₱569.00,,,,
+B53E5909-0FBE,2026-01-29T17:14:39.487Z,Spiderman - Far From Home,Funko POP,1,₱569.00,₱569.00,Online,QRPH,,admin
+,,Generic Toy,Toys,1,₱199.00,₱199.00,,,,

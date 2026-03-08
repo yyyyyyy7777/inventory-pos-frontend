@@ -1,0 +1,20 @@
+// Paste this in your browser console at http://127.0.0.1:57361
+fetch('/api/emergency/restore-admin', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+}).then(response => response.json())
+.then(data => {
+  console.log('Response:', data);
+  if (data.success) {
+    alert('✅ Admin restored successfully! Login with: admin / admin123');
+    console.log('Admin details:', data.admin);
+  } else {
+    alert('❌ Failed to restore: ' + data.error);
+  }
+})
+.catch(error => {
+  console.error('Error:', error);
+  alert('❌ Error: ' + error.message);
+});
