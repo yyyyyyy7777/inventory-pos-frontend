@@ -10,6 +10,8 @@ export async function GET() {
   try {
     console.log('DATABASE_URL:', process.env.DATABASE_URL);
     const employees = await getAllEmployees();
+    console.log('Employees fetched:', employees.length);
+    console.log('First employee lastLogin:', employees[0]?.lastLogin);
     return NextResponse.json(employees);
   } catch (error) {
     console.error('Error fetching employees:', error);

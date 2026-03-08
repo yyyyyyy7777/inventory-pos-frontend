@@ -143,7 +143,7 @@ export function RemittanceView({ isAdmin, cabinet }: RemittanceViewProps) {
       case "collected":
         return "bg-emerald-50 border-emerald-200 text-emerald-900"
       case "released":
-        return "bg-blue-50 border-blue-200 text-blue-900"
+        return "bg-violet-50 border-violet-200 text-violet-900"
       case "pending":
         return "bg-orange-50 border-orange-200 text-orange-900"
       default:

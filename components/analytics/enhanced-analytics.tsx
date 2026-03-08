@@ -70,7 +70,7 @@ interface EnhancedAnalyticsProps {
   username?: string
 }
 
-const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444'];
+const COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444'];
 
 const formatCurrency = (amount: number | null | undefined) => {
   const num = typeof amount === 'number' ? amount : parseFloat(amount as any) || 0;
@@ -97,16 +97,18 @@ const MetricCard = ({
   changeType?: 'increase' | 'decrease' | 'neutral';
   icon: React.ReactNode;
   description?: string;
-  color?: "primary" | "green" | "blue" | "orange" | "red";
+  color?: "primary" | "green" | "blue" | "indigo" | "purple" | "orange" | "red" | "maroon";
 }) => {
   const getColorClasses = () => {
     switch (color) {
       case "green":
-        return "bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200 text-emerald-900";
+        return "bg-gradient-to-br from-[oklch(0.25_0.15_145)] to-[oklch(0.35_0.18_145)] border-[oklch(0.3_0.12_145)] text-white";
       case "blue":
-        return "bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 text-blue-900";
+        return "bg-gradient-to-br from-[oklch(0.25_0.15_280)] to-[oklch(0.35_0.18_280)] border-[oklch(0.3_0.12_280)] text-white";
       case "orange":
-        return "bg-gradient-to-br from-amber-50 to-amber-100 border-amber-200 text-amber-900";
+        return "bg-gradient-to-br from-[oklch(0.6_0.15_85)] to-[oklch(0.7_0.12_90)] border-[oklch(0.65_0.1_87)] text-white";
+      case "maroon":
+        return "bg-gradient-to-br from-[oklch(0.3_0.15_25)] to-[oklch(0.4_0.12_30)] border-[oklch(0.35_0.1_27)] text-white";
       case "red":
         return "bg-gradient-to-br from-red-50 to-red-100 border-red-200 text-red-900";
       default:
@@ -117,11 +119,13 @@ const MetricCard = ({
   const getIconBg = () => {
     switch (color) {
       case "green":
-        return "bg-emerald-200 text-emerald-700";
+        return "bg-[oklch(0.5_0.15_145)] text-white";
       case "blue":
-        return "bg-blue-200 text-blue-700";
+        return "bg-[oklch(0.5_0.15_280)] text-white";
       case "orange":
-        return "bg-amber-200 text-amber-700";
+        return "bg-[oklch(0.65_0.12_85)] text-white";
+      case "maroon":
+        return "bg-[oklch(0.55_0.1_25)] text-white";
       case "red":
         return "bg-red-200 text-red-700";
       default:
@@ -184,13 +188,18 @@ const MetricCard = ({
 export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps) {
   const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [periodLoading, setPeriodLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [timePeriod, setTimePeriod] = useState<"weekly" | "monthly" | "quarterly" | "yearly">("weekly");
   const { getProductsByCabinet } = useProducts();
 
-  const fetchAnalytics = async () => {
+  const fetchAnalytics = async (isPeriodChange = false) => {
     try {
-      setLoading(true);
+      if (isPeriodChange) {
+        setPeriodLoading(true);
+      } else {
+        setLoading(true);
+      }
       setError(null);
       const response = await fetch(`/api/analytics?cabinet=${cabinet}&period=${timePeriod}`);
       
@@ -207,13 +216,21 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
       console.error('Error fetching analytics:', error);
       setError(error instanceof Error ? error.message : 'Failed to load analytics');
     } finally {
-      setLoading(false);
+      if (isPeriodChange) {
+        setPeriodLoading(false);
+      } else {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
     fetchAnalytics();
-  }, [cabinet, timePeriod]);
+  }, [cabinet]);
+
+  useEffect(() => {
+    fetchAnalytics(true);
+  }, [timePeriod]);
 
   // Get low stock products
   const products = getProductsByCabinet(cabinet);
@@ -263,7 +280,7 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
               <h3 className="font-semibold text-red-900">Error loading analytics</h3>
               <p className="text-sm text-red-700">{error}</p>
             </div>
-            <Button onClick={fetchAnalytics} variant="outline" size="sm" className="ml-auto">
+            <Button onClick={() => fetchAnalytics()} variant="outline" size="sm" className="ml-auto">
               <RefreshCw className="h-4 w-4 mr-2" />
               Retry
             </Button>
@@ -340,29 +357,16 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
           value={summary.totalItems.toLocaleString()}
           icon={<Package className="h-6 w-6" />}
           description={`Average sale: ${formatCurrency(summary.avgTransactionValue)}`}
-          color="primary"
+          color="orange"
         />
         
-        <Card className="bg-white border border-gray-200 shadow-lg hover:shadow-xl transition-all duration-300">
-          <CardContent className="pt-4 sm:pt-6 relative">
-            <div className="flex items-start justify-between gap-3">
-              <div className="space-y-1 sm:space-y-2 flex-1">
-                <p className="text-xs sm:text-sm font-medium uppercase tracking-wide opacity-80 text-gray-600">
-                  Low Stock Items
-                </p>
-                <p className="text-2xl sm:text-3xl font-bold text-gray-900">
-                  {lowStockProducts.length}
-                </p>
-                <p className="text-xs opacity-70 text-gray-600">
-                  {lowStockProducts.length > 0 ? "Action needed" : "All good"}
-                </p>
-              </div>
-              <div className="rounded-full p-2 sm:p-3 bg-red-100 text-red-600 flex-shrink-0">
-                <AlertTriangle className="h-5 w-5 sm:h-6 sm:w-6" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <MetricCard
+          title="Low Stock Items"
+          value={lowStockProducts.length}
+          icon={<AlertTriangle className="h-6 w-6" />}
+          description={lowStockProducts.length > 0 ? "Action needed" : "All good"}
+          color="maroon"
+        />
       </div>
 
       {/* Charts Section */}
@@ -381,7 +385,11 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
                 </CardDescription>
               </div>
               <div className="flex items-center gap-2">
-                <Select value={timePeriod} onValueChange={(value: "weekly" | "monthly" | "quarterly" | "yearly") => setTimePeriod(value)}>
+                <Select 
+                  value={timePeriod} 
+                  onValueChange={(value: "weekly" | "monthly" | "quarterly" | "yearly") => setTimePeriod(value)}
+                  disabled={periodLoading}
+                >
                   <SelectTrigger className="w-32">
                     <SelectValue />
                   </SelectTrigger>
@@ -392,14 +400,18 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
                     <SelectItem value="yearly">Yearly</SelectItem>
                   </SelectContent>
                 </Select>
-                <Button onClick={fetchAnalytics} variant="outline" size="sm">
-                  <RefreshCw className="h-4 w-4" />
+                <Button onClick={() => fetchAnalytics(true)} variant="outline" size="sm" disabled={periodLoading}>
+                  <RefreshCw className={`h-4 w-4 ${periodLoading ? 'animate-spin' : ''}`} />
                 </Button>
               </div>
             </div>
           </CardHeader>
-          <CardContent>
-            {revenueData.length === 0 ? (
+          <CardContent className="relative">
+            {periodLoading ? (
+              <div className="flex items-center justify-center h-[300px]">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+              </div>
+            ) : revenueData.length === 0 ? (
               <div className="flex items-center justify-center h-[300px] text-muted-foreground">
                 No sales data available for this period
               </div>
@@ -408,8 +420,8 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
               <AreaChart data={revenueData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
                 <defs>
                   <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/>
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.1}/>
+                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.8}/>
+                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0.1}/>
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
@@ -426,11 +438,11 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
                 <Area
                   type="monotone"
                   dataKey="revenue"
-                  stroke="#3b82f6"
+                  stroke="#6366f1"
                   strokeWidth={3}
                   fill="url(#colorRevenue)"
-                  dot={{ r: 4, fill: "#3b82f6", stroke: "#ffffff", strokeWidth: 2 }}
-                  activeDot={{ r: 6, fill: "#3b82f6", stroke: "#ffffff", strokeWidth: 2 }}
+                  dot={{ r: 4, fill: "#6366f1", stroke: "#ffffff", strokeWidth: 2 }}
+                  activeDot={{ r: 6, fill: "#6366f1", stroke: "#ffffff", strokeWidth: 2 }}
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -449,8 +461,12 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
               Most popular products this month
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            {topProducts.length === 0 ? (
+          <CardContent className="relative">
+            {periodLoading ? (
+              <div className="flex items-center justify-center h-[300px]">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+              </div>
+            ) : topProducts.length === 0 ? (
               <div className="flex items-center justify-center h-[300px] text-muted-foreground">
                 No product sales data available
               </div>
@@ -477,7 +493,7 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
                     name === 'revenue' ? 'Revenue' : 'Units Sold'
                   ]}
                 />
-                <Bar dataKey="revenue" fill="#3b82f6" radius={[8, 8, 0, 0]} />
+                <Bar dataKey="revenue" fill="#6366f1" radius={[8, 8, 0, 0]} />
                 <Bar dataKey="quantity" fill="#8b5cf6" radius={[8, 8, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -497,8 +513,12 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
             Transactions and items sold over time
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          {revenueData.length === 0 ? (
+        <CardContent className="relative">
+          {periodLoading ? (
+            <div className="flex items-center justify-center h-[300px]">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+            </div>
+          ) : revenueData.length === 0 ? (
             <div className="flex items-center justify-center h-[300px] text-muted-foreground">
               No transaction data available for this period
             </div>
@@ -519,10 +539,10 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
               <Line
                 type="monotone"
                 dataKey="transactions"
-                stroke="#3b82f6"
+                stroke="#6366f1"
                 strokeWidth={3}
-                dot={{ r: 4, fill: "#3b82f6", stroke: "#ffffff", strokeWidth: 2 }}
-                activeDot={{ r: 6, fill: "#3b82f6", stroke: "#ffffff", strokeWidth: 2 }}
+                dot={{ r: 4, fill: "#6366f1", stroke: "#ffffff", strokeWidth: 2 }}
+                activeDot={{ r: 6, fill: "#6366f1", stroke: "#ffffff", strokeWidth: 2 }}
                 name="Transactions"
               />
               <Line

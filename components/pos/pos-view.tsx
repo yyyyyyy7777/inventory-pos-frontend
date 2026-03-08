@@ -66,7 +66,7 @@ const categories = [
 ]
 
 export function POSView({ cabinet, username }: POSViewProps) {
-  const { getProductsByCabinet, updateProduct } = useProducts()
+  const { getProductsByCabinet, updateProduct, refetch, getOnShelfStock } = useProducts()
   const products = getProductsByCabinet(cabinet)
   const { addSale, refreshSales } = useSales()
   const { addToast } = useToast()
@@ -92,6 +92,7 @@ export function POSView({ cabinet, username }: POSViewProps) {
   const [priceEditingEnabled, setPriceEditingEnabled] = useState(false)
   const [discountConfirmDialog, setDiscountConfirmDialog] = useState(false)
   const [discountTimeouts, setDiscountTimeouts] = useState<Map<string, NodeJS.Timeout>>(new Map())
+  const [onShelfStock, setOnShelfStock] = useState<Record<string, number>>({})
 
   // Update time every second
   useEffect(() => {
@@ -115,6 +116,22 @@ export function POSView({ cabinet, username }: POSViewProps) {
     console.log('Current cabinet:', cabinet);
   }, [products, cabinet])
 
+  // Fetch on-shelf stock for all products
+  useEffect(() => {
+    const fetchOnShelfStock = async () => {
+      const stockMap: Record<string, number> = {}
+      for (const product of products) {
+        const onShelfQty = await getOnShelfStock(product.id, cabinet)
+        stockMap[product.id] = onShelfQty
+      }
+      setOnShelfStock(stockMap)
+    }
+    
+    if (products.length > 0) {
+      fetchOnShelfStock()
+    }
+  }, [products, cabinet])
+
   const filteredProducts = products.filter((product) => {
     // Check if product matches search query
     const matchesSearch = 
@@ -124,14 +141,17 @@ export function POSView({ cabinet, username }: POSViewProps) {
     // Check if product matches selected category
     const matchesCategory = selectedCategory === "All Categories" || product.category === selectedCategory;
     
+    // Check if product has on-shelf stock
+    const onShelfQty = onShelfStock[product.id] || 0
+    const hasOnShelfStock = onShelfQty > 0
+    
     // If showing out of stock items, include all matching products
     if (showOutOfStock) {
       return matchesSearch && matchesCategory;
     }
     
-    // Otherwise, only include in-stock products that match the search and category
-    const inStock = product.stock > 0;
-    return matchesSearch && matchesCategory && inStock;
+    // Otherwise, only include products with on-shelf stock
+    return matchesSearch && matchesCategory && hasOnShelfStock;
   })
 
   const addToCart = (product: Product) => {
@@ -139,6 +159,13 @@ export function POSView({ cabinet, username }: POSViewProps) {
     if (showReceipt && currentSaleData) {
       // Show toast notification instead of adding to cart
       addToast("Please start a new sale before adding items to cart.", "warning");
+      return;
+    }
+
+    // Check if product has on-shelf stock available
+    const availableOnShelf = onShelfStock[product.id] || 0
+    if (availableOnShelf <= 0) {
+      addToast(`${product.name} is not available on shelf. Please transfer from storage first.`, "error");
       return;
     }
 
@@ -672,72 +699,25 @@ export function POSView({ cabinet, username }: POSViewProps) {
       
       console.log('Sale added successfully, refreshing sales...');
       
-      // Refresh sales to ensure the latest data is loaded
-      await refreshSales(cabinet);
+      // Show success message immediately for better UX
+      addToast("Sale completed successfully!", "success");
       
-      console.log('Sales refreshed successfully');
+      // Refresh sales in background (non-blocking)
+      refreshSales(cabinet).catch(err => console.error('Failed to refresh sales:', err));
       
-      // Update stock levels for each item in the cart using stock deduction API
-      for (const item of cart) {
-        const product = products.find((p) => p.id === item.id);
-        if (product) {
-          // Create a stock deduction record
-          try {
-            const stockResponse = await fetch('/api/stock-deduction', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                productId: product.id,
-                quantity: item.quantity,
-                cabinet: cabinet,
-                notes: `Sold in POS sale - ${paymentMethod}${referenceNumber ? ` - Ref: ${referenceNumber}` : ''}`
-              }),
-            });
-
-            if (!stockResponse.ok) {
-              let errorMessage = 'Unknown error';
-              let errorData: { error?: string; details?: string; raw?: string } = {};
-              
-              // First try to get the raw text
-              try {
-                const rawText = await stockResponse.clone().text();
-                console.log('Raw error response:', rawText);
-                
-                if (rawText) {
-                  try {
-                    const jsonData = JSON.parse(rawText);
-                    errorData = jsonData;
-                    errorMessage = jsonData.error || jsonData.details || `HTTP ${stockResponse.status}`;
-                  } catch {
-                    errorMessage = rawText.substring(0, 200) || `HTTP ${stockResponse.status}`;
-                    errorData = { raw: rawText.substring(0, 500) };
-                  }
-                } else {
-                  errorMessage = `HTTP ${stockResponse.status}: Empty response`;
-                }
-              } catch (e) {
-                errorMessage = `HTTP ${stockResponse.status}: Failed to read response`;
-              }
-              
-              console.error('Failed to deduct stock for sale:', product.name, errorData, 'Status:', stockResponse.status);
-              addToast(`Warning: Failed to update stock for ${product.name}: ${errorMessage}`, "warning");
-            } else {
-              const result = await stockResponse.json();
-              console.log(`Stock deducted for ${product.name}:`, result);
-            }
-          } catch (stockError) {
-            console.error('Error deducting stock:', stockError);
-            addToast(`Warning: Error updating stock for ${product.name}: ${stockError instanceof Error ? stockError.message : 'Unknown error'}`, "warning");
-          }
-        }
-      }
+      // Immediately refresh products to show updated stock
+      refetch().catch(err => console.error('Failed to refresh products:', err));
+      
+      console.log('Sales refresh initiated');
+      
+      // Note: Stock deduction is already handled by createSale() in pg-direct.ts
+      // Do NOT call stock-deduction API here to avoid double deduction
       
       setCart([]);
       setReceiptTime(null); // Reset receipt time after successful sale
       setReferenceNumber(''); // Reset reference number after successful sale
       setCashAmount(''); // Reset cash amount after successful sale
       setChange(0); // Reset change after successful sale
-      addToast("Sale completed successfully!", "success");
       
       // Log the sale activity with detailed information
       const activityItemsList = cart.map(item => `${item.name} (${item.quantity}x @ ₱${item.price})`).join(', ');

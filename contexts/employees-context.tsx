@@ -9,7 +9,8 @@ export interface Employee {
   password: string;
   role: "admin" | "staff";
   joinDate: string;
-  status: "active" | "inactive";
+  lastLogin?: string;
+  lastLogout?: string;
   createdAt: string;
   updatedAt: string;
 }

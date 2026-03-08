@@ -12,6 +12,7 @@ export interface StockBatch {
   batchDate: string;
   expiryDate?: string;
   cabinet: string;
+  status: 'on-shelf' | 'in-storage' | 'depleted' | 'reserved' | 'damaged';
   createdAt: string;
   updatedAt: string;
 }
@@ -41,6 +42,7 @@ interface ProductsContextType {
   deleteProduct: (id: string, cabinet: string) => void;
   addStockBatch: (productId: string, quantity: number, costPerUnit?: number, expiryDate?: string, cabinet?: string) => void;
   getStockBatches: (productId: string, cabinet: string) => Promise<StockBatch[]>;
+  getOnShelfStock: (productId: string, cabinet: string) => Promise<number>;
   loading: boolean;
   error: string | null;
   refetch: () => Promise<void>;
@@ -406,6 +408,17 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const getOnShelfStock = async (productId: string, cabinet: string): Promise<number> => {
+    try {
+      const batches = await getStockBatches(productId, cabinet);
+      const onShelfBatches = batches.filter(batch => batch.status === 'on-shelf');
+      return onShelfBatches.reduce((total, batch) => total + batch.quantity, 0);
+    } catch (err) {
+      console.error('Error getting on-shelf stock:', err);
+      return 0;
+    }
+  };
+
   const deleteProduct = async (id: string, cabinet: string) => {
     try {
       setError(null);
@@ -478,6 +491,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
         deleteProduct,
         addStockBatch,
         getStockBatches,
+        getOnShelfStock,
         loading,
         error,
         refetch

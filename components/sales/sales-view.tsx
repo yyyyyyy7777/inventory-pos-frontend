@@ -299,13 +299,59 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
 
   const handleArchiveSales = async (action: "archive" | "unarchive") => {
     try {
-      addToast(`${action.charAt(0).toUpperCase() + action.slice(1)}ing sales...`, "info");
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      if (!manageArchiveMonth) {
+        addToast("Please select a month", "error");
+        return;
+      }
+      
+      // Filter sales for the selected month
+      const [year, month] = manageArchiveMonth.split('-').map(Number);
+      const monthSales = sales.filter((sale: any) => {
+        const saleDate = new Date(sale.date);
+        const saleYear = saleDate.getFullYear();
+        const saleMonth = saleDate.getMonth() + 1; // JS months are 0-indexed
+        
+        if (action === 'archive') {
+          // For archive: only include non-archived sales
+          return saleYear === year && saleMonth === month && !sale.archived;
+        } else {
+          // For unarchive: only include archived sales
+          return saleYear === year && saleMonth === month && sale.archived;
+        }
+      });
+      
+      if (monthSales.length === 0) {
+        addToast(action === 'archive' 
+          ? `No sales to archive for ${manageArchiveMonth}` 
+          : `No archived sales to unarchive for ${manageArchiveMonth}`, 
+          "warning"
+        );
+        return;
+      }
+      
+      addToast(`${action === 'archive' ? 'Archiving' : 'Unarchiving'} ${monthSales.length} sales...`, "info");
+      
+      const response = await fetch(`/api/sales/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          [action === 'archive' ? 'archiveMonth' : 'unarchiveMonth']: manageArchiveMonth,
+          cabinet: cabinet 
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to ${action} sales`);
+      }
+
+      const result = await response.json();
+      addToast(`${result.archivedCount || result.unarchivedCount || 0} sales ${action}d successfully!`, "success");
       setManageArchiveMonth('');
       await refreshSales(cabinet);
     } catch (error) {
       console.error(`Error ${action}ing sales:`, error);
-      addToast(`Failed to ${action} sales`, "error");
+      addToast(`Failed to ${action} sales: ${error instanceof Error ? error.message : 'Unknown error'}`, "error");
     }
   };
 
@@ -324,9 +370,9 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
           <div className="w-full lg:w-80 bg-white border rounded-lg shadow-sm p-3 h-fit lg:sticky lg:top-3 order-1 lg:order-1 mb-4 lg:mb-0">
             <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-200">
               <div className="flex items-center gap-2">
-                <Filter size={14} className="text-blue-600" />
+                <Filter size={14} className="text-violet-600" />
                 <h3 className="font-semibold text-gray-800 text-sm">Sales Filters</h3>
-                <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full text-xs">
+                <span className="bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full text-xs">
                   {[selectedCategory !== "all" ? 1 : 0, (dateFilter.startDate || dateFilter.endDate) ? 1 : 0, dateFilter.year !== "all" ? 1 : 0, amountFilter !== "all" ? 1 : 0, soldAtFilter !== "all" ? 1 : 0, paymentMethodFilter !== "all" ? 1 : 0, negotiationFilter !== "all" ? 1 : 0, searchQuery !== "" ? 1 : 0].reduce((a, b) => a + b, 0)}
                 </span>
               </div>
@@ -338,10 +384,10 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
             <div className="space-y-3">
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-gray-700 flex items-center gap-1">
-                  <Package size={10} className="text-blue-600" /> Category
+                  <Package size={10} className="text-violet-600" /> Category
                 </label>
                 <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                  <SelectTrigger className="h-7 border-2 focus:border-blue-500 text-xs">
+                  <SelectTrigger className="h-7 border-2 focus:border-violet-500 text-xs">
                     <SelectValue placeholder="All" />
                   </SelectTrigger>
                   <SelectContent>
@@ -479,7 +525,7 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
                   <Zap size={10} className="text-yellow-600" /> Quick Filters
                 </label>
                 <div className="grid grid-cols-2 gap-1">
-                  <Button variant="outline" onClick={() => { setSelectedCategory("all"); setDateFilter({ year: "all", month: "all", day: "all", startDate: "", endDate: "" }); setAmountFilter("all"); setSoldAtFilter("all"); setPaymentMethodFilter("all"); setNegotiationFilter("all"); setTimePeriod("all"); addToast("Showing all sales", "info"); }} className="h-6 px-2 border-blue-300 text-blue-700 hover:bg-blue-50 text-xs">All Sales</Button>
+                  <Button variant="outline" onClick={() => { setSelectedCategory("all"); setDateFilter({ year: "all", month: "all", day: "all", startDate: "", endDate: "" }); setAmountFilter("all"); setSoldAtFilter("all"); setPaymentMethodFilter("all"); setNegotiationFilter("all"); setTimePeriod("all"); addToast("Showing all sales", "info"); }} className="h-6 px-2 border-violet-300 text-violet-700 hover:bg-violet-50 text-xs">All Sales</Button>
                   <Button variant="outline" onClick={() => { setSelectedCategory("all"); setDateFilter({ year: "all", month: "all", day: "all", startDate: "", endDate: "" }); setAmountFilter("5000-plus"); setSoldAtFilter("all"); setPaymentMethodFilter("all"); setTimePeriod("all"); addToast("Showing high-value sales", "info"); }} className="h-6 px-2 border-green-300 text-green-700 hover:bg-green-50 text-xs">High Value</Button>
                   <Button variant="outline" onClick={() => { setSelectedCategory("all"); setDateFilter({ year: "all", month: "all", day: "all", startDate: "", endDate: "" }); setAmountFilter("all"); setSoldAtFilter("all"); setPaymentMethodFilter("all"); setTimePeriod("today"); addToast("Showing today's sales", "info"); }} className="h-6 px-2 border-yellow-300 text-yellow-700 hover:bg-yellow-50 text-xs">Today</Button>
                   <Button variant="outline" onClick={() => { setSelectedCategory("all"); setDateFilter({ year: "all", month: "all", day: "all", startDate: "", endDate: "" }); setAmountFilter("all"); setSoldAtFilter("all"); setPaymentMethodFilter("all"); setTimePeriod("week"); addToast("Showing this week's sales", "info"); }} className="h-6 px-2 border-purple-300 text-purple-700 hover:bg-purple-50 text-xs">This Week</Button>
@@ -507,14 +553,14 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
               <Button
                 variant="outline"
                 onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-                className="h-8 px-3 rounded-md border-2 border-blue-300 hover:bg-blue-50 text-blue-700 text-xs font-medium"
+                className="h-8 px-3 rounded-md border-2 border-violet-300 hover:bg-violet-50 text-violet-700 text-xs font-medium"
                 title="Toggle filters panel"
               >
                 <div className="flex items-center gap-1">
                   <Filter size={12} />
                   Filters
                   {(selectedCategory !== "all" || (dateFilter.startDate || dateFilter.endDate) || dateFilter.year !== "all" || amountFilter !== "all" || soldAtFilter !== "all" || paymentMethodFilter !== "all" || negotiationFilter !== "all" || timePeriod !== "all") && (
-                    <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
+                    <span className="w-2 h-2 bg-violet-500 rounded-full animate-pulse"></span>
                   )}
                 </div>
               </Button>
@@ -526,46 +572,56 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
               <Button variant="outline" onClick={handleExportExcel} className="h-8 px-2 lg:px-3 rounded-md border-2 hover:bg-gray-50 text-xs" title="Export to Excel">
                 <Download size={12} className="mr-1 hidden sm:inline" /> <span className="hidden sm:inline">Export</span><span className="sm:hidden">📊</span>
               </Button>
-              {isAdmin && (
-                <>
-                  <Button onClick={handleExportReport} className="h-8 px-2 lg:px-3 bg-primary hover:bg-primary/90 text-primary-foreground text-xs flex items-center gap-1">
-                    <Download size={14} /> <span className="hidden sm:inline">Report</span>
-                  </Button>
-                  <Button variant="outline" onClick={() => setShowManageArchives(true)} className="h-8 px-2 lg:px-3 rounded-md border-2 hover:bg-gray-50 text-xs">
-                    <Archive size={14} />
-                  </Button>
-                </>
-              )}
+              <Button onClick={handleExportReport} className="h-8 px-2 lg:px-3 bg-primary hover:bg-primary/90 text-primary-foreground text-xs flex items-center gap-1">
+                <Download size={14} /> <span className="hidden sm:inline">Report</span>
+              </Button>
+              <Button variant="outline" onClick={() => setShowManageArchives(true)} className="h-8 px-2 lg:px-3 rounded-md border-2 hover:bg-gray-50 text-xs">
+                <Archive size={14} className="mr-1" /> <span className="hidden sm:inline">Archive</span>
+              </Button>
             </div>
           </div>
 
           {/* Revenue Summary */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 lg:gap-4 mb-4 lg:mb-6">
-            <Card className="bg-card/60 border border-green-10 shadow-sm">
-              <CardContent className="pt-4">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Total Sales</p>
-                    <p className="mt-1 text-2xl font-semibold text-foreground">₱{filteredSales.reduce((sum: number, sale: any) => sum + (parseFloat(sale.amount) || 0), 0).toLocaleString()}</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 lg:gap-4 mb-6 lg:mb-8 mt-4 max-w-2xl">
+            <Card className="relative overflow-hidden border-2 shadow-md bg-gradient-to-br from-[oklch(0.25_0.15_145)] to-[oklch(0.35_0.18_145)] border-[oklch(0.3_0.12_145)] text-white">
+              <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-white/20 to-transparent rounded-bl-full" />
+              <CardContent className="pt-3 pb-3 relative">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium uppercase tracking-wide opacity-80">
+                      Total Sales
+                    </p>
+                    <p className="text-xl font-bold">
+                      ₱{filteredSales.reduce((sum: number, sale: any) => sum + (parseFloat(sale.amount) || 0), 0).toLocaleString()}
+                    </p>
                   </div>
-                  <span className="rounded-full bg-green-100 px-3 py-2 text-xl">💰</span>
+                  <div className="rounded-full p-2 bg-[oklch(0.5_0.15_145)] text-white flex-shrink-0">
+                    <DollarSign className="h-4 w-4" />
+                  </div>
                 </div>
               </CardContent>
             </Card>
             
-            <Card className={`bg-card/60 border shadow-sm cursor-pointer hover:shadow-md transition-shadow ${negotiationFilter === "discounted" ? "border-orange-500 bg-orange-50" : "border-orange-10"}`} onClick={() => setNegotiationFilter(negotiationFilter === "discounted" ? "all" : "discounted")} title={negotiationFilter === "discounted" ? "Click to clear filter" : "Click to filter discounted sales"}>
-              <CardContent className="pt-4">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Discounted Sales</p>
-                    <p className="mt-1 text-2xl font-semibold text-orange-600">{filteredSales.filter((sale: any) => 
-                      sale.items.some((item: any) => item.isDiscounted === true)
-                    ).length}</p>
-                    <p className="text-xs text-orange-600 mt-1">
-                      {negotiationFilter === "discounted" ? "✓ Filtered" : "Click to filter"}
+            <Card className={`relative overflow-hidden border-2 shadow-md cursor-pointer hover:shadow-lg transition-all duration-300 ${negotiationFilter === "discounted" ? "border-orange-500" : "border-[oklch(0.65_0.1_85)]"} bg-gradient-to-br from-[oklch(0.6_0.15_85)] to-[oklch(0.7_0.12_90)] text-white`} onClick={() => setNegotiationFilter(negotiationFilter === "discounted" ? "all" : "discounted")} title={negotiationFilter === "discounted" ? "Click to clear filter" : "Click to filter discounted sales"}>
+              <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-white/20 to-transparent rounded-bl-full" />
+              <CardContent className="pt-3 pb-3 relative">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium uppercase tracking-wide opacity-80">
+                      Discounted Sales
+                    </p>
+                    <p className="text-xl font-bold">
+                      {filteredSales.filter((sale: any) => 
+                        sale.items.some((item: any) => item.isDiscounted === true)
+                      ).length}
+                    </p>
+                    <p className="text-xs opacity-60">
+                      {negotiationFilter === "discounted" ? "✓ Click to clear filter" : "Click to filter discounts"}
                     </p>
                   </div>
-                  <span className={`rounded-full px-3 py-2 text-xl ${negotiationFilter === "discounted" ? "bg-orange-200" : "bg-orange-100"}`}></span>
+                  <div className={`rounded-full p-2 flex-shrink-0 ${negotiationFilter === "discounted" ? "bg-orange-200 text-orange-700" : "bg-[oklch(0.65_0.12_85)] text-white"}`}>
+                    <Package className="h-4 w-4" />
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -610,24 +666,24 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
                   <table className="w-full min-w-[800px]">
                     <thead className="border-b border-border bg-muted/50">
                       <tr>
-                        <th className="py-3 px-4 text-left font-semibold text-foreground">Date</th>
-                        <th className="py-3 px-4 text-left font-semibold text-foreground">Sale ID</th>
-                        <th className="py-3 px-4 text-left font-semibold text-foreground">Products</th>
-                        <th className="py-3 px-4 text-left font-semibold text-foreground">Staff</th>
-                        <th className="py-3 px-4 text-center font-semibold text-foreground">Payment Method</th>
-                        <th className="py-3 px-4 text-right font-semibold text-foreground">Amount</th>
-                        <th className="py-3 px-4 text-left font-semibold text-foreground">Location</th>
-                        <th className="py-3 px-4 text-center font-semibold text-foreground">Discount</th>
-                        <th className="py-3 px-4 text-center font-semibold text-foreground">Actions</th>
+                        <th className="py-4 px-5 text-left font-semibold text-foreground">Date</th>
+                        <th className="py-4 px-5 text-left font-semibold text-foreground">Sale ID</th>
+                        <th className="py-4 px-5 text-left font-semibold text-foreground">Products</th>
+                        <th className="py-4 px-5 text-left font-semibold text-foreground">Staff</th>
+                        <th className="py-4 px-5 text-center font-semibold text-foreground">Payment Method</th>
+                        <th className="py-4 px-5 text-right font-semibold text-foreground">Amount</th>
+                        <th className="py-4 px-5 text-center font-semibold text-foreground">Location</th>
+                        <th className="py-4 px-5 text-center font-semibold text-foreground">Discount</th>
+                        <th className="py-4 px-5 text-center font-semibold text-foreground">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
                       {filteredSales.map((sale: any) => (
                         <tr key={sale.id} className="hover:bg-muted/50 transition-colors">
-                          <td className="py-3 px-4 text-muted-foreground text-sm">{new Date(sale.date).toLocaleDateString()}</td>
-                          <td className="py-3 px-4 text-foreground font-medium">{createShortSaleId(sale.id)}</td>
-                          <td className="py-3 px-4 text-muted-foreground text-sm">
-                            <div className="max-w-md">
+                          <td className="py-4 px-5 text-muted-foreground text-sm">{new Date(sale.date).toLocaleDateString()}</td>
+                          <td className="py-4 px-5 text-foreground font-medium">{createShortSaleId(sale.id)}</td>
+                          <td className="py-4 px-5 text-muted-foreground text-sm">
+                            <div className="max-w-md space-y-1">
                               {sale.items.length <= 3 ? (
                                 // Show all items if 3 or less
                                 sale.items.map((item: any, index: number) => (
@@ -646,7 +702,7 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
                                     </span>
                                   ))}
                                   {!expandedSales.has(sale.id) && (
-                                    <span className="text-blue-600 cursor-pointer hover:text-blue-800 text-xs" onClick={() => toggleSaleExpansion(sale.id)}>
+                                    <span className="text-violet-600 cursor-pointer hover:text-violet-800 text-xs" onClick={() => toggleSaleExpansion(sale.id)}>
                                       +{sale.items.length - 3} more...
                                     </span>
                                   )}
@@ -658,7 +714,7 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
                                           <span className="mr-2">, </span>
                                         </span>
                                       ))}
-                                      <span className="text-blue-600 cursor-pointer hover:text-blue-800 text-xs" onClick={() => toggleSaleExpansion(sale.id)}>
+                                      <span className="text-violet-600 cursor-pointer hover:text-violet-800 text-xs" onClick={() => toggleSaleExpansion(sale.id)}>
                                         Show less
                                       </span>
                                     </div>
@@ -667,27 +723,27 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
                               )}
                             </div>
                           </td>
-                          <td className="py-3 px-4 text-muted-foreground text-sm">{sale.staffName}</td>
-                          <td className="py-3 px-4 text-muted-foreground text-sm text-center">{sale.paymentMethod}</td>
-                          <td className="py-3 px-4 text-right font-medium text-foreground">₱{sale.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                          <td className="py-3 px-4 text-muted-foreground text-sm">
-                            <span className={`px-2 py-1 rounded-full text-xs ${sale.soldAt === 'physical' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                          <td className="py-4 px-5 text-muted-foreground text-sm">{sale.staffName}</td>
+                          <td className="py-4 px-5 text-muted-foreground text-sm text-center">{sale.paymentMethod}</td>
+                          <td className="py-4 px-5 text-right font-medium text-foreground">₱{sale.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          <td className="py-4 px-5 text-muted-foreground text-sm text-center">
+                            <span className={`px-3 py-1.5 rounded-full text-xs ${sale.soldAt === 'physical' ? 'bg-green-100 text-green-700' : 'bg-violet-100 text-violet-700'}`}>
                               {sale.soldAt === 'physical' ? 'Store' : 'Online'}
                             </span>
                           </td>
-                          <td className="py-3 px-4 text-center">
+                          <td className="py-4 px-5 text-center">
                             {sale.items.some((item: any) => item.isDiscounted === true) ? (
-                              <span className="px-2 py-1 rounded-full text-xs bg-orange-100 text-orange-700 font-medium">
+                              <span className="px-3 py-1.5 rounded-full text-xs bg-orange-100 text-orange-700 font-medium">
                                 Discounted
                               </span>
                             ) : (
-                              <span className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-600">
+                              <span className="px-3 py-1.5 rounded-full text-xs bg-gray-100 text-gray-600">
                                 Regular
                               </span>
                             )}
                           </td>
-                          <td className="py-3 px-4 text-center">
-                            <Button variant="ghost" size="sm" className="text-blue-600 hover:bg-blue-10" onClick={() => handleViewSaleDetails(sale)} title="View Sale Details">
+                          <td className="py-4 px-5 text-center">
+                            <Button variant="ghost" size="sm" className="text-violet-600 hover:bg-violet-10 p-2" onClick={() => handleViewSaleDetails(sale)} title="View Sale Details">
                               <Store size={16} />
                             </Button>
                           </td>

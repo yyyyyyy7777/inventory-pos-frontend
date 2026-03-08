@@ -12,6 +12,9 @@ import { ToastContainer } from "@/components/ui/toast-container"
 import { ErrorBoundary } from "@/components/ui/error-boundary"
 import { HydrationFix } from "@/components/hydration-fix"
 import { ServiceWorkerRegister } from "@/components/pwa-service-worker"
+import { BeforeUnloadWarning } from "@/components/before-unload-warning"
+import { AutosaveProvider } from "@/contexts/autosave-context"
+import { AutosaveRestoreDialog } from "@/components/autosave-restore-dialog"
 
 // <CHANGE> Removed unused @vercel/analytics/next import that was causing error
 
@@ -42,21 +45,25 @@ export default function RootLayout({
       </head>
       <body className={`font-sans antialiased`}>
         <HydrationFix />
+        <BeforeUnloadWarning />
         <ErrorBoundary>
           <ToastProvider>
-            <ActivityProvider>
-              <ProductsProvider>
-                <SalesProvider>
-                  <EmployeesProvider>
-                    <RemittanceProvider>
-                      {children}
-                      <ToastContainer />
-                      <ServiceWorkerRegister />
-                    </RemittanceProvider>
-                  </EmployeesProvider>
-                </SalesProvider>
-              </ProductsProvider>
-            </ActivityProvider>
+            <AutosaveProvider>
+              <ActivityProvider>
+                <ProductsProvider>
+                  <SalesProvider>
+                    <EmployeesProvider>
+                      <RemittanceProvider>
+                        {children}
+                        <ToastContainer />
+                        <ServiceWorkerRegister />
+                        <AutosaveRestoreDialog />
+                      </RemittanceProvider>
+                    </EmployeesProvider>
+                  </SalesProvider>
+                </ProductsProvider>
+              </ActivityProvider>
+            </AutosaveProvider>
           </ToastProvider>
         </ErrorBoundary>
         {/* <CHANGE> Removed Analytics component */}

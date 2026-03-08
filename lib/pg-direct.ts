@@ -58,17 +58,74 @@ export async function verifyEmployee(username: string, password: string) {
   };
 }
 
+export async function updateLastLogin(username: string) {
+  try {
+    await query(
+      `UPDATE employee SET "lastLogin" = NOW() WHERE username = $1`,
+      [username]
+    );
+    return { success: true };
+  } catch (error) {
+    console.error('Error updating last login:', error);
+    return { success: false };
+  }
+}
+
+export async function updateLastLogout(username: string) {
+  try {
+    await query(
+      `UPDATE employee SET "lastLogout" = NOW() WHERE username = $1`,
+      [username]
+    );
+    return { success: true };
+  } catch (error) {
+    console.error('Error updating last logout:', error);
+    return { success: false };
+  }
+}
+
 export async function getAllEmployees() {
-  const rows = await query(
-    'SELECT id, name, username, role, status, "joinDate", "createdAt", "updatedAt" FROM employee ORDER BY "createdAt" DESC'
-  );
-  
-  return rows.map(employee => ({
-    ...employee,
-    joinDate: new Date(employee.joinDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-    createdAt: employee.createdAt,
-    updatedAt: employee.updatedAt
-  }));
+  try {
+    const rows = await query(
+      'SELECT id, name, username, role, "joinDate", "lastLogin", "lastLogout", "createdAt", "updatedAt" FROM employee ORDER BY "createdAt" DESC'
+    );
+    
+    return rows.map(employee => ({
+      ...employee,
+      joinDate: new Date(employee.joinDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+      lastLogin: employee.lastLogin ? new Date(employee.lastLogin).toLocaleString('en-US', { 
+        month: 'short', 
+        day: 'numeric', 
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }) : 'Never',
+      lastLogout: employee.lastLogout ? new Date(new Date(employee.lastLogout).getTime() + 8 * 60 * 60 * 1000).toLocaleString('en-US', { 
+        month: 'short', 
+        day: 'numeric', 
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }) : 'Never',
+      createdAt: employee.createdAt,
+      updatedAt: employee.updatedAt
+    }));
+  } catch (error) {
+    console.error('Error fetching employees, trying without lastLogin/lastLogout:', error);
+    // Fallback: query without lastLogin/lastLogout if columns don't exist
+    const rows = await query(
+      'SELECT id, name, username, role, "joinDate", "createdAt", "updatedAt" FROM employee ORDER BY "createdAt" DESC'
+    );
+    
+    return rows.map(employee => ({
+      ...employee,
+      joinDate: new Date(employee.joinDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+      lastLogin: 'Never',
+      lastLogout: 'Never',
+      createdAt: employee.createdAt,
+      updatedAt: employee.updatedAt
+    }));
+  }
 }
 
 export async function getAllProducts(cabinet: string = 'main') {
@@ -336,18 +393,31 @@ export async function createSale(data: {
       
       // Try batch-aware stock deduction first
       try {
-        // Get available stock batches using FIFO
+        // Get available on-shelf stock batches using FIFO (only on-shelf, not in-storage)
         const batchRows = await client.query(
           `SELECT id, quantity, "costPerUnit" FROM stockbatch 
-           WHERE "productId" = $1 AND cabinet = $2 AND quantity > 0
+           WHERE "productId" = $1 AND cabinet = $2 AND quantity > 0 AND status = 'on-shelf'
            ORDER BY "batchDate" ASC`,
           [productId, data.cabinet]
         );
         
+        // If no on-shelf batches found, check if there are in-storage batches
+        if (batchRows.rows.length === 0) {
+          const storageBatches = await client.query(
+            `SELECT COUNT(*) as count FROM stockbatch 
+             WHERE "productId" = $1 AND cabinet = $2 AND quantity > 0 AND status = 'in-storage'`,
+            [productId, data.cabinet]
+          );
+          
+          if (storageBatches.rows[0].count > 0) {
+            throw new Error(`Product "${item.productName}" is in storage. Please transfer to shelf before selling.`);
+          }
+        }
+        
         let remainingQuantity = item.quantity;
         const batchesUsed: Array<{ id: number; quantity: number }> = [];
         
-        // FIFO deduction from batches
+        // FIFO deduction from on-shelf batches only
         for (const batch of batchRows.rows) {
           if (remainingQuantity <= 0) break;
           
@@ -357,7 +427,7 @@ export async function createSale(data: {
         }
         
         if (remainingQuantity > 0) {
-          throw new Error(`Insufficient stock for product: ${item.productName}. Need ${item.quantity}, only ${item.quantity - remainingQuantity} available`);
+          throw new Error(`Insufficient on-shelf stock for product: ${item.productName}. Need ${item.quantity}, only ${item.quantity - remainingQuantity} available on shelf. Please transfer from storage.`);
         }
         
         // Update batches
@@ -376,17 +446,7 @@ export async function createSale(data: {
         
       } catch (batchError) {
         console.warn('Batch tracking failed, using simple stock update:', batchError);
-        
-        // Fallback to simple stock update
-        const updateResult = await client.query(
-          `UPDATE product SET stock = stock - $1, "updatedAt" = NOW() 
-           WHERE id = $2 AND stock >= $3`,
-          [item.quantity, productId, item.quantity]
-        );
-        
-        if (updateResult.rowCount === 0) {
-          throw new Error(`Insufficient stock for product: ${item.productName}`);
-        }
+        throw batchError; // Re-throw to prevent sale without proper batch tracking
       }
     }
     
@@ -632,18 +692,26 @@ export async function getStockAdditions(productId: string, cabinet: string) {
   const rows = await query(
     `SELECT * FROM stockbatch 
      WHERE "productId" = $1 AND cabinet = $2 
-     ORDER BY "batchDate" ASC`,
+     ORDER BY 
+       CASE status 
+         WHEN 'on-shelf' THEN 1 
+         WHEN 'in-storage' THEN 2 
+         WHEN 'depleted' THEN 3 
+         ELSE 4 
+       END,
+       quantity DESC,
+       "batchDate" ASC`,
     [productId, cabinet]
   );
   
-  return rows.map((addition, index) => ({
+  return rows.map((addition) => ({
     id: addition.id.toString(),
     productId: addition.productId.toString(),
     quantity: addition.quantity,
     costPerUnit: addition.costPerUnit,
     addedDate: new Date(addition.batchDate).toISOString(),
     cabinet: addition.cabinet,
-    status: index === 0 ? 'on-shelf' : 'in-storage', // FIFO: only first batch is on shelf
+    status: addition.status || 'in-storage',
   }));
 }
 
@@ -876,6 +944,57 @@ export async function deleteEmployee(id: number) {
     throw error;
   } finally {
     client.release();
+  }
+}
+
+export async function updateUserActivity(username: string) {
+  try {
+    await query(
+      `UPDATE employee SET "lastActivity" = NOW() WHERE username = $1`,
+      [username]
+    );
+    return { success: true };
+  } catch (error) {
+    console.error('Error updating user activity:', error);
+    return { success: false };
+  }
+}
+
+export async function getOnlineUsers() {
+  try {
+    // Consider users online if they had activity in the last 5 minutes
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    
+    const rows = await query(
+      `SELECT id, name, username, role, "lastActivity", 
+        CASE 
+          WHEN "lastActivity" >= $1 THEN 'online' 
+          ELSE 'offline' 
+        END as "onlineStatus"
+       FROM employee 
+       ORDER BY name ASC`,
+      [fiveMinutesAgo.toISOString()]
+    );
+    
+    return rows.map(emp => ({
+      ...emp,
+      isOnline: emp.onlineStatus === 'online'
+    }));
+  } catch (error) {
+    console.error('Error getting online users:', error);
+    return [];
+  }
+}
+
+export async function refreshEmployees() {
+  try {
+    // This function is called to refresh employee data in the context
+    // The actual implementation will be handled by the context
+    console.log('Employee data refresh requested');
+    return { success: true };
+  } catch (error) {
+    console.error('Error refreshing employees:', error);
+    return { success: false };
   }
 }
 
