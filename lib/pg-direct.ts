@@ -63,8 +63,9 @@ export async function verifyEmployee(username: string, password: string) {
 
 export async function updateLastLogin(username: string) {
   try {
+    // Use Philippines timezone (UTC+8 / Asia/Manila)
     await query(
-      `UPDATE employee SET "lastLogin" = NOW() WHERE username = $1`,
+      `UPDATE employee SET "lastLogin" = (NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Manila') WHERE username = $1`,
       [username]
     );
     return { success: true };
@@ -76,8 +77,9 @@ export async function updateLastLogin(username: string) {
 
 export async function updateLastLogout(username: string) {
   try {
+    // Use Philippines timezone (UTC+8 / Asia/Manila)
     await query(
-      `UPDATE employee SET "lastLogout" = NOW() WHERE username = $1`,
+      `UPDATE employee SET "lastLogout" = (NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Manila') WHERE username = $1`,
       [username]
     );
     return { success: true };
@@ -101,14 +103,16 @@ export async function getAllEmployees() {
         day: 'numeric', 
         year: 'numeric',
         hour: '2-digit',
-        minute: '2-digit'
+        minute: '2-digit',
+        timeZone: 'Asia/Manila'
       }) : 'Never',
-      lastLogout: employee.lastLogout ? new Date(new Date(employee.lastLogout).getTime() + 8 * 60 * 60 * 1000).toLocaleString('en-US', { 
+      lastLogout: employee.lastLogout ? new Date(employee.lastLogout).toLocaleString('en-US', { 
         month: 'short', 
         day: 'numeric', 
         year: 'numeric',
         hour: '2-digit',
-        minute: '2-digit'
+        minute: '2-digit',
+        timeZone: 'Asia/Manila'
       }) : 'Never',
       createdAt: employee.createdAt,
       updatedAt: employee.updatedAt
