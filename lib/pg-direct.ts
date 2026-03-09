@@ -63,10 +63,14 @@ export async function verifyEmployee(username: string, password: string) {
 
 export async function updateLastLogin(username: string) {
   try {
-    // Philippines is UTC+8. Add 8 hours to server time to get Manila time.
+    // Get current Philippines time (UTC+8)
+    const now = new Date();
+    const phTime = new Date(now.getTime() + (8 * 60 * 60 * 1000)); // Add 8 hours
+    const phTimestamp = phTime.toISOString().replace('T', ' ').replace('Z', '');
+    
     await query(
-      `UPDATE employee SET "lastLogin" = NOW() + INTERVAL '8 hours' WHERE username = $1`,
-      [username]
+      `UPDATE employee SET "lastLogin" = $2 WHERE username = $1`,
+      [username, phTimestamp]
     );
     return { success: true };
   } catch (error) {
@@ -77,10 +81,14 @@ export async function updateLastLogin(username: string) {
 
 export async function updateLastLogout(username: string) {
   try {
-    // Philippines is UTC+8. Add 8 hours to server time to get Manila time.
+    // Get current Philippines time (UTC+8)
+    const now = new Date();
+    const phTime = new Date(now.getTime() + (8 * 60 * 60 * 1000)); // Add 8 hours
+    const phTimestamp = phTime.toISOString().replace('T', ' ').replace('Z', '');
+    
     await query(
-      `UPDATE employee SET "lastLogout" = NOW() + INTERVAL '8 hours' WHERE username = $1`,
-      [username]
+      `UPDATE employee SET "lastLogout" = $2 WHERE username = $1`,
+      [username, phTimestamp]
     );
     return { success: true };
   } catch (error) {
