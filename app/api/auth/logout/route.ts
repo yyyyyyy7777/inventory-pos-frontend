@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
       
       await query(
         `INSERT INTO activities (id, timestamp, username, activity, details, category)
-         VALUES (gen_random_uuid(), NOW(), $1, $2, $3, $4)`,
+         VALUES (gen_random_uuid(), NOW() + INTERVAL '8 hours', $1, $2, $3, $4)`,
         [username, 'User logged out', `User ${username} logged out of the system`, 'employee']
       );
       console.log('Logout activity logged for:', username);
