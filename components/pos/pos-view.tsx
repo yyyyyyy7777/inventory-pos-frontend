@@ -9,6 +9,7 @@ import { Plus, Trash2, ShoppingCart } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useProducts, type Product } from "@/contexts/products-context"
 import { useSales, type SaleItem, type SalesRecord } from "@/contexts/sales-context"
+import { useFormAutosave } from "@/contexts/autosave-context"
 
 // Type for receipt display (different from SaleItem)
 interface ReceiptItem {
@@ -93,6 +94,22 @@ export function POSView({ cabinet, username }: POSViewProps) {
   const [discountConfirmDialog, setDiscountConfirmDialog] = useState(false)
   const [discountTimeouts, setDiscountTimeouts] = useState<Map<string, NodeJS.Timeout>>(new Map())
   const [onShelfStock, setOnShelfStock] = useState<Record<string, number>>({})
+
+  // Autosave cart state
+  const { showRestorePrompt, acceptRestore, rejectRestore } = useFormAutosave(
+    `pos-cart-${cabinet}`,
+    { cart, searchQuery, selectedCategory, saleLocation, paymentMethod },
+    (restoredData) => {
+      if (restoredData.cart && restoredData.cart.length > 0) {
+        setCart(restoredData.cart)
+        setSearchQuery(restoredData.searchQuery || "")
+        setSelectedCategory(restoredData.selectedCategory || "All Categories")
+        setSaleLocation(restoredData.saleLocation || 'physical')
+        setPaymentMethod(restoredData.paymentMethod || 'cash')
+        addToast("Restored your previous cart session", "info")
+      }
+    }
+  )
 
   // Update time every second
   useEffect(() => {
@@ -717,6 +734,10 @@ export function POSView({ cabinet, username }: POSViewProps) {
       setReferenceNumber(''); // Reset reference number after successful sale
       setCashAmount(''); // Reset cash amount after successful sale
       setChange(0); // Reset change after successful sale
+      
+      // Clear autosave data for this cart
+      rejectRestore();
+      
       addToast("Sale completed successfully!", "success");
       
       // Log the sale activity with detailed information
