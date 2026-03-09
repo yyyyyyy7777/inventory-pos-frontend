@@ -63,12 +63,9 @@ export async function verifyEmployee(username: string, password: string) {
 
 export async function updateLastLogin(username: string) {
   try {
-    // Use Philippines timezone (UTC+8) - set session timezone for this query
+    // Philippines is UTC+8. Add 8 hours to server time to get Manila time.
     await query(
-      `SET TIME ZONE 'Asia/Manila'`
-    );
-    await query(
-      `UPDATE employee SET "lastLogin" = CURRENT_TIMESTAMP WHERE username = $1`,
+      `UPDATE employee SET "lastLogin" = NOW() + INTERVAL '8 hours' WHERE username = $1`,
       [username]
     );
     return { success: true };
@@ -80,12 +77,9 @@ export async function updateLastLogin(username: string) {
 
 export async function updateLastLogout(username: string) {
   try {
-    // Use Philippines timezone (UTC+8) - set session timezone for this query
+    // Philippines is UTC+8. Add 8 hours to server time to get Manila time.
     await query(
-      `SET TIME ZONE 'Asia/Manila'`
-    );
-    await query(
-      `UPDATE employee SET "lastLogout" = CURRENT_TIMESTAMP WHERE username = $1`,
+      `UPDATE employee SET "lastLogout" = NOW() + INTERVAL '8 hours' WHERE username = $1`,
       [username]
     );
     return { success: true };
