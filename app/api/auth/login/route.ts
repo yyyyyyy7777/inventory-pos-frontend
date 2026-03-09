@@ -39,6 +39,25 @@ export async function POST(request: NextRequest) {
     console.log('updateLastLogin result:', loginResult);
     console.log('Last login updated for:', username);
     
+    // Log activity
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_APP_URL || ''}/api/activities`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          username: username,
+          activity: 'User logged in',
+          details: `User ${username} (${employee.role}) logged into the system`,
+          category: 'system'
+        }),
+      });
+    } catch (activityError) {
+      console.error('Failed to log login activity:', activityError);
+      // Don't fail login if activity logging fails
+    }
+    
     // Refresh employees to update context
     console.log('Calling refreshEmployees...');
     const refreshResult = await refreshEmployees();
