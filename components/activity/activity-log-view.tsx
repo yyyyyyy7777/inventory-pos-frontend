@@ -140,7 +140,8 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
   }
 
   const formatTimestamp = (timestamp: string) => {
-    const date = new Date(timestamp);
+    // Add 8 hours for Philippines timezone (UTC+8)
+    const date = new Date(new Date(timestamp).getTime() + (8 * 60 * 60 * 1000));
     return date.toLocaleString('en-US', {
       month: 'short',
       day: 'numeric',
