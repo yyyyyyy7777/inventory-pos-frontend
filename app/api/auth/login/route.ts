@@ -42,6 +42,20 @@ export async function POST(request: NextRequest) {
     
     // Log activity directly to database
     try {
+      // Ensure activities table exists first
+      await query(`
+        CREATE TABLE IF NOT EXISTS activities (
+          id VARCHAR(50) PRIMARY KEY,
+          timestamp TIMESTAMP NOT NULL,
+          username VARCHAR(100) NOT NULL,
+          activity TEXT NOT NULL,
+          details TEXT NOT NULL,
+          category VARCHAR(20) NOT NULL CHECK (category IN ('product', 'sale', 'employee', 'system', 'inventory')),
+          cabinet VARCHAR(50),
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      
       await query(
         `INSERT INTO activities (id, timestamp, username, activity, details, category)
          VALUES (gen_random_uuid(), NOW(), $1, $2, $3, $4)`,
