@@ -63,14 +63,10 @@ export async function verifyEmployee(username: string, password: string) {
 
 export async function updateLastLogin(username: string) {
   try {
-    // Get current Philippines time (UTC+8)
-    const now = new Date();
-    const phTime = new Date(now.getTime() + (8 * 60 * 60 * 1000)); // Add 8 hours
-    const phTimestamp = phTime.toISOString().replace('T', ' ').replace('Z', '');
-    
+    // Store as UTC - display will convert to Manila timezone
     await query(
-      `UPDATE employee SET "lastLogin" = $2 WHERE username = $1`,
-      [username, phTimestamp]
+      `UPDATE employee SET "lastLogin" = NOW() WHERE username = $1`,
+      [username]
     );
     return { success: true };
   } catch (error) {
@@ -81,14 +77,10 @@ export async function updateLastLogin(username: string) {
 
 export async function updateLastLogout(username: string) {
   try {
-    // Get current Philippines time (UTC+8)
-    const now = new Date();
-    const phTime = new Date(now.getTime() + (8 * 60 * 60 * 1000)); // Add 8 hours
-    const phTimestamp = phTime.toISOString().replace('T', ' ').replace('Z', '');
-    
+    // Store as UTC - display will convert to Manila timezone  
     await query(
-      `UPDATE employee SET "lastLogout" = $2 WHERE username = $1`,
-      [username, phTimestamp]
+      `UPDATE employee SET "lastLogout" = NOW() WHERE username = $1`,
+      [username]
     );
     return { success: true };
   } catch (error) {
@@ -106,21 +98,19 @@ export async function getAllEmployees() {
     return rows.map(employee => ({
       ...employee,
       joinDate: new Date(employee.joinDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-      lastLogin: employee.lastLogin ? new Date(new Date(employee.lastLogin).getTime()).toLocaleString('en-US', { 
+      lastLogin: employee.lastLogin ? new Date(new Date(employee.lastLogin).getTime() + (8 * 60 * 60 * 1000)).toLocaleString('en-US', { 
         month: 'short', 
         day: 'numeric', 
         year: 'numeric',
         hour: '2-digit',
-        minute: '2-digit',
-        timeZone: 'Asia/Manila'
+        minute: '2-digit'
       }) : 'Never',
-      lastLogout: employee.lastLogout ? new Date(new Date(employee.lastLogout).getTime()).toLocaleString('en-US', { 
+      lastLogout: employee.lastLogout ? new Date(new Date(employee.lastLogout).getTime() + (8 * 60 * 60 * 1000)).toLocaleString('en-US', { 
         month: 'short', 
         day: 'numeric', 
         year: 'numeric',
         hour: '2-digit',
-        minute: '2-digit',
-        timeZone: 'Asia/Manila'
+        minute: '2-digit'
       }) : 'Never',
       createdAt: employee.createdAt,
       updatedAt: employee.updatedAt
