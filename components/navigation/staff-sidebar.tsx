@@ -1,14 +1,9 @@
 "use client"
 
-<<<<<<< HEAD
-import { Button } from "@/components/ui/button"
-import { LogOut } from "lucide-react"
-=======
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { LogOut } from "lucide-react"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
->>>>>>> clean-branch
 
 interface StaffSidebarProps {
   currentView: string
@@ -18,10 +13,7 @@ interface StaffSidebarProps {
 }
 
 export function StaffSidebar({ currentView, onViewChange, onLogout, username }: StaffSidebarProps) {
-<<<<<<< HEAD
-=======
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
->>>>>>> clean-branch
   const menuItems = [
     { id: "dashboard", label: "Dashboard", icon: "📊" },
     { id: "inventory", label: "Inventory", icon: "🗂️" },
@@ -68,18 +60,12 @@ export function StaffSidebar({ currentView, onViewChange, onLogout, username }: 
           <p className="text-sm font-semibold text-sidebar-foreground">{username}</p>
         </div>
         <Button
-<<<<<<< HEAD
-          onClick={onLogout}
-=======
           onClick={() => setShowLogoutConfirm(true)}
->>>>>>> clean-branch
           className="w-full bg-destructive hover:bg-destructive/90 text-destructive-foreground flex items-center gap-2"
         >
           <LogOut size={16} />
           Logout
         </Button>
-<<<<<<< HEAD
-=======
 
         <ConfirmDialog
           open={showLogoutConfirm}
@@ -108,7 +94,6 @@ export function StaffSidebar({ currentView, onViewChange, onLogout, username }: 
           }}
           onCancel={() => setShowLogoutConfirm(false)}
         />
->>>>>>> clean-branch
       </div>
     </div>
   )

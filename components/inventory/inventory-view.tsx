@@ -6,11 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-<<<<<<< HEAD
-import { Plus, Edit2, Trash2, ChevronDown, Search, Clock, Filter, Package, Calendar, DollarSign, ArrowUpDown, Zap, AlertTriangle, XCircle, Check, X, Printer, Download } from "lucide-react"
-=======
 import { Plus, Search, Package, Clock, Trash2, Edit2, Filter, X, Calendar, DollarSign, ArrowUpDown, Zap, Check, AlertTriangle, XCircle, Printer, Download, RefreshCw } from "lucide-react"
->>>>>>> clean-branch
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useProducts, type Product, type ProductLocation } from "@/contexts/products-context"
 import { useToast } from "@/contexts/toast-context"
@@ -581,13 +577,10 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
       validationErrors.push('Cost per unit cannot be negative')
     }
 
-<<<<<<< HEAD
-=======
     if (newStock.costPerUnit === 0) {
       validationErrors.push('Cost per unit cannot be 0')
     }
 
->>>>>>> clean-branch
     if (newStock.costPerUnit > 999999.99) {
       validationErrors.push('Cost per unit cannot exceed $999,999.99')
     }
@@ -1487,22 +1480,11 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                       />
                     </div>
                     <div>
-<<<<<<< HEAD
-                      <label className="text-sm font-medium text-green-700 mb-1 block">Cost per Unit (₱)</label>
-=======
                       <label className="text-sm font-medium text-green-700 mb-1 block">Cost per Unit (₱) *</label>
->>>>>>> clean-branch
                       <Input
                         type="number"
                         value={newStock.costPerUnit}
                         onChange={(e) => setNewStock({ ...newStock, costPerUnit: parseFloat(e.target.value) || 0 })}
-<<<<<<< HEAD
-                        min="0"
-                        step="0.01"
-                        placeholder="0.00"
-                        className="border-green-300 focus:border-green-500"
-                      />
-=======
                         min="0.01"
                         step="0.01"
                         placeholder="Enter cost per unit (required)"
@@ -1510,7 +1492,6 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                         required
                       />
                       <p className="text-xs text-gray-500 mt-1">Enter the actual cost price per unit (cannot be 0)</p>
->>>>>>> clean-branch
                     </div>
                   </div>
                   <div>
@@ -1628,32 +1609,22 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                             {/* Status */}
                             <div className="flex items-center gap-2">
                               <div className={`w-2 h-2 rounded-full ${
-<<<<<<< HEAD
-                                index === 0 ? 'bg-green-500' : 'bg-blue-500'
-=======
                                 Number(addition.quantity) === 0 
                                   ? 'bg-red-500' 
                                   : addition.status === 'on-shelf' 
                                     ? 'bg-green-500' 
                                     : 'bg-blue-500'
->>>>>>> clean-branch
                               }`} />
                               {isUpdatingStatus === addition.id ? (
                                 <div className="flex items-center gap-2">
                                   <Spinner className="size-3" />
                                   <span className="text-sm text-gray-500">Updating...</span>
                                 </div>
-<<<<<<< HEAD
-                              ) : (
-                                <select
-                                  value={index === 0 ? 'on-shelf' : 'in-storage'}
-=======
                               ) : Number(addition.quantity) === 0 ? (
                                 <span className="text-sm text-red-400 italic">Unavailable</span>
                               ) : (
                                 <select
                                   value={addition.status || 'in-storage'}
->>>>>>> clean-branch
                                   onChange={(e) => handleUpdateBatchStatus(addition.id, e.target.value)}
                                   className="text-sm text-gray-600 bg-transparent border-0 focus:outline-none focus:ring-0 cursor-pointer"
                                 >
@@ -1686,15 +1657,6 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                     })}
                     
                     {/* Summary Card */}
-<<<<<<< HEAD
-                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <p className="text-sm text-blue-600 font-medium">Total Stock</p>
-                          <p className="text-xs text-blue-500">All batches combined</p>
-                        </div>
-                        <span className="text-2xl font-bold text-blue-700">
-=======
                     <div className="bg-gradient-to-r from-[oklch(0.2_0.02_280)] to-[oklch(0.15_0.02_280)] border border-[oklch(0.3_0.05_280)] rounded-lg p-4">
                       <div className="flex justify-between items-center">
                         <div>
@@ -1702,7 +1664,6 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                           <p className="text-xs text-[oklch(0.7_0.03_280)]">All batches combined</p>
                         </div>
                         <span className="text-2xl font-bold text-white">
->>>>>>> clean-branch
                           {Number(selectedProductForStock?.stock || 0)} units
                         </span>
                       </div>

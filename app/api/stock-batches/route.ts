@@ -95,8 +95,6 @@ export async function POST(request: NextRequest) {
       costPerUnit: costPerUnit ? parseFloat(costPerUnit) : undefined,
     });
 
-<<<<<<< HEAD
-=======
     // AUTO BATCH TRANSFER: Check if there's a depleted batch that should be transferred
     console.log('=== CHECKING BATCH TRANSFER AFTER RESTOCK ===');
     
@@ -164,7 +162,6 @@ export async function POST(request: NextRequest) {
       console.log('✅ No depleted on-shelf batches found, no transfer needed');
     }
 
->>>>>>> clean-branch
     // Update the product's stock
     await query(
       'UPDATE product SET stock = stock + $1, "updatedAt" = NOW() WHERE id = $2',

@@ -1,9 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-<<<<<<< HEAD
-import { verifyEmployee } from '@/lib/pg-direct';
-=======
 import { verifyEmployee, updateLastLogin, refreshEmployees } from '@/lib/pg-direct';
->>>>>>> clean-branch
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,14 +23,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-<<<<<<< HEAD
     if (employee.status !== 'active') {
       return NextResponse.json(
         { error: 'Account is inactive' },
         { status: 401 }
       );
     }
-=======
+
     console.log('Login successful for user:', username);
     console.log('Employee data:', employee);
 
@@ -48,7 +43,6 @@ export async function POST(request: NextRequest) {
     console.log('Calling refreshEmployees...');
     const refreshResult = await refreshEmployees();
     console.log('Refresh result:', refreshResult);
->>>>>>> clean-branch
 
     return NextResponse.json({
       user: {

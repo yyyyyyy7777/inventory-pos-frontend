@@ -52,16 +52,6 @@ export function StaffDashboard({ username, onLogout }: StaffDashboardProps) {
   }
 
   return (
-<<<<<<< HEAD
-    <div className="flex h-screen bg-background">
-      <StaffSidebar currentView={currentView} onViewChange={setCurrentView} onLogout={onLogout} username={username} />
-      <div className="flex-1 overflow-auto">
-        <div className="p-8">
-          <div className="flex items-center justify-between mb-8 bg-primary/10 rounded-lg p-6 border border-primary/30">
-            <div>
-              <h1 className="text-4xl font-bold text-foreground mb-1">{getHeaderTitle()}</h1>
-              <p className="text-muted-foreground">{getHeaderDescription()}</p>
-=======
     <div className="flex h-screen bg-background relative mobile-overflow-hidden">
       <StaffSidebar currentView={currentView} onViewChange={setCurrentView} onLogout={onLogout} username={username} />
       <div className="flex-1 overflow-auto lg:ml-0">
@@ -70,7 +60,6 @@ export function StaffDashboard({ username, onLogout }: StaffDashboardProps) {
             <div>
               <h1 className="text-2xl lg:text-4xl font-bold text-foreground mb-1">{getHeaderTitle()}</h1>
               <p className="text-sm lg:text-base text-muted-foreground">{getHeaderDescription()}</p>
->>>>>>> clean-branch
             </div>
             <CabinetSelector selectedCabinet={selectedCabinet} onSelectCabinet={setSelectedCabinet} />
           </div>

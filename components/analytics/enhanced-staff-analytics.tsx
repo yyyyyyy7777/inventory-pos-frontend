@@ -78,22 +78,11 @@ const StaffMetricCard = ({
     value: number;
     isPositive: boolean;
   };
-<<<<<<< HEAD
-  color?: "primary" | "green" | "blue" | "orange";
-=======
   color?: "primary" | "green" | "blue" | "orange" | "maroon";
->>>>>>> clean-branch
 }) => {
   const getColorClasses = () => {
     switch (color) {
       case "green":
-<<<<<<< HEAD
-        return "bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200 text-emerald-900";
-      case "blue":
-        return "bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 text-blue-900";
-      case "orange":
-        return "bg-gradient-to-br from-amber-50 to-amber-100 border-amber-200 text-amber-900";
-=======
         return "bg-gradient-to-br from-[oklch(0.25_0.15_145)] to-[oklch(0.35_0.18_145)] border-[oklch(0.3_0.12_145)] text-white";
       case "blue":
         return "bg-gradient-to-br from-[oklch(0.25_0.15_280)] to-[oklch(0.35_0.18_280)] border-[oklch(0.3_0.12_280)] text-white";
@@ -101,7 +90,6 @@ const StaffMetricCard = ({
         return "bg-gradient-to-br from-[oklch(0.6_0.15_85)] to-[oklch(0.7_0.12_90)] border-[oklch(0.65_0.1_87)] text-white";
       case "maroon":
         return "bg-gradient-to-br from-[oklch(0.3_0.15_25)] to-[oklch(0.4_0.12_30)] border-[oklch(0.35_0.1_27)] text-white";
->>>>>>> clean-branch
       default:
         return "bg-gradient-to-br from-violet-50 to-purple-100 border-violet-200 text-violet-900";
     }
@@ -110,13 +98,6 @@ const StaffMetricCard = ({
   const getIconBg = () => {
     switch (color) {
       case "green":
-<<<<<<< HEAD
-        return "bg-emerald-200 text-emerald-700";
-      case "blue":
-        return "bg-blue-200 text-blue-700";
-      case "orange":
-        return "bg-amber-200 text-amber-700";
-=======
         return "bg-[oklch(0.5_0.15_145)] text-white";
       case "blue":
         return "bg-[oklch(0.5_0.15_280)] text-white";
@@ -124,7 +105,6 @@ const StaffMetricCard = ({
         return "bg-[oklch(0.65_0.12_85)] text-white";
       case "maroon":
         return "bg-[oklch(0.55_0.1_25)] text-white";
->>>>>>> clean-branch
       default:
         return "bg-violet-200 text-violet-700";
     }
@@ -135,16 +115,6 @@ const StaffMetricCard = ({
   };
 
   return (
-<<<<<<< HEAD
-    <Card className={`relative overflow-hidden border-2 ${getColorClasses()} shadow-sm hover:shadow-md transition-all duration-300`}>
-      <CardContent className="pt-6 relative">
-        <div className="flex items-start justify-between">
-          <div className="space-y-2">
-            <p className="text-xs font-medium uppercase tracking-wide opacity-80">
-              {title}
-            </p>
-            <p className="text-3xl font-bold">
-=======
     <Card className={`relative overflow-hidden border-2 shadow-lg hover:shadow-xl transition-all duration-300 ${getColorClasses()}`}>
       <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-white/20 to-transparent rounded-bl-full" />
       <CardContent className="pt-4 sm:pt-6 relative">
@@ -154,7 +124,6 @@ const StaffMetricCard = ({
               {title}
             </p>
             <p className="text-2xl sm:text-3xl font-bold">
->>>>>>> clean-branch
               {value}
             </p>
             {trend && (
@@ -174,15 +143,10 @@ const StaffMetricCard = ({
               </p>
             )}
           </div>
-<<<<<<< HEAD
-          <div className={`rounded-full ${getIconBg()} p-3`}>
-            {icon}
-=======
           <div className={`rounded-full p-2 sm:p-3 ${getIconBg()} flex-shrink-0`}>
             <div className="h-5 w-5 sm:h-6 sm:w-6">
               {icon}
             </div>
->>>>>>> clean-branch
           </div>
         </div>
       </CardContent>
@@ -346,21 +310,13 @@ export function EnhancedStaffAnalytics({ cabinet, username, onViewChange }: Staf
       </Card>
 
       {/* Key Metrics Cards */}
-<<<<<<< HEAD
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-=======
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
->>>>>>> clean-branch
         <StaffMetricCard
           title="Today's Sales"
           value={formatCurrency(summary.todayRevenue)}
           icon={<DollarSign className="h-6 w-6" />}
           description={`${summary.todayTransactions} transactions`}
-<<<<<<< HEAD
-          color="green"
-=======
           color="blue"
->>>>>>> clean-branch
         />
         
         <StaffMetricCard
@@ -368,11 +324,7 @@ export function EnhancedStaffAnalytics({ cabinet, username, onViewChange }: Staf
           value={summary.todayItems.toLocaleString()}
           icon={<Package className="h-6 w-6" />}
           description="Units sold"
-<<<<<<< HEAD
-          color="blue"
-=======
           color="orange"
->>>>>>> clean-branch
         />
         
         <StaffMetricCard
@@ -380,11 +332,7 @@ export function EnhancedStaffAnalytics({ cabinet, username, onViewChange }: Staf
           value={formatCurrency(summary.weeklyRevenue)}
           icon={<TrendingUp className="h-6 w-6" />}
           description={`${summary.weeklyTransactions} transactions this week`}
-<<<<<<< HEAD
-          color="orange"
-=======
           color="green"
->>>>>>> clean-branch
         />
         
         <StaffMetricCard
@@ -392,11 +340,7 @@ export function EnhancedStaffAnalytics({ cabinet, username, onViewChange }: Staf
           value={lowStockProducts.length}
           icon={<ShoppingCart className="h-6 w-6" />}
           description={lowStockProducts.length > 0 ? "Action needed" : "All good"}
-<<<<<<< HEAD
-          color="primary"
-=======
           color="maroon"
->>>>>>> clean-branch
         />
       </div>
 
@@ -464,11 +408,7 @@ export function EnhancedStaffAnalytics({ cabinet, username, onViewChange }: Staf
             <div className="space-y-3">
               <Button 
                 onClick={() => handleQuickAction('pos')}
-<<<<<<< HEAD
-                className="w-full justify-start h-auto p-4 bg-violet-600 hover:bg-violet-700 text-white"
-=======
                 className="w-full justify-start h-auto p-4 bg-[oklch(0.35_0.2_280)] hover:bg-[oklch(0.45_0.18_280)] text-white"
->>>>>>> clean-branch
               >
                 <Plus className="h-4 w-4 mr-3" />
                 <div className="text-left">
@@ -480,15 +420,9 @@ export function EnhancedStaffAnalytics({ cabinet, username, onViewChange }: Staf
               <Button 
                 onClick={() => handleQuickAction('inventory')}
                 variant="outline" 
-<<<<<<< HEAD
-                className="w-full justify-start h-auto p-4 border-violet-200 hover:bg-violet-50 hover:border-violet-300"
-              >
-                <Eye className="h-4 w-4 mr-3 text-violet-600" />
-=======
                 className="w-full justify-start h-auto p-4 border-[oklch(0.3_0.05_280)] hover:bg-[oklch(0.25_0.02_280)] hover:border-[oklch(0.35_0.1_280)]"
               >
                 <Eye className="h-4 w-4 mr-3 text-[oklch(0.65_0.22_280)]" />
->>>>>>> clean-branch
                 <div className="text-left">
                   <p className="font-medium">Check Inventory</p>
                   <p className="text-xs text-muted-foreground">View stock levels</p>
@@ -498,15 +432,9 @@ export function EnhancedStaffAnalytics({ cabinet, username, onViewChange }: Staf
               <Button 
                 onClick={() => handleQuickAction('sales')}
                 variant="outline" 
-<<<<<<< HEAD
-                className="w-full justify-start h-auto p-4 border-violet-200 hover:bg-violet-50 hover:border-violet-300"
-              >
-                <BarChart3 className="h-4 w-4 mr-3 text-violet-600" />
-=======
                 className="w-full justify-start h-auto p-4 border-[oklch(0.3_0.05_280)] hover:bg-[oklch(0.25_0.02_280)] hover:border-[oklch(0.35_0.1_280)]"
               >
                 <BarChart3 className="h-4 w-4 mr-3 text-[oklch(0.65_0.22_280)]" />
->>>>>>> clean-branch
                 <div className="text-left">
                   <p className="font-medium">View Sales History</p>
                   <p className="text-xs text-muted-foreground">Today's transactions</p>

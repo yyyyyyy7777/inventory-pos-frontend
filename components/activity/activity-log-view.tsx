@@ -133,11 +133,7 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
 
   const getActivityColor = (activity: string) => {
     if (activity.includes("Added") || activity.includes("Created")) return "text-green-600 bg-green-50"
-<<<<<<< HEAD
-    if (activity.includes("Updated") || activity.includes("Modified")) return "text-blue-600 bg-blue-50"
-=======
     if (activity.includes("Updated") || activity.includes("Modified")) return "text-violet-600 bg-violet-50"
->>>>>>> clean-branch
     if (activity.includes("Deleted") || activity.includes("Removed")) return "text-red-600 bg-red-50"
     if (activity.includes("Processed")) return "text-purple-600 bg-purple-50"
     return "text-gray-600 bg-gray-50"
@@ -162,15 +158,9 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
         <div className="w-full lg:w-80 bg-white border rounded-lg shadow-sm p-3 h-fit lg:sticky lg:top-3 order-1 lg:order-1 mb-4 lg:mb-0">
             <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-200">
               <div className="flex items-center gap-2">
-<<<<<<< HEAD
-                <Filter size={14} className="text-blue-600" />
-                <h3 className="font-semibold text-gray-800 text-sm">Activity Filters</h3>
-                <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full text-xs">
-=======
                 <Filter size={14} className="text-violet-600" />
                 <h3 className="font-semibold text-gray-800 text-sm">Activity Filters</h3>
                 <span className="bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full text-xs">
->>>>>>> clean-branch
                   {[selectedCategory !== "all" ? 1 : 0, selectedCabinet !== "all" ? 1 : 0, (dateFilter.startDate || dateFilter.endDate) ? 1 : 0, dateFilter.year !== "all" ? 1 : 0].reduce((a, b) => a + b, 0)}
                 </span>
               </div>
@@ -182,17 +172,10 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
             <div className="space-y-3">
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-gray-700 flex items-center gap-1">
-<<<<<<< HEAD
-                  <Activity size={10} className="text-blue-600" /> Activity Category
-                </label>
-                <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                  <SelectTrigger className="h-7 border-2 focus:border-blue-500 text-xs">
-=======
                   <Activity size={10} className="text-violet-600" /> Activity Category
                 </label>
                 <Select value={selectedCategory} onValueChange={setSelectedCategory}>
                   <SelectTrigger className="h-7 border-2 focus:border-violet-500 text-xs">
->>>>>>> clean-branch
                     <SelectValue placeholder="All" />
                   </SelectTrigger>
                   <SelectContent>
@@ -400,22 +383,14 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
               <Button
                 variant="outline"
                 onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-<<<<<<< HEAD
-                className="h-8 px-3 rounded-md border-2 border-blue-300 hover:bg-blue-50 text-blue-700 text-xs font-medium"
-=======
                 className="h-8 px-3 rounded-md border-2 border-violet-300 hover:bg-violet-50 text-violet-700 text-xs font-medium"
->>>>>>> clean-branch
                 title="Toggle filters panel"
               >
                 <div className="flex items-center gap-1">
                   <Filter size={12} />
                   Filters
                   {(selectedCategory !== "all" || selectedCabinet !== "all" || (dateFilter.startDate || dateFilter.endDate) || dateFilter.year !== "all") && (
-<<<<<<< HEAD
-                    <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
-=======
                     <span className="w-2 h-2 bg-violet-500 rounded-full animate-pulse"></span>
->>>>>>> clean-branch
                   )}
                 </div>
               </Button>

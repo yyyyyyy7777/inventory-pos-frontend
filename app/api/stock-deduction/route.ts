@@ -1,14 +1,3 @@
-<<<<<<< HEAD
-import { NextResponse } from 'next/server';
-import { query } from '@/lib/pg-direct';
-
-// GET handler for testing
-export async function GET(request: Request) {
-  return NextResponse.json({ status: 'Stock deduction API is working' });
-}
-
-export async function POST(request: Request) {
-=======
 import { NextResponse, NextRequest } from 'next/server';
 import { query } from '@/lib/pg-direct';
 
@@ -31,15 +20,11 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   console.log('=== STOCK DEDUCTION API CALLED ===');
   
->>>>>>> clean-branch
   try {
     let body;
     try {
       body = await request.json();
-<<<<<<< HEAD
-=======
       console.log('Request body parsed successfully:', body);
->>>>>>> clean-branch
     } catch (parseError) {
       console.error('Failed to parse request body:', parseError);
       return NextResponse.json(
@@ -55,11 +40,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid body' }, { status: 400 });
     }
     
-<<<<<<< HEAD
-    const { productId, quantity, cabinet } = body;
-=======
     const { productId, quantity, cabinet, notes } = body;
->>>>>>> clean-branch
     
     if (!productId) {
       return NextResponse.json({ error: 'Missing productId' }, { status: 400 });
@@ -71,14 +52,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing cabinet' }, { status: 400 });
     }
 
-<<<<<<< HEAD
-    console.log('Stock deduction request:', { productId, quantity, cabinet });
-
-=======
     console.log('=== STOCK DEDUCTION API DEBUG ===');
     console.log('Request received:', { productId, quantity, cabinet, notes });
     
->>>>>>> clean-branch
     // Additional business logic validation
     if (quantity > 10000) {
       return NextResponse.json(
@@ -119,11 +95,6 @@ export async function POST(request: NextRequest) {
     const simpleProduct = simpleProductRows[0];
     console.log('Simple product data:', simpleProduct);
 
-<<<<<<< HEAD
-    // Now get the calculated stock from batches
-    const stockRows = await query(
-      'SELECT COALESCE(SUM(quantity), 0) as totalStock FROM stockbatch WHERE "productId" = $1 AND cabinet = $2',
-=======
     // CRITICAL FIX: First check ALL batches and handle transfers BEFORE any validation
     console.log('=== CRITICAL: CHECKING BATCHES BEFORE VALIDATION ===');
     
@@ -174,25 +145,17 @@ export async function POST(request: NextRequest) {
     const stockRows = await query(
       `SELECT COALESCE(SUM(quantity), 0) as totalStock FROM stockbatch 
        WHERE "productId" = $1 AND cabinet = $2 AND status IN ('on-shelf', 'in-storage')`,
->>>>>>> clean-branch
       [parseInt(productId), cabinet]
     ) as any[];
 
     console.log('Stock query result:', stockRows);
 
-<<<<<<< HEAD
-    const calculatedStock = (stockRows && stockRows.length > 0) ? parseInt(stockRows[0].totalStock) : 0;
-=======
     const calculatedStock = (stockRows && stockRows.length > 0) ? parseInt(stockRows[0].totalstock || stockRows[0].totalStock || 0) : 0;
->>>>>>> clean-branch
     const currentStock = calculatedStock || parseInt(simpleProduct.stock) || 0;
 
     console.log('Stock calculation:', { calculatedStock, productStock: simpleProduct.stock, currentStock });
     
-<<<<<<< HEAD
-=======
     // NOW validate stock (after all transfers)
->>>>>>> clean-branch
     if (currentStock < quantity) {
       return NextResponse.json(
         { error: `Insufficient stock for ${simpleProduct.name}. Available: ${currentStock}, Requested: ${quantity}` },
@@ -200,23 +163,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-<<<<<<< HEAD
-    // Implement proper FIFO stock deduction from existing batches
-    let availableBatches = await query(
-      'SELECT id, quantity FROM stockbatch WHERE "productId" = $1 AND cabinet = $2 AND quantity > 0 ORDER BY "batchDate" ASC',
-=======
     // Implement proper FIFO stock deduction from existing batches (include both on-shelf and in-storage)
     let availableBatches = await query(
       `SELECT id, quantity FROM stockbatch 
        WHERE "productId" = $1 AND cabinet = $2 AND quantity > 0 AND status IN ('on-shelf', 'in-storage') 
        ORDER BY "batchDate" ASC`,
->>>>>>> clean-branch
       [parseInt(productId), cabinet]
     ) as any[];
 
     console.log('Available batches:', availableBatches);
-<<<<<<< HEAD
-=======
     console.log('Batch details:');
     availableBatches.forEach((batch, index) => {
       console.log(`  Batch ${index + 1}: ID=${batch.id}, Quantity=${batch.quantity}`);
@@ -278,7 +233,6 @@ export async function POST(request: NextRequest) {
         console.log('Available batches after emergency transfer:', availableBatches);
       }
     }
->>>>>>> clean-branch
 
     // If no batches exist, create one from product stock and deduct from it
     if (!availableBatches || availableBatches.length === 0) {
@@ -316,11 +270,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-<<<<<<< HEAD
-    let remainingQuantity = quantity;
-    const batchesUsed: Array<{ id: number; quantity: number }> = [];
-
-=======
     // CONSOLIDATION: If there are multiple small batches, consolidate them
     if (availableBatches.length > 1) {
       console.log(`Found ${availableBatches.length} batches, checking if consolidation is needed`);
@@ -359,7 +308,6 @@ export async function POST(request: NextRequest) {
 
     console.log(`Starting FIFO deduction for quantity: ${quantity}`);
 
->>>>>>> clean-branch
     // FIFO deduction from batches
     for (const batch of availableBatches) {
       if (remainingQuantity <= 0) break;
@@ -367,11 +315,8 @@ export async function POST(request: NextRequest) {
       const deductQuantity = Math.min(remainingQuantity, batch.quantity);
       batchesUsed.push({ id: batch.id, quantity: deductQuantity });
       remainingQuantity -= deductQuantity;
-<<<<<<< HEAD
-=======
       
       console.log(`Batch ${batch.id}: Deducting ${deductQuantity}, remaining: ${remainingQuantity}`);
->>>>>>> clean-branch
     }
 
     if (remainingQuantity > 0) {
@@ -382,27 +327,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Update batches by deducting from them
-<<<<<<< HEAD
-    for (const usage of batchesUsed) {
-=======
     console.log('=== BATCH UPDATES ===');
     console.log('Batches to update:', batchesUsed);
     
     for (const usage of batchesUsed) {
       console.log(`Updating batch ${usage.id}: deducting ${usage.quantity}`);
->>>>>>> clean-branch
       await query(
         'UPDATE stockbatch SET quantity = quantity - $1, "updatedAt" = NOW() WHERE id = $2',
         [usage.quantity, usage.id]
       );
     }
 
-<<<<<<< HEAD
-    // Update the product's stock
-    await query(
-      'UPDATE product SET stock = stock - $1, "updatedAt" = NOW() WHERE id = $2',
-      [quantity, parseInt(productId)]
-=======
     // AUTO BATCH TRANSFER: Check if any batch hit 0 and transfer current status to next available
     console.log('=== CHECKING BATCH TRANSFER AFTER DEDUCTION ===');
     
@@ -483,19 +418,11 @@ export async function POST(request: NextRequest) {
     await query(
       'UPDATE product SET stock = $1, "updatedAt" = NOW() WHERE id = $2',
       [newTotalStock[0]?.total || 0, parseInt(productId)]
->>>>>>> clean-branch
     );
 
     return NextResponse.json({ 
       success: true, 
       message: `Deducted ${quantity} units from product ${simpleProduct.name}`,
-<<<<<<< HEAD
-      newStock: currentStock - quantity
-    });
-    
-  } catch (error: any) {
-    console.error('Error deducting stock:', error);
-=======
       newStock: newTotalStock[0]?.total || 0
     });
     
@@ -505,15 +432,11 @@ export async function POST(request: NextRequest) {
     console.error('Error message:', error?.message);
     console.error('Error stack:', error?.stack);
     
->>>>>>> clean-branch
     const errorMessage = error?.message || error?.toString() || '';
     
     // Check for JSON parsing errors
     if (errorMessage.includes('Unexpected token') || errorMessage.includes('JSON')) {
-<<<<<<< HEAD
-=======
       console.log('JSON parsing error detected');
->>>>>>> clean-branch
       return NextResponse.json(
         { error: 'Invalid JSON format in request body' },
         { status: 400 }
@@ -522,10 +445,7 @@ export async function POST(request: NextRequest) {
     
     // Check for column does not exist error
     if (errorMessage.includes('column') && errorMessage.includes('does not exist')) {
-<<<<<<< HEAD
-=======
       console.log('Database column error detected');
->>>>>>> clean-branch
       return NextResponse.json(
         { error: 'Database schema error: ' + errorMessage },
         { status: 500 }
@@ -534,10 +454,7 @@ export async function POST(request: NextRequest) {
     
     // Check for foreign key constraint violation
     if (errorMessage.includes('foreign key constraint') || errorMessage.includes('1452')) {
-<<<<<<< HEAD
-=======
       console.log('Foreign key constraint error detected');
->>>>>>> clean-branch
       return NextResponse.json(
         { error: 'Invalid Product ID. The specified product does not exist.' },
         { status: 400 }
@@ -546,18 +463,13 @@ export async function POST(request: NextRequest) {
     
     // Check for database constraint violations
     if (errorMessage.includes('CHECK constraint') || errorMessage.includes('3819')) {
-<<<<<<< HEAD
-=======
       console.log('Database constraint error detected');
->>>>>>> clean-branch
       return NextResponse.json(
         { error: 'Invalid data: Values violate database constraints.' },
         { status: 400 }
       );
     }
     
-<<<<<<< HEAD
-=======
     // Check for any other database errors
     if (errorMessage.includes('database') || errorMessage.includes('SQL') || errorMessage.includes('query')) {
       console.log('Database error detected:', errorMessage);
@@ -568,7 +480,6 @@ export async function POST(request: NextRequest) {
     }
     
     console.log('Unknown error type, returning generic error');
->>>>>>> clean-branch
     return NextResponse.json(
       { error: 'Failed to deduct stock', details: error.message },
       { status: 500 }
