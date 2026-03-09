@@ -62,14 +62,14 @@ export function AdminDashboard({ username, onLogout }: AdminDashboardProps) {
   }
 
   return (
-    <div className="flex h-screen bg-background relative mobile-overflow-hidden">
+    <div className="flex h-[100dvh] bg-background relative mobile-overflow-hidden overflow-hidden">
       <AdminSidebar currentView={currentView} onViewChange={setCurrentView} onLogout={onLogout} username={username} />
       <div className="flex-1 overflow-auto lg:ml-0">
         <div className="p-4 lg:p-8 pt-16 lg:pt-8 safe-area-top">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 lg:mb-8 bg-primary/10 rounded-lg p-4 lg:p-6 border border-primary/30 gap-4">
-            <div>
-              <h1 className="text-2xl lg:text-4xl font-bold text-foreground mb-1">{getHeaderTitle()}</h1>
-              <p className="text-sm lg:text-base text-muted-foreground">{getHeaderDescription()}</p>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 lg:mb-6 bg-primary/10 rounded-lg p-3 sm:p-4 lg:p-6 border border-primary/30 gap-3">
+            <div className="min-w-0 flex-1">
+              <h1 className="text-lg sm:text-xl lg:text-3xl font-bold text-foreground mb-1 truncate">{getHeaderTitle()}</h1>
+              <p className="text-xs sm:text-sm lg:text-base text-muted-foreground line-clamp-2">{getHeaderDescription()}</p>
             </div>
             {currentView !== "activity" && <CabinetSelector selectedCabinet={selectedCabinet} onSelectCabinet={setSelectedCabinet} />}
           </div>
