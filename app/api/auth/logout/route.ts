@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { updateLastLogout } from '@/lib/pg-direct';
+import { query } from '@/lib/pg-direct';
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,20 +23,14 @@ export async function POST(request: NextRequest) {
     console.log('updateLastLogout result:', result);
     console.log('Last logout updated for:', username);
 
-    // Log activity
+    // Log activity directly to database
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_APP_URL || ''}/api/activities`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          username: username,
-          activity: 'User logged out',
-          details: `User ${username} logged out of the system`,
-          category: 'system'
-        }),
-      });
+      await query(
+        `INSERT INTO activities (id, timestamp, username, activity, details, category)
+         VALUES (gen_random_uuid(), NOW(), $1, $2, $3, $4)`,
+        [username, 'User logged out', `User ${username} logged out of the system`, 'system']
+      );
+      console.log('Logout activity logged for:', username);
     } catch (activityError) {
       console.error('Failed to log logout activity:', activityError);
       // Don't fail logout if activity logging fails
