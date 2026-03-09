@@ -63,9 +63,12 @@ export async function verifyEmployee(username: string, password: string) {
 
 export async function updateLastLogin(username: string) {
   try {
-    // Use Philippines timezone (UTC+8 / Asia/Manila)
+    // Use Philippines timezone (UTC+8) - set session timezone for this query
     await query(
-      `UPDATE employee SET "lastLogin" = (NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Manila') WHERE username = $1`,
+      `SET TIME ZONE 'Asia/Manila'`
+    );
+    await query(
+      `UPDATE employee SET "lastLogin" = CURRENT_TIMESTAMP WHERE username = $1`,
       [username]
     );
     return { success: true };
@@ -77,9 +80,12 @@ export async function updateLastLogin(username: string) {
 
 export async function updateLastLogout(username: string) {
   try {
-    // Use Philippines timezone (UTC+8 / Asia/Manila)
+    // Use Philippines timezone (UTC+8) - set session timezone for this query
     await query(
-      `UPDATE employee SET "lastLogout" = (NOW() AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Manila') WHERE username = $1`,
+      `SET TIME ZONE 'Asia/Manila'`
+    );
+    await query(
+      `UPDATE employee SET "lastLogout" = CURRENT_TIMESTAMP WHERE username = $1`,
       [username]
     );
     return { success: true };
@@ -98,7 +104,7 @@ export async function getAllEmployees() {
     return rows.map(employee => ({
       ...employee,
       joinDate: new Date(employee.joinDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-      lastLogin: employee.lastLogin ? new Date(employee.lastLogin).toLocaleString('en-US', { 
+      lastLogin: employee.lastLogin ? new Date(new Date(employee.lastLogin).getTime()).toLocaleString('en-US', { 
         month: 'short', 
         day: 'numeric', 
         year: 'numeric',
@@ -106,7 +112,7 @@ export async function getAllEmployees() {
         minute: '2-digit',
         timeZone: 'Asia/Manila'
       }) : 'Never',
-      lastLogout: employee.lastLogout ? new Date(employee.lastLogout).toLocaleString('en-US', { 
+      lastLogout: employee.lastLogout ? new Date(new Date(employee.lastLogout).getTime()).toLocaleString('en-US', { 
         month: 'short', 
         day: 'numeric', 
         year: 'numeric',
