@@ -187,18 +187,18 @@ const MetricCard = ({
 
 export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps) {
   const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [analyticsLoading, setAnalyticsLoading] = useState(true);
   const [periodLoading, setPeriodLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [timePeriod, setTimePeriod] = useState<"weekly" | "monthly" | "quarterly" | "yearly">("weekly");
-  const { getProductsByCabinet } = useProducts();
+  const { getProductsByCabinet, loading: productsLoading } = useProducts();
 
   const fetchAnalytics = async (isPeriodChange = false) => {
     try {
       if (isPeriodChange) {
         setPeriodLoading(true);
       } else {
-        setLoading(true);
+        setAnalyticsLoading(true);
       }
       setError(null);
       const response = await fetch(`/api/analytics?cabinet=${cabinet}&period=${timePeriod}`);
@@ -219,7 +219,7 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
       if (isPeriodChange) {
         setPeriodLoading(false);
       } else {
-        setLoading(false);
+        setAnalyticsLoading(false);
       }
     }
   };
@@ -232,7 +232,7 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
     fetchAnalytics(true);
   }, [timePeriod]);
 
-  // Get low stock products
+  // Get low stock products (available immediately from context)
   const products = getProductsByCabinet(cabinet);
   const lowStockProducts = products
     .filter(product => product.stock < 20)
@@ -243,58 +243,7 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
     return { border: "border-orange-300", bg: "from-orange-50 to-orange-100/50", badge: "bg-orange-600", text: "text-orange-900", label: "LOW" };
   };
 
-  if (loading) {
-    return (
-      <div className="space-y-8">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
-          {[...Array(4)].map((_, i) => (
-            <Card key={i}>
-              <CardContent className="pt-6">
-                <Skeleton className="h-20 w-full" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 lg:gap-6">
-          {[...Array(2)].map((_, i) => (
-            <Card key={i}>
-              <CardContent className="pt-6">
-                <Skeleton className="h-80 w-full" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <Card className="border-red-200 bg-red-50">
-        <CardContent className="pt-6">
-          <div className="flex items-center gap-3">
-            <div className="rounded-full bg-red-100 p-2">
-              <TrendingDown className="h-5 w-5 text-red-600" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-red-900">Error loading analytics</h3>
-              <p className="text-sm text-red-700">{error}</p>
-            </div>
-            <Button onClick={() => fetchAnalytics()} variant="outline" size="sm" className="ml-auto">
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Retry
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (!analyticsData) {
-    return null;
-  }
-
-  const { summary, revenueData, topProducts } = analyticsData;
+  const summary = analyticsData?.summary;
 
   return (
     <div className="space-y-8">
@@ -332,47 +281,81 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
         </CardContent>
       </Card>
 
-      {/* Key Metrics Cards */}
+      {/* Key Metrics Cards - Show immediately with available data */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
+        {/* Total Sales Card */}
         <MetricCard
           title="Total Sales"
-          value={formatCurrency(summary.totalRevenue)}
-          change={summary.revenueGrowth}
-          changeType={summary.revenueGrowth >= 0 ? 'increase' : 'decrease'}
+          value={analyticsLoading ? "..." : formatCurrency(summary?.totalRevenue || 0)}
+          change={summary?.revenueGrowth}
+          changeType={summary?.revenueGrowth >= 0 ? 'increase' : 'decrease'}
           icon={<DollarSign className="h-6 w-6" />}
-          description={`${summary.totalTransactions} total transactions`}
+          description={analyticsLoading ? "Loading..." : `${summary?.totalTransactions || 0} total transactions`}
           color="green"
         />
         
+        {/* Today's Sales Card */}
         <MetricCard
           title="Today's Sales"
-          value={formatCurrency(summary.todayRevenue)}
+          value={analyticsLoading ? "..." : formatCurrency(summary?.todayRevenue || 0)}
           icon={<TrendingUp className="h-6 w-6" />}
-          description={`${summary.todayTransactions} transactions today`}
+          description={analyticsLoading ? "Loading..." : `${summary?.todayTransactions || 0} transactions today`}
           color="blue"
         />
         
+        {/* Products Sold Card */}
         <MetricCard
           title="Products Sold"
-          value={summary.totalItems.toLocaleString()}
+          value={analyticsLoading ? "..." : (summary?.totalItems || 0).toLocaleString()}
           icon={<Package className="h-6 w-6" />}
-          description={`Average sale: ${formatCurrency(summary.avgTransactionValue)}`}
+          description={analyticsLoading ? "Loading..." : `Average sale: ${formatCurrency(summary?.avgTransactionValue || 0)}`}
           color="orange"
         />
         
+        {/* Low Stock Items Card - Shows immediately from products context */}
         <MetricCard
           title="Low Stock Items"
-          value={lowStockProducts.length}
+          value={productsLoading ? "..." : lowStockProducts.length}
           icon={<AlertTriangle className="h-6 w-6" />}
           description={lowStockProducts.length > 0 ? "Action needed" : "All good"}
           color="maroon"
         />
       </div>
 
-      {/* Charts Section */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 lg:gap-6">
-        {/* Sales Performance */}
-        <Card className="bg-card/60 border border-primary/10 shadow-sm backdrop-blur-sm">
+      {/* Charts Section - Show loading state only for charts */}
+      {analyticsLoading ? (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 lg:gap-6">
+          {[...Array(2)].map((_, i) => (
+            <Card key={i}>
+              <CardContent className="pt-6">
+                <Skeleton className="h-80 w-full" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : error ? (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="rounded-full bg-red-100 p-2">
+                <TrendingDown className="h-5 w-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-red-900">Error loading analytics</h3>
+                <p className="text-sm text-red-700">{error}</p>
+              </div>
+              <Button onClick={() => fetchAnalytics()} variant="outline" size="sm" className="ml-auto">
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Retry
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : !analyticsData ? null : (
+        <>
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 lg:gap-6">
+            {/* Sales Performance */}
+            <Card className="bg-card/60 border border-primary/10 shadow-sm backdrop-blur-sm">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
