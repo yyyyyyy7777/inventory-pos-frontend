@@ -1,6 +1,6 @@
 "use client"
 
-import React, { createContext, useContext, useState, useEffect } from 'react'
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
 
 interface Activity {
   id: string
@@ -38,29 +38,52 @@ interface ActivityProviderProps {
 export function ActivityProvider({ children }: ActivityProviderProps) {
   const [activities, setActivities] = useState<Activity[]>([])
   const [loading, setLoading] = useState(true)
+  const [lastFetchTime, setLastFetchTime] = useState<Date | null>(null)
 
   // Fetch activities from database
-  const fetchActivities = async () => {
+  const fetchActivities = useCallback(async (showLoading = true) => {
     try {
-      setLoading(true)
+      if (showLoading) setLoading(true)
       const response = await fetch('/api/activities?limit=1000')
       if (response.ok) {
         const data = await response.json()
         setActivities(data)
+        setLastFetchTime(new Date())
       } else {
         console.error('Failed to fetch activities from database')
       }
     } catch (error) {
       console.error('Error fetching activities:', error)
     } finally {
-      setLoading(false)
+      if (showLoading) setLoading(false)
     }
-  }
+  }, [])
 
   // Load activities on mount
   useEffect(() => {
     fetchActivities()
-  }, [])
+  }, [fetchActivities])
+
+  // Auto-refresh activities every 5 seconds (background polling)
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      fetchActivities(false) // Don't show loading spinner for background updates
+    }, 5000)
+
+    return () => clearInterval(intervalId)
+  }, [fetchActivities])
+
+  // Listen for visibility change (when user returns to tab)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchActivities(false) // Refresh when user returns to tab
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [fetchActivities])
 
   // Add activity to database
   const addActivity = async (activity: Omit<Activity, 'id' | 'timestamp' | 'created_at'>) => {

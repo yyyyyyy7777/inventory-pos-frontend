@@ -140,8 +140,8 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
   }
 
   const formatTimestamp = (timestamp: string) => {
-    // Add 8 hours for Philippines timezone (UTC+8)
-    const date = new Date(new Date(timestamp).getTime() + (8 * 60 * 60 * 1000));
+    // Database stores timestamps in UTC, display in local timezone
+    const date = new Date(timestamp);
     return date.toLocaleString('en-US', {
       month: 'short',
       day: 'numeric',
@@ -393,17 +393,6 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
                   {(selectedCategory !== "all" || selectedCabinet !== "all" || (dateFilter.startDate || dateFilter.endDate) || dateFilter.year !== "all") && (
                     <span className="w-2 h-2 bg-violet-500 rounded-full animate-pulse"></span>
                   )}
-                </div>
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => refreshActivities()}
-                className="h-8 px-3 rounded-md border-2 border-green-300 hover:bg-green-50 text-green-700 text-xs font-medium"
-                title="Refresh activities from database"
-              >
-                <div className="flex items-center gap-1">
-                  <RefreshCw size={12} />
-                  Refresh
                 </div>
               </Button>
             </div>
