@@ -166,20 +166,20 @@ const MetricCard = ({
                 <span className="text-xs opacity-70">
                   vs last period
                 </span>
-              </div>
+          </div>
             )}
             {description && (
               <p className="text-xs opacity-70">
                 {description}
               </p>
             )}
-          </div>
+      </div>
           <div className={`rounded-full p-2 sm:p-3 ${getIconBg()} flex-shrink-0`}>
             <div className="h-5 w-5 sm:h-6 sm:w-6">
               {icon}
-            </div>
-          </div>
         </div>
+      </div>
+    </div>
       </CardContent>
     </Card>
   );
@@ -258,7 +258,7 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
               <p className="text-muted-foreground mt-1">
                 Here's your business overview for today
               </p>
-            </div>
+        </div>
             <div className="text-right">
               <p className="text-sm text-muted-foreground">Current Time</p>
               <p className="text-lg font-semibold">
@@ -276,8 +276,8 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
                   day: 'numeric'
                 })}
               </p>
-            </div>
-          </div>
+        </div>
+      </div>
         </CardContent>
       </Card>
 
@@ -320,7 +320,7 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
           description={lowStockProducts.length > 0 ? "Action needed" : "All good"}
           color="maroon"
         />
-      </div>
+  </div>
 
       {/* Charts Section - Show loading state only for charts */}
       {analyticsLoading ? (
@@ -332,23 +332,23 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
               </CardContent>
             </Card>
           ))}
-        </div>
+    </div>
       ) : error ? (
         <Card className="border-red-200 bg-red-50">
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
               <div className="rounded-full bg-red-100 p-2">
                 <TrendingDown className="h-5 w-5 text-red-600" />
-              </div>
+          </div>
               <div>
                 <h3 className="font-semibold text-red-900">Error loading analytics</h3>
                 <p className="text-sm text-red-700">{error}</p>
-              </div>
+          </div>
               <Button onClick={() => fetchAnalytics()} variant="outline" size="sm" className="ml-auto">
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Retry
               </Button>
-            </div>
+        </div>
           </CardContent>
         </Card>
       ) : !analyticsData ? null : (
@@ -366,7 +366,7 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
                 <CardDescription>
                   Track sales trends over time ({timePeriod})
                 </CardDescription>
-              </div>
+          </div>
               <div className="flex items-center gap-2">
                 <Select 
                   value={timePeriod} 
@@ -386,18 +386,18 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
                 <Button onClick={() => fetchAnalytics(true)} variant="outline" size="sm" disabled={periodLoading}>
                   <RefreshCw className={`h-4 w-4 ${periodLoading ? 'animate-spin' : ''}`} />
                 </Button>
-              </div>
-            </div>
+          </div>
+        </div>
           </CardHeader>
           <CardContent className="relative">
             {periodLoading ? (
               <div className="flex items-center justify-center h-[300px]">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-              </div>
+          </div>
             ) : revenueData.length === 0 ? (
               <div className="flex items-center justify-center h-[300px] text-muted-foreground">
                 No sales data available for this period
-              </div>
+          </div>
             ) : (
             <ResponsiveContainer width="100%" height={300}>
               <AreaChart data={revenueData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
@@ -448,11 +448,11 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
             {periodLoading ? (
               <div className="flex items-center justify-center h-[300px]">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-              </div>
+          </div>
             ) : topProducts.length === 0 ? (
               <div className="flex items-center justify-center h-[300px] text-muted-foreground">
                 No product sales data available
-              </div>
+          </div>
             ) : (
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={topProducts} margin={{ top: 5, right: 30, left: 0, bottom: 60 }}>
@@ -483,7 +483,7 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
             )}
           </CardContent>
         </Card>
-      </div>
+  </div>
 
       {/* Transactions and Items Chart */}
       <Card className="bg-card/60 border border-primary/10 shadow-sm backdrop-blur-sm">
@@ -500,11 +500,11 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
           {periodLoading ? (
             <div className="flex items-center justify-center h-[300px]">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-            </div>
+        </div>
           ) : revenueData.length === 0 ? (
             <div className="flex items-center justify-center h-[300px] text-muted-foreground">
               No transaction data available for this period
-            </div>
+        </div>
           ) : (
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={revenueData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
@@ -551,18 +551,18 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
               <div className="flex items-center gap-2">
                 <div className="rounded-full bg-red-100 p-2">
                   <AlertTriangle className="h-5 w-5 text-red-600" />
-                </div>
+            </div>
                 <div>
                   <CardTitle className="text-gray-900">Low Stock Advisory</CardTitle>
                   <CardDescription className="text-gray-600">
                     Products that need immediate restocking
                   </CardDescription>
-                </div>
-              </div>
+            </div>
+          </div>
               <span className="text-xs font-semibold px-3 py-1 bg-red-100 text-red-800 rounded-full">
                 {lowStockProducts.length} Items
               </span>
-            </div>
+        </div>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-3 lg:gap-4">
@@ -577,19 +577,19 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
                           <p className={`font-semibold ${colors.text} text-sm`}>{product.name}</p>
                           <p className={`text-xs ${colors.text} mt-1 opacity-80`}>Only {product.stock} left in stock</p>
                           <p className={`text-xs ${colors.text} mt-1 opacity-60`}>SKU: {product.sku}</p>
-                        </div>
-                        <span className={`px-2 py-1 ${colors.badge} text-white text-xs font-bold rounded-full`}>{colors.label}</span>
-                      </div>
                     </div>
+                        <span className={`px-2 py-1 ${colors.badge} text-white text-xs font-bold rounded-full`}>{colors.label}</span>
                   </div>
+                </div>
+              </div>
                 );
               })}
-            </div>
+        </div>
           </CardContent>
         </Card>
       )}
     </>
   )}
-    </div>
+  </div>
   );
 }
