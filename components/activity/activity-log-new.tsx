@@ -14,23 +14,22 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
 
   const activities = getActivities()
 
-  // Simple Philippines time formatter
+  // Simple Philippines time formatter - display stored time directly
   const formatPhilippinesTime = (timestamp: string) => {
     try {
       const date = new Date(timestamp)
       if (isNaN(date.getTime())) return 'Invalid time'
       
-      // Add 8 hours for Philippines timezone
-      const phTime = new Date(date.getTime() + (8 * 60 * 60 * 1000))
-      
-      return phTime.toLocaleString('en-US', {
+      // Display the stored Philippines time directly (no conversion)
+      return date.toLocaleString('en-US', {
         month: 'short',
         day: 'numeric', 
         year: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
-        hour12: true
+        hour12: true,
+        timeZone: 'UTC' // Use UTC to avoid additional timezone conversion
       })
     } catch (error) {
       return 'Invalid time'

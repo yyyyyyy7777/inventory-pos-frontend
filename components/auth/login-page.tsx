@@ -27,8 +27,8 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     setLoading(true)
 
     try {
-      // Use API for authentication
-      const response = await fetch('/api/auth/login', {
+      // Use new API for authentication
+      const response = await fetch('/api/auth/login-new', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

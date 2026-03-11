@@ -44,7 +44,7 @@ export function ActivityProvider({ children }: ActivityProviderProps) {
   const fetchActivities = useCallback(async (showLoading = true) => {
     try {
       if (showLoading) setLoading(true)
-      const response = await fetch('/api/activities?limit=1000')
+      const response = await fetch('/api/activities-new?limit=1000')
       if (response.ok) {
         const data = await response.json()
         setActivities(data)
@@ -88,7 +88,7 @@ export function ActivityProvider({ children }: ActivityProviderProps) {
   // Add activity to database
   const addActivity = async (activity: Omit<Activity, 'id' | 'timestamp' | 'created_at'>) => {
     try {
-      const response = await fetch('/api/activities', {
+      const response = await fetch('/api/activities-new', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

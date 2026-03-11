@@ -33,11 +33,16 @@ export async function POST(request: NextRequest) {
     // Update last login time
     await updateLastLogin(username)
     
-    // Log login activity with Philippines time
+    // Log login activity with Philippines time (UTC+8)
     try {
       const now = new Date()
-      const philippinesTime = new Date(now.getTime() + (8 * 60 * 60 * 1000))
+      // Get current UTC time and add 8 hours for Philippines
+      const utcTime = now.getTime()
+      const philippinesTime = new Date(utcTime + (8 * 60 * 60 * 1000))
       const timestamp = philippinesTime.toISOString()
+      
+      console.log('Server UTC time:', now.toISOString())
+      console.log('Philippines time:', timestamp)
       
       await query(
         `INSERT INTO activities (id, timestamp, username, activity, details, category)

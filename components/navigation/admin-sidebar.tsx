@@ -119,7 +119,7 @@ export function AdminSidebar({ currentView, onViewChange, onLogout, username }: 
           // Call logout API to update last logout
           console.log('Admin sidebar: Calling logout API for username:', username);
           try {
-            const response = await fetch('/api/auth/logout', {
+            const response = await fetch('/api/auth/logout-new', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
