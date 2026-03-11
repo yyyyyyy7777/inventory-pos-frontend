@@ -6,6 +6,7 @@
   NODE_VERSION = "20"
   NPM_FLAGS = "--legacy-peer-deps"
 
+# Updated for Netlify deployment
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
