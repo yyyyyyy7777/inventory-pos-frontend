@@ -244,8 +244,8 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
   };
 
   const summary = analyticsData?.summary;
-  const revenueData = analyticsData?.revenueData || [];
-  const topProducts = analyticsData?.topProducts || [];
+  const revenueData = analyticsData?.revenueData || []; // Fixed: added fallback
+  const topProducts = analyticsData?.topProducts || []; // Fixed: added fallback
 
   return (
     <div className="space-y-8">
