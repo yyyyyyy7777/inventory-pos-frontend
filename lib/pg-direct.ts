@@ -786,12 +786,11 @@ export async function archiveSales(archiveMonth: string, cabinet: string) {
     // Parse the archive month (format: "YYYY-MM")
     const [year, month] = archiveMonth.split('-').map(Number);
     
-    // Use ISO date strings to avoid timezone issues
-    // Month is 1-indexed in the input (1-12), but we need to handle it properly
-    const startDate = `${year}-${String(month).padStart(2, '0')}-01T00:00:00.000Z`;
+    // Use local timezone dates to match database format
+    const startDate = new Date(year, month - 1, 1);
     const endDate = month === 12 
-      ? `${year + 1}-01-01T00:00:00.000Z`  // January of next year
-      : `${year}-${String(month + 1).padStart(2, '0')}-01T00:00:00.000Z`; // First day of next month
+      ? new Date(year + 1, 0, 1)  // January of next year
+      : new Date(year, month, 1); // First day of next month
 
     console.log('Archive date range:', startDate, 'to', endDate);
 
@@ -841,11 +840,11 @@ export async function unarchiveSales(unarchiveMonth: string, cabinet: string) {
     // Parse the unarchive month (format: "YYYY-MM")
     const [year, month] = unarchiveMonth.split('-').map(Number);
     
-    // Use ISO date strings to avoid timezone issues
-    const startDate = `${year}-${String(month).padStart(2, '0')}-01T00:00:00.000Z`;
+    // Use local timezone dates to match database format
+    const startDate = new Date(year, month - 1, 1);
     const endDate = month === 12 
-      ? `${year + 1}-01-01T00:00:00.000Z`  // January of next year
-      : `${year}-${String(month + 1).padStart(2, '0')}-01T00:00:00.000Z`; // First day of next month
+      ? new Date(year + 1, 0, 1)  // January of next year
+      : new Date(year, month, 1); // First day of next month
 
     console.log('Unarchive date range:', startDate, 'to', endDate);
 
