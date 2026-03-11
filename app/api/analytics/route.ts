@@ -1,40 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAllSales } from '@/lib/pg-direct';
+import { query } from '@/lib/pg-direct';
 import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subDays, subWeeks, subMonths, format } from 'date-fns';
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const cabinet = searchParams.get('cabinet') || 'main';
-    const period = searchParams.get('period') || 'weekly'; // weekly, monthly, quarterly, yearly
+    const period = searchParams.get('period') || 'weekly';
 
     console.log('Analytics API called with cabinet:', cabinet, 'period:', period);
     
-    const sales = await getAllSales(cabinet);
-    console.log('getAllSales returned', sales.length, 'sales');
-    
-    if (sales.length === 0) {
-      // Return default empty analytics data
-      return NextResponse.json({
-        summary: {
-          totalRevenue: 0,
-          totalTransactions: 0,
-          totalItems: 0,
-          avgTransactionValue: 0,
-          revenueGrowth: 0,
-          todayRevenue: 0,
-          todayTransactions: 0,
-          todayItems: 0
-        },
-        revenueData: [],
-        topProducts: [],
-        period,
-        generatedAt: new Date().toISOString()
-      });
-    }
-    
-    // Process sales data for analytics
-    const analytics = processSalesData(sales, period);
+    // Use database-level aggregation for better performance
+    const analytics = await generateAnalyticsFromDB(cabinet, period);
     
     return NextResponse.json(analytics);
   } catch (error: any) {
@@ -46,7 +23,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-function processSalesData(sales: any[], period: string) {
+async function generateAnalyticsFromDB(cabinet: string, period: string) {
   const now = new Date();
   let startDate: Date;
   let dateFormat: string;
@@ -79,110 +56,126 @@ function processSalesData(sales: any[], period: string) {
       groupBy = 'day';
   }
 
-  // Filter sales by date range
-  const filteredSales = sales.filter(sale => {
-    const saleDate = new Date(sale.createdAt || sale.date);
-    return saleDate >= startDate && saleDate <= now;
-  });
+  // Use a single optimized query to get summary metrics
+  const summaryQuery = await query(`
+    SELECT 
+      COALESCE(SUM(amount), 0) as total_revenue,
+      COUNT(*) as total_transactions,
+      COALESCE(SUM(item_count), 0) as total_items,
+      COALESCE(AVG(amount), 0) as avg_transaction_value
+    FROM (
+      SELECT s.id, s.amount, COUNT(si.id) as item_count
+      FROM sale s
+      LEFT JOIN "saleItem" si ON s.id = si."saleId"
+      WHERE s.cabinet = $1 
+        AND s.archived = false
+        AND s.date >= $2::timestamp
+      GROUP BY s.id, s.amount
+    ) subq
+  `, [cabinet, startDate]);
 
-  // Group sales by period
-  const groupedSales = filteredSales.reduce((acc: any, sale) => {
-    const saleDate = new Date(sale.createdAt || sale.date);
-    let key: string;
-    
-    switch (groupBy) {
-      case 'day':
-        key = format(saleDate, dateFormat);
-        break;
-      case 'month':
-        key = format(saleDate, dateFormat);
-        break;
-      default:
-        key = format(saleDate, dateFormat);
-    }
-
-    if (!acc[key]) {
-      acc[key] = {
-        period: key,
-        revenue: 0,
-        sales: 0,
-        transactions: 0,
-        items: 0
-      };
-    }
-
-    acc[key].revenue += parseFloat(sale.amount) || 0;
-    acc[key].sales += parseFloat(sale.amount) || 0;
-    acc[key].transactions += 1;
-    acc[key].items += sale.items?.length || 0;
-
-    return acc;
-  }, {});
-
-  // Convert to array and sort by date
-  const revenueData = Object.values(groupedSales);
-
-  // Calculate top selling products
-  const productSales = new Map();
-  
-  filteredSales.forEach(sale => {
-    if (sale.items && Array.isArray(sale.items)) {
-      sale.items.forEach((item: any) => {
-        const productName = item.productName || 'Unknown';
-        const existing = productSales.get(productName) || { name: productName, sales: 0, revenue: 0, quantity: 0 };
-        existing.sales += 1;
-        existing.revenue += (item.price || 0) * (item.quantity || 1);
-        existing.quantity += item.quantity || 1;
-        productSales.set(productName, existing);
-      });
-    }
-  });
-
-  const topProducts = Array.from(productSales.values())
-    .sort((a, b) => b.revenue - a.revenue)
-    .slice(0, 3);
-
-  // Calculate summary metrics
-  const totalRevenue = parseFloat(filteredSales.reduce((sum, sale) => sum + (parseFloat(sale.amount) || 0), 0).toFixed(2));
-  const totalTransactions = filteredSales.length;
-  const totalItems = filteredSales.reduce((sum, sale) => sum + (sale.items?.length || 0), 0);
-  const avgTransactionValue = totalTransactions > 0 ? parseFloat((totalRevenue / totalTransactions).toFixed(2)) : 0;
-
-  // Calculate growth (compare with previous period)
-  const previousPeriodStart = subDays(startDate, 7);
-  const previousSales = sales.filter(sale => {
-    const saleDate = new Date(sale.createdAt || sale.date);
-    return saleDate >= previousPeriodStart && saleDate < startDate;
-  });
-  
-  const previousRevenue = previousSales.reduce((sum, sale) => sum + (sale.amount || 0), 0);
-  const revenueGrowth = previousRevenue > 0 ? ((totalRevenue - previousRevenue) / previousRevenue) * 100 : 0;
-
-  // Today's metrics
+  // Get today's metrics with a separate query
   const today = startOfDay(now);
-  const todayEnd = endOfDay(now);
-  const todaySales = sales.filter(sale => {
-    const saleDate = new Date(sale.createdAt || sale.date);
-    return saleDate >= today && saleDate <= todayEnd;
-  });
+  const todayQuery = await query(`
+    SELECT 
+      COALESCE(SUM(amount), 0) as today_revenue,
+      COUNT(*) as today_transactions,
+      COALESCE(SUM(item_count), 0) as today_items
+    FROM (
+      SELECT s.id, s.amount, COUNT(si.id) as item_count
+      FROM sale s
+      LEFT JOIN "saleItem" si ON s.id = si."saleId"
+      WHERE s.cabinet = $1 
+        AND s.archived = false
+        AND s.date >= $2::timestamp 
+        AND s.date <= $3::timestamp
+      GROUP BY s.id, s.amount
+    ) subq
+  `, [cabinet, today, endOfDay(now)]);
 
-  const todayRevenue = parseFloat(todaySales.reduce((sum, sale) => sum + (parseFloat(sale.amount) || 0), 0).toFixed(2));
-  const todayTransactions = todaySales.length;
-  const todayItems = todaySales.reduce((sum, sale) => sum + (sale.items?.length || 0), 0);
+  // Get revenue data grouped by period using database aggregation
+  const revenueDataQuery = await query(`
+    SELECT 
+      CASE 
+        WHEN $3 = 'day' THEN TO_CHAR(date, 'Dy')
+        ELSE TO_CHAR(date, 'Mon')
+      END as period,
+      COALESCE(SUM(amount), 0) as revenue,
+      COUNT(*) as transactions,
+      COALESCE(SUM(item_count), 0) as items
+    FROM (
+      SELECT s.id, s.amount, s.date, COUNT(si.id) as item_count
+      FROM sale s
+      LEFT JOIN "saleItem" si ON s.id = si."saleId"
+      WHERE s.cabinet = $1 
+        AND s.archived = false
+        AND s.date >= $2::timestamp
+      GROUP BY s.id, s.amount, s.date
+    ) subq
+    GROUP BY 
+      CASE 
+        WHEN $3 = 'day' THEN TO_CHAR(date, 'Dy')
+        ELSE TO_CHAR(date, 'Mon')
+      END
+    ORDER BY MIN(date)
+  `, [cabinet, startDate, groupBy]);
+
+  // Get top products using database aggregation
+  const topProductsQuery = await query(`
+    SELECT 
+      si."productName" as name,
+      COUNT(*) as sales,
+      SUM(si.quantity) as quantity,
+      SUM(si.price * si.quantity) as revenue
+    FROM sale s
+    JOIN "saleItem" si ON s.id = si."saleId"
+    WHERE s.cabinet = $1 
+      AND s.archived = false
+      AND s.date >= $2::timestamp
+    GROUP BY si."productName"
+    ORDER BY revenue DESC
+    LIMIT 5
+  `, [cabinet, startDate]);
+
+  // Calculate growth by comparing with previous period
+  const previousPeriodStart = subDays(startDate, 7);
+  const previousRevenueQuery = await query(`
+    SELECT COALESCE(SUM(amount), 0) as previous_revenue
+    FROM sale
+    WHERE cabinet = $1 
+      AND archived = false
+      AND date >= $2::timestamp 
+      AND date < $3::timestamp
+  `, [cabinet, previousPeriodStart, startDate]);
+
+  const totalRevenue = parseFloat(summaryQuery[0]?.total_revenue || 0);
+  const previousRevenue = parseFloat(previousRevenueQuery[0]?.previous_revenue || 0);
+  const revenueGrowth = previousRevenue > 0 ? ((totalRevenue - previousRevenue) / previousRevenue) * 100 : 0;
 
   return {
     summary: {
       totalRevenue,
-      totalTransactions,
-      totalItems,
-      avgTransactionValue,
+      totalTransactions: parseInt(summaryQuery[0]?.total_transactions || 0),
+      totalItems: parseInt(summaryQuery[0]?.total_items || 0),
+      avgTransactionValue: parseFloat(summaryQuery[0]?.avg_transaction_value || 0),
       revenueGrowth: Math.round(revenueGrowth * 10) / 10,
-      todayRevenue,
-      todayTransactions,
-      todayItems
+      todayRevenue: parseFloat(todayQuery[0]?.today_revenue || 0),
+      todayTransactions: parseInt(todayQuery[0]?.today_transactions || 0),
+      todayItems: parseInt(todayQuery[0]?.today_items || 0)
     },
-    revenueData,
-    topProducts,
+    revenueData: revenueDataQuery.map((row: any) => ({
+      period: row.period,
+      revenue: parseFloat(row.revenue),
+      sales: parseFloat(row.revenue),
+      transactions: parseInt(row.transactions),
+      items: parseInt(row.items)
+    })),
+    topProducts: topProductsQuery.map((row: any) => ({
+      name: row.name,
+      sales: parseInt(row.sales),
+      revenue: parseFloat(row.revenue),
+      quantity: parseInt(row.quantity)
+    })),
     period,
     generatedAt: now.toISOString()
   };
