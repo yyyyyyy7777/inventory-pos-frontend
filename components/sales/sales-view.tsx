@@ -35,7 +35,7 @@ const categories = [
 ]
 
 export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
-  const { getSalesByCabinet, refreshSales, optimisticArchiveUpdate } = useSales()
+  const { getSalesByCabinet, refreshSales, addUnarchivedSales, archiveSalesInState } = useSales()
   const { addToast } = useToast()
   const [searchQuery, setSearchQuery] = useState("")
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
@@ -304,8 +304,10 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
         return;
       }
       
-      // Apply optimistic update for instant feedback
-      optimisticArchiveUpdate(cabinet, manageArchiveMonth, action === 'archive');
+      // Apply optimistic update immediately for instant feedback
+      if (action === 'archive') {
+        archiveSalesInState(cabinet, manageArchiveMonth);
+      }
       
       // First check the actual database status via API
       const statusResponse = await fetch('/api/sales/archive-status', {
@@ -351,6 +353,12 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
       }
 
       const result = await response.json();
+      
+      // For unarchive, immediately add the returned sales to state for instant display
+      if (action === 'unarchive' && result.sales && result.sales.length > 0) {
+        addUnarchivedSales(result.sales);
+      }
+      
       addToast(`${result.archivedCount || result.unarchivedCount || 0} sales ${action}d successfully!`, "success");
       setManageArchiveMonth('');
       

@@ -869,13 +869,28 @@ export async function unarchiveSales(unarchiveMonth: string, cabinet: string) {
     const result = await client.query(
       `UPDATE sale SET archived = false 
        WHERE date >= $1::timestamp AND date < $2::timestamp 
-       AND cabinet = $3 AND archived = true`,
+       AND cabinet = $3 AND archived = true
+       RETURNING id, date, amount, "paymentMethod", "staffName", cabinet, "soldAt", "referenceNumber", "createdAt"`,
       [startDate, endDate, cabinet]
     );
 
+    // Get the items for the unarchived sales
+    const unarchivedSales = result.rows;
+    for (const sale of unarchivedSales) {
+      const items = await client.query(
+        `SELECT * FROM "saleItem" WHERE "saleId" = $1`,
+        [sale.id]
+      );
+      sale.items = items.rows.map(item => ({
+        ...item,
+        isDiscounted: Boolean(item.isDiscounted)
+      }));
+    }
+
     return {
       unarchivedCount: result.rowCount || 0,
-      month: unarchiveMonth
+      month: unarchiveMonth,
+      sales: unarchivedSales
     };
   } catch (error: any) {
     console.error('unarchiveSales error:', error);

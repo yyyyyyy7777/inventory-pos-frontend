@@ -39,7 +39,8 @@ interface SalesContextType {
   deleteSale: (id: string) => Promise<void>;
   getSalesByCabinet: (cabinet: string) => SalesRecord[];
   refreshSales: (cabinet: string) => Promise<void>;
-  optimisticArchiveUpdate: (cabinet: string, month: string, isArchiving: boolean) => void;
+  addUnarchivedSales: (sales: SalesRecord[]) => void;
+  archiveSalesInState: (cabinet: string, month: string) => void;
 }
 
 const SalesContext = createContext<SalesContextType | undefined>(undefined);
@@ -216,24 +217,27 @@ export function SalesProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const optimisticArchiveUpdate = useCallback((cabinet: string, month: string, isArchiving: boolean) => {
+  const addUnarchivedSales = useCallback((newSales: SalesRecord[]) => {
+    setSales(prev => [...newSales, ...prev]);
+  }, []);
+
+  const archiveSalesInState = useCallback((cabinet: string, month: string) => {
     // Parse month (format: "YYYY-MM")
     const [year, monthNum] = month.split('-').map(Number);
     
     // Create date range for the month
     const startDate = new Date(year, monthNum - 1, 1);
     const endDate = monthNum === 12 
-      ? new Date(year + 1, 0, 1)  // January of next year
-      : new Date(year, monthNum, 1); // First day of next month
+      ? new Date(year + 1, 0, 1)
+      : new Date(year, monthNum, 1);
 
-    // Optimistically update the local state
+    // Optimistically mark sales as archived to remove from view
     setSales(prev => prev.map(sale => {
       const saleDate = new Date(sale.date);
       const isInMonth = saleDate >= startDate && saleDate < endDate && sale.cabinet === cabinet;
       
       if (isInMonth) {
-        // For archiving: remove from view, for unarchiving: add to view
-        return isArchiving ? { ...sale, archived: true } : { ...sale, archived: false };
+        return { ...sale, archived: true };
       }
       return sale;
     }));
@@ -254,7 +258,8 @@ export function SalesProvider({ children }: { children: ReactNode }) {
         deleteSale, 
         getSalesByCabinet,
         refreshSales,
-        optimisticArchiveUpdate
+        addUnarchivedSales,
+        archiveSalesInState
       }}
     >
       {children}
