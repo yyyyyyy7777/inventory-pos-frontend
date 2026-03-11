@@ -304,7 +304,7 @@ export async function getAllSales(cabinet: string = 'main') {
       [cabinet]
     );
     
-    console.log(`getAllSales: Found ${sales.length} sales for cabinet '${cabinet}'`);
+    console.log(`getAllSales: Found ${sales.length} active (non-archived) sales for cabinet '${cabinet}'`);
     
     // Get items for each sale
     for (const sale of sales) {
@@ -328,6 +328,27 @@ export async function getAllSales(cabinet: string = 'main') {
     return sales;
   } catch (error) {
     console.error('Failed to fetch sales:', error);
+    throw new Error('Failed to fetch sales from database');
+  }
+}
+
+// Helper function to get all sales including archived (for debugging)
+export async function getAllSalesWithArchiveStatus(cabinet: string = 'main') {
+  try {
+    const sales = await query(
+      `SELECT id, date, amount, "paymentMethod", "staffName", cabinet, "soldAt", 
+              archived, "createdAt", "updatedAt"
+       FROM sale 
+       WHERE cabinet = $1 
+       ORDER BY date DESC`,
+      [cabinet]
+    );
+    
+    console.log(`getAllSalesWithArchiveStatus: Found ${sales.length} total sales for cabinet '${cabinet}'`);
+    
+    return sales;
+  } catch (error) {
+    console.error('Failed to fetch all sales:', error);
     throw new Error('Failed to fetch sales from database');
   }
 }
@@ -757,25 +778,34 @@ export async function getCurrentBatchPrice(productId: string, cabinet: string): 
 }
 
 export async function archiveSales(archiveMonth: string, cabinet: string) {
+  const client = await (await getConnection()).connect();
+  
   try {
     console.log('archiveSales called with:', archiveMonth, cabinet);
     
     // Parse the archive month (format: "YYYY-MM")
     const [year, month] = archiveMonth.split('-').map(Number);
-    const startDate = new Date(year, month - 1, 1); // First day of the selected month
-    const endDate = new Date(year, month, 1); // First day of the NEXT month
+    
+    // Use ISO date strings to avoid timezone issues
+    // Month is 1-indexed in the input (1-12), but we need to handle it properly
+    const startDate = `${year}-${String(month).padStart(2, '0')}-01T00:00:00.000Z`;
+    const endDate = month === 12 
+      ? `${year + 1}-01-01T00:00:00.000Z`  // January of next year
+      : `${year}-${String(month + 1).padStart(2, '0')}-01T00:00:00.000Z`; // First day of next month
 
     console.log('Archive date range:', startDate, 'to', endDate);
 
     // Check if there are any sales to archive for this specific month
-    const checkResult = await query(
-      `SELECT COUNT(*) as count FROM sale WHERE date >= $1 AND date < $2 AND cabinet = $3 AND archived = false`,
+    const checkResult = await client.query(
+      `SELECT COUNT(*) as count FROM sale 
+       WHERE date >= $1::timestamp AND date < $2::timestamp 
+       AND cabinet = $3 AND archived = false`,
       [startDate, endDate, cabinet]
     );
 
-    console.log('Check result:', checkResult);
+    console.log('Check result:', checkResult.rows[0]);
 
-    if (checkResult[0].count === 0) {
+    if (parseInt(checkResult.rows[0].count) === 0) {
       return {
         archivedCount: 0,
         message: 'No sales to archive for this month'
@@ -783,41 +813,53 @@ export async function archiveSales(archiveMonth: string, cabinet: string) {
     }
 
     // Update sales only for the specific month
-    const result = await query(
-      `UPDATE sale SET archived = true WHERE date >= $1 AND date < $2 AND cabinet = $3 AND archived = false`,
+    const result = await client.query(
+      `UPDATE sale SET archived = true 
+       WHERE date >= $1::timestamp AND date < $2::timestamp 
+       AND cabinet = $3 AND archived = false`,
       [startDate, endDate, cabinet]
     );
 
     return {
-      archivedCount: result.length || 0,
+      archivedCount: result.rowCount || 0,
       month: archiveMonth
     };
   } catch (error: any) {
     console.error('archiveSales error:', error);
     throw new Error('Failed to archive sales: ' + error.message);
+  } finally {
+    client.release();
   }
 }
 
 export async function unarchiveSales(unarchiveMonth: string, cabinet: string) {
+  const client = await (await getConnection()).connect();
+  
   try {
     console.log('unarchiveSales called with:', unarchiveMonth, cabinet);
     
     // Parse the unarchive month (format: "YYYY-MM")
     const [year, month] = unarchiveMonth.split('-').map(Number);
-    const startDate = new Date(year, month - 1, 1); // First day of the selected month
-    const endDate = new Date(year, month, 1); // First day of the NEXT month
+    
+    // Use ISO date strings to avoid timezone issues
+    const startDate = `${year}-${String(month).padStart(2, '0')}-01T00:00:00.000Z`;
+    const endDate = month === 12 
+      ? `${year + 1}-01-01T00:00:00.000Z`  // January of next year
+      : `${year}-${String(month + 1).padStart(2, '0')}-01T00:00:00.000Z`; // First day of next month
 
     console.log('Unarchive date range:', startDate, 'to', endDate);
 
     // Check if there are any sales to unarchive for this specific month
-    const checkResult = await query(
-      `SELECT COUNT(*) as count FROM sale WHERE date >= $1 AND date < $2 AND cabinet = $3 AND archived = true`,
+    const checkResult = await client.query(
+      `SELECT COUNT(*) as count FROM sale 
+       WHERE date >= $1::timestamp AND date < $2::timestamp 
+       AND cabinet = $3 AND archived = true`,
       [startDate, endDate, cabinet]
     );
 
-    console.log('Unarchive check result:', checkResult);
+    console.log('Unarchive check result:', checkResult.rows[0]);
 
-    if (checkResult[0].count === 0) {
+    if (parseInt(checkResult.rows[0].count) === 0) {
       return {
         unarchivedCount: 0,
         message: 'No archived sales to restore for this month'
@@ -825,18 +867,22 @@ export async function unarchiveSales(unarchiveMonth: string, cabinet: string) {
     }
 
     // Update sales only for the specific month
-    const result = await query(
-      `UPDATE sale SET archived = false WHERE date >= $1 AND date < $2 AND cabinet = $3 AND archived = true`,
+    const result = await client.query(
+      `UPDATE sale SET archived = false 
+       WHERE date >= $1::timestamp AND date < $2::timestamp 
+       AND cabinet = $3 AND archived = true`,
       [startDate, endDate, cabinet]
     );
 
     return {
-      unarchivedCount: result.length || 0,
+      unarchivedCount: result.rowCount || 0,
       month: unarchiveMonth
     };
   } catch (error: any) {
     console.error('unarchiveSales error:', error);
     throw new Error('Failed to unarchive sales: ' + error.message);
+  } finally {
+    client.release();
   }
 }
 

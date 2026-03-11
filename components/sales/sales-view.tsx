@@ -304,32 +304,37 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
         return;
       }
       
-      // Filter sales for the selected month
-      const [year, month] = manageArchiveMonth.split('-').map(Number);
-      const monthSales = sales.filter((sale: any) => {
-        const saleDate = new Date(sale.date);
-        const saleYear = saleDate.getFullYear();
-        const saleMonth = saleDate.getMonth() + 1; // JS months are 0-indexed
-        
-        if (action === 'archive') {
-          // For archive: only include non-archived sales
-          return saleYear === year && saleMonth === month && !sale.archived;
-        } else {
-          // For unarchive: only include archived sales
-          return saleYear === year && saleMonth === month && sale.archived;
-        }
+      // First check the actual database status via API
+      const statusResponse = await fetch('/api/sales/archive-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          month: manageArchiveMonth,
+          cabinet: cabinet 
+        }),
       });
       
-      if (monthSales.length === 0) {
-        addToast(action === 'archive' 
-          ? `No sales to archive for ${manageArchiveMonth}` 
-          : `No archived sales to unarchive for ${manageArchiveMonth}`, 
-          "warning"
-        );
+      if (!statusResponse.ok) {
+        throw new Error('Failed to check archive status');
+      }
+      
+      const statusData = await statusResponse.json();
+      console.log('Archive status check:', statusData);
+      
+      // DEBUG: Show the actual data
+      alert(`DEBUG INFO:\nMonth: ${statusData.month}\nCabinet: ${statusData.cabinet}\n\nAll Sales in DB:\n- Active: ${statusData.allSales?.active}\n- Archived: ${statusData.allSales?.archived}\n- Total: ${statusData.allSales?.total}\n- Earliest: ${statusData.allSales?.earliestDate?.substring(0, 10)}\n- Latest: ${statusData.allSales?.latestDate?.substring(0, 10)}\n\n${statusData.month} Sales:\n- Active: ${statusData.monthSales?.activeCount}\n- Archived: ${statusData.monthSales?.archivedCount}\n- Total: ${statusData.monthSales?.totalCount}\n\nDate Range: ${statusData.startDate?.substring(0, 10)} to ${statusData.endDate?.substring(0, 10)}`);
+      
+      if (action === 'archive' && statusData.monthSales?.activeCount === 0) {
+        addToast(`No active sales to archive for ${manageArchiveMonth}`, "warning");
         return;
       }
       
-      addToast(`${action === 'archive' ? 'Archiving' : 'Unarchiving'} ${monthSales.length} sales...`, "info");
+      if (action === 'unarchive' && statusData.monthSales?.archivedCount === 0) {
+        addToast(`No archived sales to unarchive for ${manageArchiveMonth}`, "warning");
+        return;
+      }
+      
+      addToast(`${action === 'archive' ? 'Archiving' : 'Unarchiving'} ${action === 'archive' ? statusData.monthSales?.activeCount : statusData.monthSales?.archivedCount} sales...`, "info");
       
       const response = await fetch(`/api/sales/${action}`, {
         method: 'POST',
