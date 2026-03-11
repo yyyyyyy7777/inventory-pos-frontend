@@ -321,9 +321,6 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
       const statusData = await statusResponse.json();
       console.log('Archive status check:', statusData);
       
-      // DEBUG: Show the actual data
-      alert(`DEBUG INFO:\nMonth: ${statusData.month}\nCabinet: ${statusData.cabinet}\n\nAll Sales in DB:\n- Active: ${statusData.allSales?.active}\n- Archived: ${statusData.allSales?.archived}\n- Total: ${statusData.allSales?.total}\n- Earliest: ${statusData.allSales?.earliestDate?.substring(0, 10)}\n- Latest: ${statusData.allSales?.latestDate?.substring(0, 10)}\n\n${statusData.month} Sales:\n- Active: ${statusData.monthSales?.activeCount}\n- Archived: ${statusData.monthSales?.archivedCount}\n- Total: ${statusData.monthSales?.totalCount}\n\nDate Range: ${statusData.startDate?.substring(0, 10)} to ${statusData.endDate?.substring(0, 10)}`);
-      
       if (action === 'archive' && statusData.monthSales?.activeCount === 0) {
         addToast(`No active sales to archive for ${manageArchiveMonth}`, "warning");
         return;
