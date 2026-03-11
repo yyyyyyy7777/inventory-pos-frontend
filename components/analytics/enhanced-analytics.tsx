@@ -590,6 +590,6 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
       )}
     </>
   )}
-</div>
+    </div>
   );
 }
