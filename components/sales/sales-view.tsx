@@ -304,11 +304,13 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
         return;
       }
       
-      // For archive: apply optimistic update and show success immediately
+      // For archive: show toast and apply optimistic update together
       if (action === 'archive') {
-        archiveSalesInState(cabinet, manageArchiveMonth);
-        // Show success immediately - sales disappear and success message at same time
-        addToast(`Sales archived successfully!`, "success");
+        // Use setTimeout to batch both operations in same render cycle
+        setTimeout(() => {
+          addToast(`Sales archived successfully!`, "success");
+          archiveSalesInState(cabinet, manageArchiveMonth);
+        }, 0);
       }
       
       // First check the actual database status via API
