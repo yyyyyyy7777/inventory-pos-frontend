@@ -133,19 +133,22 @@ export function POSView({ cabinet, username }: POSViewProps) {
     console.log('Current cabinet:', cabinet);
   }, [products, cabinet])
 
-  // Fetch on-shelf stock for all products
+  // Fetch on-shelf stock for all products in a single batched request
   useEffect(() => {
     const fetchOnShelfStock = async () => {
-      const stockMap: Record<string, number> = {}
-      for (const product of products) {
-        const onShelfQty = await getOnShelfStock(product.id, cabinet)
-        stockMap[product.id] = onShelfQty
+      try {
+        const response = await fetch(`/api/stock-batches?batch=all&cabinet=${cabinet}`);
+        if (response.ok) {
+          const stockMap = await response.json();
+          setOnShelfStock(stockMap);
+        }
+      } catch (err) {
+        console.error('Error fetching on-shelf stock:', err);
       }
-      setOnShelfStock(stockMap)
     }
     
     if (products.length > 0) {
-      fetchOnShelfStock()
+      fetchOnShelfStock();
     }
   }, [products, cabinet])
 

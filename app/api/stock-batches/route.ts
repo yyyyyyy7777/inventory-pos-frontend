@@ -7,11 +7,34 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const productId = searchParams.get('productId');
     const cabinet = searchParams.get('cabinet') || 'main';
+    const batchMode = searchParams.get('batch'); // 'all' for all products
 
-    // Validate productId parameter
+    // Batch mode: get on-shelf stock for all products in cabinet
+    if (batchMode === 'all') {
+      const result = await query(`
+        SELECT 
+          p.id as product_id,
+          COALESCE(SUM(sb.quantity), 0) as on_shelf_stock
+        FROM product p
+        LEFT JOIN stockbatch sb ON p.id = sb."productId" 
+          AND sb.cabinet = $1 
+          AND sb.status = 'on-shelf'
+        WHERE p.cabinet = $1
+        GROUP BY p.id
+      `, [cabinet]);
+
+      const stockMap: Record<string, number> = {};
+      result.forEach((row: any) => {
+        stockMap[row.product_id.toString()] = parseInt(row.on_shelf_stock) || 0;
+      });
+
+      return NextResponse.json(stockMap);
+    }
+
+    // Single product mode (original behavior)
     if (!productId) {
       return NextResponse.json(
-        { error: 'Product ID is required' },
+        { error: 'Product ID is required (or use ?batch=all for all products)' },
         { status: 400 }
       );
     }
