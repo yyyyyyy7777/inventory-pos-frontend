@@ -56,10 +56,22 @@ export async function POST(request: NextRequest) {
         )
       `);
       
+      // Create timestamp in Philippines timezone (Asia/Manila)
+      const timestamp = new Date().toLocaleString('en-US', { 
+        timeZone: 'Asia/Manila',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      }).replace(/(\d+)\/(\d+)\/(\d+), (\d+):(\d+):(\d+)/, '$3-$1-$2T$4:$5:$6.000Z');
+      
       await query(
         `INSERT INTO activities (id, timestamp, username, activity, details, category)
-         VALUES (gen_random_uuid(), NOW(), $1, $2, $3, $4)`,
-        [username, 'User logged in', `User ${username} (${employee.role}) logged into the system`, 'employee']
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [Date.now().toString(), timestamp, username, 'User logged in', `User ${username} (${employee.role}) logged into the system`, 'employee']
       );
       console.log('Login activity logged for:', username);
     } catch (activityError) {
