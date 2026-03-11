@@ -21,11 +21,11 @@ export async function POST(request: Request) {
     const [year, monthNum] = month.split('-').map(Number);
     console.log('Parsed year:', year, 'month:', monthNum);
     
-    // Build date range using ISO strings
-    const startDate = `${year}-${String(monthNum).padStart(2, '0')}-01T00:00:00.000Z`;
+    // Use local timezone dates to match database format
+    const startDate = new Date(year, monthNum - 1, 1);
     const endDate = monthNum === 12 
-      ? `${year + 1}-01-01T00:00:00.000Z`
-      : `${year}-${String(monthNum + 1).padStart(2, '0')}-01T00:00:00.000Z`;
+      ? new Date(year + 1, 0, 1)
+      : new Date(year, monthNum, 1);
 
     console.log('Date range:', startDate, 'to', endDate);
 
