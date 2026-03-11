@@ -244,6 +244,8 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
   };
 
   const summary = analyticsData?.summary;
+  const revenueData = analyticsData?.revenueData || [];
+  const topProducts = analyticsData?.topProducts || [];
 
   return (
     <div className="space-y-8">
