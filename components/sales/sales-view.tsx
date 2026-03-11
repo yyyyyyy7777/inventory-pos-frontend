@@ -304,9 +304,11 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
         return;
       }
       
-      // Apply optimistic update immediately for instant feedback
+      // For archive: apply optimistic update and show success immediately
       if (action === 'archive') {
         archiveSalesInState(cabinet, manageArchiveMonth);
+        // Show success immediately - sales disappear and success message at same time
+        addToast(`Sales archived successfully!`, "success");
       }
       
       // First check the actual database status via API
@@ -336,7 +338,10 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
         return;
       }
       
-      addToast(`${action === 'archive' ? 'Archiving' : 'Unarchiving'} ${action === 'archive' ? statusData.monthSales?.activeCount : statusData.monthSales?.archivedCount} sales...`, "info");
+      // For unarchive, show info toast
+      if (action === 'unarchive') {
+        addToast(`Unarchiving ${statusData.monthSales?.archivedCount} sales...`, "info");
+      }
       
       const response = await fetch(`/api/sales/${action}`, {
         method: 'POST',
@@ -359,11 +364,10 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
         addUnarchivedSales(result.sales);
       }
       
+      // Show final success toast
       addToast(`${result.archivedCount || result.unarchivedCount || 0} sales ${action}d successfully!`, "success");
       setManageArchiveMonth('');
       
-      // No need for manual refresh - optimistic update already shows the changes
-      // Background refresh will ensure data consistency
     } catch (error) {
       console.error(`Error ${action}ing sales:`, error);
       addToast(`Failed to ${action} sales: ${error instanceof Error ? error.message : 'Unknown error'}`, "error");
