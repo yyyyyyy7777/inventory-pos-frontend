@@ -35,7 +35,7 @@ const categories = [
 ]
 
 export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
-  const { getSalesByCabinet, refreshSales } = useSales()
+  const { getSalesByCabinet, refreshSales, optimisticArchiveUpdate } = useSales()
   const { addToast } = useToast()
   const [searchQuery, setSearchQuery] = useState("")
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
@@ -304,6 +304,9 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
         return;
       }
       
+      // Apply optimistic update for instant feedback
+      optimisticArchiveUpdate(cabinet, manageArchiveMonth, action === 'archive');
+      
       // First check the actual database status via API
       const statusResponse = await fetch('/api/sales/archive-status', {
         method: 'POST',
@@ -350,10 +353,14 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
       const result = await response.json();
       addToast(`${result.archivedCount || result.unarchivedCount || 0} sales ${action}d successfully!`, "success");
       setManageArchiveMonth('');
-      await refreshSales(cabinet);
+      
+      // No need for manual refresh - optimistic update already shows the changes
+      // Background refresh will ensure data consistency
     } catch (error) {
       console.error(`Error ${action}ing sales:`, error);
       addToast(`Failed to ${action} sales: ${error instanceof Error ? error.message : 'Unknown error'}`, "error");
+      // Refresh on error to restore correct state
+      refreshSales(cabinet);
     }
   };
 

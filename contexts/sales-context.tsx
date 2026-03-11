@@ -27,6 +27,7 @@ export interface SalesRecord {
   referenceNumber?: string;
   createdAt?: string;
   updatedAt?: string;
+  archived?: boolean;
 }
 
 interface SalesContextType {
@@ -38,6 +39,7 @@ interface SalesContextType {
   deleteSale: (id: string) => Promise<void>;
   getSalesByCabinet: (cabinet: string) => SalesRecord[];
   refreshSales: (cabinet: string) => Promise<void>;
+  optimisticArchiveUpdate: (cabinet: string, month: string, isArchiving: boolean) => void;
 }
 
 const SalesContext = createContext<SalesContextType | undefined>(undefined);
@@ -214,8 +216,31 @@ export function SalesProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const optimisticArchiveUpdate = useCallback((cabinet: string, month: string, isArchiving: boolean) => {
+    // Parse month (format: "YYYY-MM")
+    const [year, monthNum] = month.split('-').map(Number);
+    
+    // Create date range for the month
+    const startDate = new Date(year, monthNum - 1, 1);
+    const endDate = monthNum === 12 
+      ? new Date(year + 1, 0, 1)  // January of next year
+      : new Date(year, monthNum, 1); // First day of next month
+
+    // Optimistically update the local state
+    setSales(prev => prev.map(sale => {
+      const saleDate = new Date(sale.date);
+      const isInMonth = saleDate >= startDate && saleDate < endDate && sale.cabinet === cabinet;
+      
+      if (isInMonth) {
+        // For archiving: remove from view, for unarchiving: add to view
+        return isArchiving ? { ...sale, archived: true } : { ...sale, archived: false };
+      }
+      return sale;
+    }));
+  }, []);
+
   const getSalesByCabinet = (cabinet: string) => {
-    return sales.filter((sale) => sale.cabinet === cabinet);
+    return sales.filter((sale) => sale.cabinet === cabinet && !sale.archived);
   };
 
   return (
@@ -228,7 +253,8 @@ export function SalesProvider({ children }: { children: ReactNode }) {
         updateSale, 
         deleteSale, 
         getSalesByCabinet,
-        refreshSales
+        refreshSales,
+        optimisticArchiveUpdate
       }}
     >
       {children}
