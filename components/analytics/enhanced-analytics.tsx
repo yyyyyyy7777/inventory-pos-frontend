@@ -588,6 +588,8 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
           </CardContent>
         </Card>
       )}
-    </div>
+    </>
+  )}
+</div>
   );
 }
