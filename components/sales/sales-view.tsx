@@ -340,9 +340,35 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
         return;
       }
       
-      // For unarchive, show info toast
+      // For unarchive: skip status check, just do it and show immediately
       if (action === 'unarchive') {
-        addToast(`Unarchiving ${statusData.monthSales?.archivedCount} sales...`, "info");
+        addToast(`Unarchiving sales...`, "info");
+        
+        const response = await fetch(`/api/sales/${action}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            unarchiveMonth: manageArchiveMonth,
+            cabinet: cabinet 
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || `Failed to ${action} sales`);
+        }
+
+        const result = await response.json();
+        
+        // Immediately add the returned sales to state for instant display
+        if (result.sales && result.sales.length > 0) {
+          addUnarchivedSales(result.sales);
+        }
+        
+        // Show success immediately
+        addToast(`${result.unarchivedCount || 0} sales unarchived successfully!`, "success");
+        setManageArchiveMonth('');
+        return; // Skip the rest for unarchive
       }
       
       const response = await fetch(`/api/sales/${action}`, {
@@ -361,13 +387,8 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
 
       const result = await response.json();
       
-      // For unarchive, immediately add the returned sales to state for instant display
-      if (action === 'unarchive' && result.sales && result.sales.length > 0) {
-        addUnarchivedSales(result.sales);
-      }
-      
-      // Show final success toast
-      addToast(`${result.archivedCount || result.unarchivedCount || 0} sales ${action}d successfully!`, "success");
+      // Show final success toast for archive
+      addToast(`${result.archivedCount || 0} sales archived successfully!`, "success");
       setManageArchiveMonth('');
       
     } catch (error) {
