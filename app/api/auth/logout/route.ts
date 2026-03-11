@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
       `);
       
       // Create timestamp in Philippines timezone (Asia/Manila)
-      const timestamp = new Date().toLocaleString('en-US', { 
+      const philippinesTime = new Date().toLocaleString('en-US', { 
         timeZone: 'Asia/Manila',
         year: 'numeric',
         month: '2-digit',
@@ -49,7 +49,12 @@ export async function POST(request: NextRequest) {
         minute: '2-digit',
         second: '2-digit',
         hour12: false
-      }).replace(/(\d+)\/(\d+)\/(\d+), (\d+):(\d+):(\d+)/, '$3-$1-$2T$4:$5:$6.000Z');
+      });
+      console.log('Philippines time string:', philippinesTime);
+      
+      // Convert to ISO format
+      const timestamp = philippinesTime.replace(/(\d+)\/(\d+)\/(\d+), (\d+):(\d+):(\d+)/, '$3-$1-$2T$4:$5:$6.000Z');
+      console.log('Final timestamp:', timestamp);
       
       await query(
         `INSERT INTO activities (id, timestamp, username, activity, details, category)
