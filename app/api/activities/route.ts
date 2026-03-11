@@ -98,12 +98,24 @@ export async function POST(request: NextRequest) {
     }
 
     const id = Date.now().toString()
-    // Create timestamp in Philippines timezone (Asia/Manila) - simple approach
+    // Create timestamp in Philippines timezone - manual construction
     const now = new Date();
-    const philippinesTime = new Date(now.getTime() + (8 * 60 * 60 * 1000)); // UTC+8
-    const timestamp = philippinesTime.toISOString();
+    const philippinesOffset = 8; // UTC+8
+    const philippinesTime = new Date(now.getTime() + (philippinesOffset * 60 * 60 * 1000));
+    
+    // Format as proper ISO string with Philippines time
+    const year = philippinesTime.getUTCFullYear();
+    const month = String(philippinesTime.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(philippinesTime.getUTCDate()).padStart(2, '0');
+    const hours = String(philippinesTime.getUTCHours()).padStart(2, '0');
+    const minutes = String(philippinesTime.getUTCMinutes()).padStart(2, '0');
+    const seconds = String(philippinesTime.getUTCSeconds()).padStart(2, '0');
+    
+    const timestamp = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.000Z`;
+    
     console.log('Current UTC time:', now.toISOString());
-    console.log('Philippines time:', timestamp);
+    console.log('Philippines time (constructed):', timestamp);
+    console.log('Philippines local time:', now.toLocaleString("en-US", {timeZone: "Asia/Manila"}));
 
     await query(
       `INSERT INTO activities (id, timestamp, username, activity, details, category, cabinet) 
