@@ -211,6 +211,24 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
       console.log('Analytics data received:', data);
       console.log('Revenue data:', data.revenueData);
       console.log('Top products:', data.topProducts);
+      
+      // Validate data structure
+      if (!data || typeof data !== 'object') {
+        throw new Error('Invalid analytics data received');
+      }
+      
+      // Ensure revenueData is an array
+      if (!data.revenueData || !Array.isArray(data.revenueData)) {
+        console.warn('Revenue data is missing or not an array, using empty array');
+        data.revenueData = [];
+      }
+      
+      // Ensure topProducts is an array
+      if (!data.topProducts || !Array.isArray(data.topProducts)) {
+        console.warn('Top products data is missing or not an array, using empty array');
+        data.topProducts = [];
+      }
+      
       setAnalyticsData(data);
     } catch (error) {
       console.error('Error fetching analytics:', error);
@@ -244,8 +262,8 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
   };
 
   const summary = analyticsData?.summary;
-  const revenueData = analyticsData?.revenueData || []; // Fixed: added fallback
-  const topProducts = analyticsData?.topProducts || []; // Fixed: added fallback
+  const revenueData = analyticsData?.revenueData ?? [];
+  const topProducts = analyticsData?.topProducts ?? [];
 
   return (
     <div className="space-y-8">
@@ -289,8 +307,8 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
         <MetricCard
           title="Total Sales"
           value={analyticsLoading ? "..." : formatCurrency(summary?.totalRevenue || 0)}
-          change={summary?.revenueGrowth}
-          changeType={summary?.revenueGrowth >= 0 ? 'increase' : 'decrease'}
+          change={summary?.revenueGrowth ?? 0}
+          changeType={(summary?.revenueGrowth ?? 0) >= 0 ? 'increase' : 'decrease'}
           icon={<DollarSign className="h-6 w-6" />}
           description={analyticsLoading ? "Loading..." : `${summary?.totalTransactions || 0} total transactions`}
           color="green"

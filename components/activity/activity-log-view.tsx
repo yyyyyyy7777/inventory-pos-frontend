@@ -140,14 +140,22 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
   }
 
   const formatTimestamp = (timestamp: string) => {
-    // Database stores timestamps in UTC, display in local timezone
+    // Database stores timestamps in UTC, display in local timezone (Asia/Manila)
     const date = new Date(timestamp);
+    
+    // Check if the date is valid
+    if (isNaN(date.getTime())) {
+      return 'Invalid timestamp';
+    }
+    
     return date.toLocaleString('en-US', {
+      timeZone: 'Asia/Manila',
       month: 'short',
       day: 'numeric',
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
+      second: '2-digit',
       hour12: true
     });
   }
