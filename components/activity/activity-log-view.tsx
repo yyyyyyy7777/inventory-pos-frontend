@@ -140,43 +140,28 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
   }
 
   const formatTimestamp = (timestamp: string) => {
-    // Handle timestamps from database - display in Philippines timezone
-    let date: Date;
-    
+    // Display timestamp in Philippines timezone (Asia/Manila)
     try {
-      // If timestamp is already in ISO format, create Date object
-      date = new Date(timestamp);
+      const date = new Date(timestamp);
       
       // Check if the date is valid
       if (isNaN(date.getTime())) {
         return 'Invalid timestamp';
       }
       
-      // If the date seems to be in wrong timezone, adjust it
-      // This handles cases where timestamps were stored in wrong timezone
-      const now = new Date();
-      const localOffset = now.getTimezoneOffset() * 60000; // Local offset in milliseconds
-      const philippinesOffset = 8 * 3600000; // Philippines is UTC+8
-      const adjustment = localOffset + philippinesOffset;
-      
-      // Only adjust if the timestamp seems to be in UTC but should be Philippines time
-      if (timestamp.includes('Z') || timestamp.includes('+00:00')) {
-        date = new Date(date.getTime() + adjustment);
-      }
+      return date.toLocaleString('en-US', {
+        timeZone: 'Asia/Manila',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+      });
     } catch (error) {
       return 'Invalid timestamp';
     }
-    
-    return date.toLocaleString('en-US', {
-      timeZone: 'Asia/Manila',
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: true
-    });
   }
 
   return (
