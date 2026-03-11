@@ -176,9 +176,20 @@ export function EnhancedStaffAnalytics({ cabinet, username, onViewChange }: Staf
       
       const weeklyData = await weeklyResponse.json();
       
+      // Validate data structure
+      if (!weeklyData || typeof weeklyData !== 'object') {
+        throw new Error('Invalid analytics data received');
+      }
+      
+      // Ensure revenueData is an array
+      if (!weeklyData.revenueData || !Array.isArray(weeklyData.revenueData)) {
+        console.warn('Revenue data is missing or not an array, using empty array');
+        weeklyData.revenueData = [];
+      }
+      
       // Process data for staff view
       const today = new Date();
-      const todayData = weeklyData.revenueData.find((d: any) => 
+      const todayData = weeklyData.revenueData?.find((d: any) => 
         d.period === today.toLocaleDateString('en-US', { weekday: 'short' })
       );
 
@@ -191,12 +202,12 @@ export function EnhancedStaffAnalytics({ cabinet, username, onViewChange }: Staf
           weeklyTransactions: weeklyData.summary.totalTransactions,
           weeklyItems: weeklyData.summary.totalItems,
         },
-        weeklyData: weeklyData.revenueData.map((d: any) => ({
+        weeklyData: weeklyData.revenueData?.map((d: any) => ({
           day: d.period,
           revenue: d.revenue,
           transactions: d.transactions,
           items: d.items
-        }))
+        })) || []
       };
 
       setAnalyticsData(staffAnalytics);

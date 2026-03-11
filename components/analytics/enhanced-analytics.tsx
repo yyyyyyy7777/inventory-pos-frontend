@@ -262,8 +262,8 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
   };
 
   const summary = analyticsData?.summary;
-  const revenueData = analyticsData?.revenueData ?? [];
-  const topProducts = analyticsData?.topProducts ?? [];
+  const revenueData = analyticsData?.revenueData || [];
+  const topProducts = analyticsData?.topProducts || [];
 
   return (
     <div className="space-y-8">
@@ -414,7 +414,7 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
               <div className="flex items-center justify-center h-[300px]">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
           </div>
-            ) : revenueData.length === 0 ? (
+            ) : (revenueData || []).length === 0 ? (
               <div className="flex items-center justify-center h-[300px] text-muted-foreground">
                 No sales data available for this period
           </div>
@@ -521,7 +521,7 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
             <div className="flex items-center justify-center h-[300px]">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
         </div>
-          ) : revenueData.length === 0 ? (
+          ) : (revenueData || []).length === 0 ? (
             <div className="flex items-center justify-center h-[300px] text-muted-foreground">
               No transaction data available for this period
         </div>
