@@ -140,24 +140,24 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
   }
 
   const formatTimestamp = (timestamp: string) => {
-    // Display timestamp in Philippines timezone (Asia/Manila)
+    // Simple Philippines time display (UTC+8)
     try {
       const date = new Date(timestamp);
+      if (isNaN(date.getTime())) return 'Invalid timestamp';
       
-      // Check if the date is valid
-      if (isNaN(date.getTime())) {
-        return 'Invalid timestamp';
-      }
+      // Get UTC time and add 8 hours for Philippines
+      const utcTime = date.getTime();
+      const phTime = new Date(utcTime + (8 * 60 * 60 * 1000));
       
-      return date.toLocaleString('en-US', {
-        timeZone: 'Asia/Manila',
+      return phTime.toLocaleString('en-US', {
         month: 'short',
         day: 'numeric',
         year: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
-        hour12: true
+        hour12: true,
+        timeZone: 'UTC' // Use UTC since we already added 8 hours
       });
     } catch (error) {
       return 'Invalid timestamp';
