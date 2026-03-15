@@ -164,7 +164,10 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
   }, [products]);
 
   const getProductsByCabinet = (cabinet: string) => {
-    return products[cabinet] || [];
+    if (cabinet === 'all') {
+      return Object.values(products).flat()
+    }
+    return products[cabinet] || []
   };
 
   const addProduct = async (product: Omit<Product, 'id'>, cabinet: string): Promise<Product | { error: string; isSkuConflict: true } | undefined> => {

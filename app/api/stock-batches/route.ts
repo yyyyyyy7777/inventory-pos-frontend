@@ -19,9 +19,9 @@ export async function GET(request: NextRequest) {
         LEFT JOIN stockbatch sb ON p.id = sb."productId" 
           AND sb.cabinet = $1 
           AND sb.status = 'on-shelf'
-        WHERE p.cabinet = $1
+        ${cabinet === 'all' ? '' : 'WHERE p.cabinet = $1'}
         GROUP BY p.id
-      `, [cabinet]);
+      `, cabinet === 'all' ? [] : [cabinet]);
 
       const stockMap: Record<string, number> = {};
       result.forEach((row: any) => {

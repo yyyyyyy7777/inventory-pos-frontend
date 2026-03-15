@@ -67,12 +67,12 @@ async function generateAnalyticsFromDB(cabinet: string, period: string) {
       SELECT s.id, s.amount, COUNT(si.id) as item_count
       FROM sale s
       LEFT JOIN "saleItem" si ON s.id = si."saleId"
-      WHERE s.cabinet = $1 
-        AND s.archived = false
-        AND s.date >= $2::timestamp
+      WHERE ${cabinet === 'all' ? '' : 's.cabinet = $1 AND '}
+        s.archived = false
+        AND s.date >= ${cabinet === 'all' ? '$1' : '$2'}::timestamp
       GROUP BY s.id, s.amount
     ) subq
-  `, [cabinet, startDate]);
+  `, cabinet === 'all' ? [startDate] : [cabinet, startDate]);
 
   // Get today's metrics with a separate query
   const today = startOfDay(now);
@@ -85,19 +85,19 @@ async function generateAnalyticsFromDB(cabinet: string, period: string) {
       SELECT s.id, s.amount, COUNT(si.id) as item_count
       FROM sale s
       LEFT JOIN "saleItem" si ON s.id = si."saleId"
-      WHERE s.cabinet = $1 
-        AND s.archived = false
-        AND s.date >= $2::timestamp 
-        AND s.date <= $3::timestamp
+      WHERE ${cabinet === 'all' ? '' : 's.cabinet = $1 AND '}
+        s.archived = false
+        AND s.date >= ${cabinet === 'all' ? '$1' : '$2'}::timestamp 
+        AND s.date <= ${cabinet === 'all' ? '$2' : '$3'}::timestamp
       GROUP BY s.id, s.amount
     ) subq
-  `, [cabinet, today, endOfDay(now)]);
+  `, cabinet === 'all' ? [today, endOfDay(now)] : [cabinet, today, endOfDay(now)]);
 
   // Get revenue data grouped by period using database aggregation
   const revenueDataQuery = await query(`
     SELECT 
       CASE 
-        WHEN $3 = 'day' THEN TO_CHAR(date, 'Dy')
+        WHEN $${cabinet === 'all' ? '2' : '3'} = 'day' THEN TO_CHAR(date, 'Dy')
         ELSE TO_CHAR(date, 'Mon')
       END as period,
       COALESCE(SUM(amount), 0) as revenue,
@@ -107,18 +107,18 @@ async function generateAnalyticsFromDB(cabinet: string, period: string) {
       SELECT s.id, s.amount, s.date, COUNT(si.id) as item_count
       FROM sale s
       LEFT JOIN "saleItem" si ON s.id = si."saleId"
-      WHERE s.cabinet = $1 
-        AND s.archived = false
-        AND s.date >= $2::timestamp
+      WHERE ${cabinet === 'all' ? '' : 's.cabinet = $1 AND '}
+        s.archived = false
+        AND s.date >= ${cabinet === 'all' ? '$1' : '$2'}::timestamp
       GROUP BY s.id, s.amount, s.date
     ) subq
     GROUP BY 
       CASE 
-        WHEN $3 = 'day' THEN TO_CHAR(date, 'Dy')
+        WHEN $${cabinet === 'all' ? '2' : '3'} = 'day' THEN TO_CHAR(date, 'Dy')
         ELSE TO_CHAR(date, 'Mon')
       END
     ORDER BY MIN(date)
-  `, [cabinet, startDate, groupBy]);
+  `, cabinet === 'all' ? [startDate, groupBy] : [cabinet, startDate, groupBy]);
 
   // Get top products using database aggregation
   const topProductsQuery = await query(`
@@ -129,24 +129,24 @@ async function generateAnalyticsFromDB(cabinet: string, period: string) {
       SUM(si.price * si.quantity) as revenue
     FROM sale s
     JOIN "saleItem" si ON s.id = si."saleId"
-    WHERE s.cabinet = $1 
-      AND s.archived = false
-      AND s.date >= $2::timestamp
+    WHERE ${cabinet === 'all' ? '' : 's.cabinet = $1 AND '}
+      s.archived = false
+      AND s.date >= ${cabinet === 'all' ? '$1' : '$2'}::timestamp
     GROUP BY si."productName"
     ORDER BY revenue DESC
     LIMIT 5
-  `, [cabinet, startDate]);
+  `, cabinet === 'all' ? [startDate] : [cabinet, startDate]);
 
   // Calculate growth by comparing with previous period
   const previousPeriodStart = subDays(startDate, 7);
   const previousRevenueQuery = await query(`
     SELECT COALESCE(SUM(amount), 0) as previous_revenue
     FROM sale
-    WHERE cabinet = $1 
-      AND archived = false
-      AND date >= $2::timestamp 
-      AND date < $3::timestamp
-  `, [cabinet, previousPeriodStart, startDate]);
+    WHERE ${cabinet === 'all' ? '' : 'cabinet = $1 AND '}
+      archived = false
+      AND date >= ${cabinet === 'all' ? '$1' : '$2'}::timestamp 
+      AND date < ${cabinet === 'all' ? '$2' : '$3'}::timestamp
+  `, cabinet === 'all' ? [previousPeriodStart, startDate] : [cabinet, previousPeriodStart, startDate]);
 
   const totalRevenue = parseFloat(summaryQuery[0]?.total_revenue || 0);
   const previousRevenue = parseFloat(previousRevenueQuery[0]?.previous_revenue || 0);

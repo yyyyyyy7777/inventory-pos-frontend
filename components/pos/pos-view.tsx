@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Plus, Trash2, ShoppingCart } from "lucide-react"
+import { Plus, Trash2, ShoppingCart, Package, Search } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useProducts, type Product } from "@/contexts/products-context"
 import { useSales, type SaleItem, type SalesRecord } from "@/contexts/sales-context"
@@ -38,7 +38,6 @@ interface ReceiptData {
 }
 import { useToast } from "@/contexts/toast-context"
 import { useActivity } from "@/contexts/activity-context"
-import { Search } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 interface POSViewProps {
@@ -766,131 +765,23 @@ export function POSView({ cabinet, username }: POSViewProps) {
   }
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 lg:gap-6">
-      <div className="xl:col-span-2 space-y-4">
-        <div className="flex items-center justify-end mb-4">
-          <div className="text-right">
-            <div className="text-lg font-semibold text-primary">
-              {currentTime.toLocaleTimeString('en-US', { 
-                hour: '2-digit', 
-                minute: '2-digit', 
-                second: '2-digit',
-                hour12: true 
-              })}
-            </div>
-            <div className="text-sm text-muted-foreground">
-              {currentTime.toLocaleDateString('en-US', { 
-                weekday: 'long',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
-              })}
-            </div>
-          </div>
-        </div>
-        <div className="flex flex-col sm:flex-row gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-            <Input
-              placeholder="Search by product name or SKU..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-          <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-            <SelectTrigger className="w-full sm:w-48">
-              <SelectValue placeholder="Category" />
-            </SelectTrigger>
-            <SelectContent>
-              {categories.map((category) => (
-                <SelectItem key={category} value={category}>
-                  {category}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={saleLocation} onValueChange={(value) => setSaleLocation(value as 'online' | 'physical')}>
-            <SelectTrigger className="w-32">
-              <SelectValue placeholder="Store Type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="online">🌐 Online</SelectItem>
-              <SelectItem value="physical">🏪 Physical</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button
-            variant={showOutOfStock ? "default" : "outline"}
-            onClick={() => setShowOutOfStock(!showOutOfStock)}
-            className="whitespace-nowrap"
-          >
-            {showOutOfStock ? "Hide Out of Stock" : "Show Out of Stock"}
-          </Button>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          {filteredProducts.map((product) => (
-            <Card
-              key={product.id}
-              className="bg-card border-primary/10 hover:border-primary/30 cursor-pointer hover:shadow-md transition-all"
-              onClick={() => addToCart(product)}
-            >
-              <CardContent className="pt-4">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-foreground mb-1">{product.name}</h3>
-                    <p className="text-xs text-muted-foreground mb-1">{product.category} • {product.sku}</p>
-                    {product.description && (
-                      <p className="text-xs text-muted-foreground line-clamp-2" title={product.description}>
-                        {product.description}
-                      </p>
-                    )}
-                  </div>
-                  <span className="text-lg ml-2">
-                    {product.stock > 0 ? '✓' : '❌'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex flex-col">
-                    <p className="text-lg font-bold text-primary">₱{product.price.toLocaleString()}</p>
-                    <p className={`text-xs ${product.stock > 0 ? 'text-green-500' : 'text-red-500'}`}>
-                      {product.stock > 0 ? 'in stock' : 'Out of stock'}
-                    </p>
-                  </div>
-                  <Button
-                    size="sm"
-                    className={`h-8 ${product.stock > 0 ? 'bg-primary hover:bg-primary/90 text-primary-foreground' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (product.stock > 0) {
-                        addToCart(product);
-                      }
-                    }}
-                    disabled={product.stock <= 0}
-                  >
-                    <Plus size={16} />
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground mt-2">Stock: {product.stock}</p>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-
-      <div className="xl:col-span-1">
-        <Card className="bg-card border-primary/10 xl:sticky xl:top-8 h-fit">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ShoppingCart size={20} />
+    <div className="flex flex-col xl:grid xl:grid-cols-3 gap-4 lg:gap-6">
+      {/* Cart - Shows first on mobile, sticky on desktop */}
+      <div className="xl:col-span-1 order-first xl:order-last">
+        <Card className="bg-card border-primary/10 xl:sticky xl:top-8 h-fit shadow-md">
+          <CardHeader className="p-4 sm:p-6">
+            <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+              <ShoppingCart size={18} />
               Cart
+              <span className="ml-auto text-sm font-normal text-muted-foreground">({cart.length} items)</span>
             </CardTitle>
-            <CardDescription>{cart.length} items</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {cart.length === 0 ? (
+            {cart.length === 0 && !showReceipt && (
               <p className="text-muted-foreground text-center py-8">Your cart is empty</p>
-            ) : (
+            )}
+            
+            {cart.length > 0 && !showReceipt && (
               <>
                 <div className="space-y-3 max-h-96 overflow-y-auto">
                   {cart.map((item) => (
@@ -909,50 +800,50 @@ export function POSView({ cabinet, username }: POSViewProps) {
                         </Button>
                       </div>
                       <div className="flex items-center justify-between text-sm">
-                      <div className="flex items-center gap-2">
-                        {priceEditingEnabled ? (
-                          <div className="flex items-center gap-1">
-                            <span className="text-xs text-muted-foreground">₱</span>
-                            <Input
-                              type="number"
-                              value={item.price}
-                              onChange={(e) => updateItemPrice(item.id, parseFloat(e.target.value) || 0)}
-                              className="w-20 h-6 text-xs px-1"
-                              disabled={showReceipt && currentSaleData}
-                            />
-                          </div>
-                        ) : (
-                          <div>
-                            <p className={`text-muted-foreground ${item.isDiscounted ? 'line-through text-xs' : ''}`}>
-                              ₱{item.originalPrice.toLocaleString()}
-                            </p>
-                            {item.isDiscounted && (
-                              <p className="text-orange-600 font-medium">
-                                ₱{item.price.toLocaleString()}
+                        <div className="flex items-center gap-2">
+                          {priceEditingEnabled ? (
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-muted-foreground">₱</span>
+                              <Input
+                                type="number"
+                                value={item.price}
+                                onChange={(e) => updateItemPrice(item.id, parseFloat(e.target.value) || 0)}
+                                className="w-20 h-6 text-xs px-1"
+                                disabled={showReceipt && currentSaleData}
+                              />
+                            </div>
+                          ) : (
+                            <div>
+                              <p className={`text-muted-foreground ${item.isDiscounted ? 'line-through text-xs' : ''}`}>
+                                ₱{item.originalPrice.toLocaleString()}
                               </p>
-                            )}
-                          </div>
-                        )}
+                              {item.isDiscounted && (
+                                <p className="text-orange-600 font-medium">
+                                  ₱{item.price.toLocaleString()}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center justify-center">
+                          <Input
+                            type="number"
+                            value={item.quantity}
+                            onChange={(e) => {
+                              const newQuantity = parseInt(e.target.value) || 0;
+                              const maxStock = products.find((p) => p.id === item.id)?.stock || 0;
+                              if (newQuantity >= 0 && newQuantity <= maxStock) {
+                                updateQuantity(item.id, newQuantity);
+                              }
+                            }}
+                            className="w-20 h-8 text-center font-medium"
+                            min="0"
+                            max={products.find((p) => p.id === item.id)?.stock || 0}
+                            disabled={showReceipt && currentSaleData}
+                            title={showReceipt && currentSaleData ? "Cannot modify quantity after sale completion" : "Type quantity for bulk orders"}
+                          />
+                        </div>
                       </div>
-                      <div className="flex items-center justify-center">
-                        <Input
-                          type="number"
-                          value={item.quantity}
-                          onChange={(e) => {
-                            const newQuantity = parseInt(e.target.value) || 0;
-                            const maxStock = products.find((p) => p.id === item.id)?.stock || 0;
-                            if (newQuantity >= 0 && newQuantity <= maxStock) {
-                              updateQuantity(item.id, newQuantity);
-                            }
-                          }}
-                          className="w-20 h-8 text-center font-medium"
-                          min="0"
-                          max={products.find((p) => p.id === item.id)?.stock || 0}
-                          disabled={showReceipt && currentSaleData}
-                          title={showReceipt && currentSaleData ? "Cannot modify quantity after sale completion" : "Type quantity for bulk orders"}
-                        />
-                      </div>
-                    </div>
                     </div>
                   ))}
                 </div>
@@ -1016,210 +907,346 @@ export function POSView({ cabinet, username }: POSViewProps) {
               </>
             )}
 
-            {/* Live Receipt Display */}
+            {/* Live Receipt Display - Shows when cart has items OR after sale completion */}
             {(cart.length > 0 || showReceipt) && (
-              <div className="border-t border-border pt-4">
-                <div className="bg-white border-2 border-dashed border-gray-300 rounded-lg p-6 space-y-4">
-                  {/* Store Info */}
-                  <div className="text-center border-b-2 border-gray-300 pb-4">
-                    <div className="flex items-center justify-center mb-2">
-                      <img 
-                        src={encodeURI('/Wheezard logo.png')} 
-                        alt="The WheezardPH" 
-                        className="h-12 w-12 mr-2 object-contain"
-                        onError={(e) => {
-                          // Fallback to emoji if image fails to load
-                          const target = e.target as HTMLImageElement;
-                          target.style.display = 'none';
-                          const parent = target.parentElement;
-                          if (parent) {
-                            const emoji = document.createElement('div');
-                            emoji.textContent = '🧙‍♂️';
-                            emoji.className = 'text-3xl mr-2';
-                            parent.insertBefore(emoji, parent.firstChild);
-                          }
-                        }}
-                      />
-                      <h3 className="font-bold text-lg text-gray-900">The WheezardPH</h3>
-                    </div>
-                    <div className="text-left space-y-1">
-                      <p className="text-sm text-gray-700 font-medium">📍 Cabinet: {cabinet}</p>
-                      <p className="text-xs text-gray-600">📅 {receiptTime ? receiptTime.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : currentTime.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} • {receiptTime ? receiptTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</p>
-                      <p className="text-xs text-gray-600">👤 Staff: {username}</p>
-                    </div>
-                  </div>
+                  <div className="border-t border-border pt-4">
+                    <div className="bg-white border-2 border-dashed border-gray-300 rounded-lg p-4 sm:p-6 space-y-4">
+                      {/* Store Info */}
+                      <div className="text-center border-b-2 border-gray-300 pb-4">
+                        <div className="flex items-center justify-center mb-2">
+                          <img 
+                            src={encodeURI('/Wheezard logo.png')} 
+                            alt="The WheezardPH" 
+                            className="h-10 w-10 sm:h-12 sm:w-12 mr-2 object-contain"
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = 'none';
+                              const parent = target.parentElement;
+                              if (parent) {
+                                const emoji = document.createElement('div');
+                                emoji.textContent = '🧙‍♂️';
+                                emoji.className = 'text-2xl sm:text-3xl mr-2';
+                                parent.insertBefore(emoji, parent.firstChild);
+                              }
+                            }}
+                          />
+                          <h3 className="font-bold text-base sm:text-lg text-gray-900">The WheezardPH</h3>
+                        </div>
+                        <div className="text-left space-y-1">
+                          <p className="text-xs sm:text-sm text-gray-700 font-medium">📍 Cabinet: {cabinet}</p>
+                          <p className="text-xs text-gray-600">📅 {receiptTime ? receiptTime.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : currentTime.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} • {receiptTime ? receiptTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</p>
+                          <p className="text-xs text-gray-600">👤 Staff: {username}</p>
+                        </div>
+                      </div>
 
-                  {/* Items List */}
-                  <div className="space-y-2">
-                    <div className="font-bold text-sm border-b-2 border-gray-300 pb-2 text-gray-900">
-                      {showReceipt ? 'ITEMS PURCHASED' : 'CURRENT ITEMS'}
-                    </div>
-                    <div className={showReceipt ? "" : "max-h-32 overflow-y-auto"}>
-                      {showReceipt && currentSaleData ? (
-                        currentSaleData.items.length === 0 ? (
-                          <div className="text-sm text-gray-500 text-center py-4">No items in cart</div>
-                        ) : (
-                          currentSaleData.items.map((item: any, index: number) => (
-                            <div key={index} className="flex justify-between items-start py-2 border-b border-gray-100">
-                              <div className="flex-1">
-                                <div className="font-medium text-sm text-gray-900">
-                                  {item.name}
-                                  {item.isDiscounted && <span className="ml-2 text-xs text-orange-600 bg-orange-100 px-2 py-1 rounded">DISCOUNTED</span>}
+                      {/* Items List */}
+                      <div className="space-y-2">
+                        <div className="font-bold text-xs sm:text-sm border-b-2 border-gray-300 pb-2 text-gray-900">
+                          {showReceipt ? 'ITEMS PURCHASED' : 'CURRENT ITEMS'}
+                        </div>
+                        <div className={showReceipt ? "" : "max-h-32 overflow-y-auto"}>
+                          {showReceipt && currentSaleData ? (
+                            currentSaleData.items.length === 0 ? (
+                              <div className="text-xs sm:text-sm text-gray-500 text-center py-4">No items in cart</div>
+                            ) : (
+                              currentSaleData.items.map((item: any, index: number) => (
+                                <div key={index} className="flex justify-between items-start py-2 border-b border-gray-100">
+                                  <div className="flex-1">
+                                    <div className="font-medium text-xs sm:text-sm text-gray-900">
+                                      {item.name}
+                                      {item.isDiscounted && <span className="ml-2 text-[10px] sm:text-xs text-orange-600 bg-orange-100 px-2 py-1 rounded">DISCOUNTED</span>}
+                                    </div>
+                                    <div className="text-[10px] sm:text-xs text-gray-600">
+                                      {item.quantity} × 
+                                      {item.isDiscounted ? (
+                                        <span>
+                                          <span className="line-through text-gray-400">₱{item.originalPrice?.toLocaleString()}</span>
+                                          <span className="text-orange-600 font-medium ml-1">₱{item.unitPrice.toLocaleString()}</span>
+                                        </span>
+                                      ) : (
+                                        <span>₱{item.unitPrice.toLocaleString()}</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="text-right font-semibold text-xs sm:text-sm text-gray-900 min-w-16 sm:min-w-20">
+                                    ₱{item.totalPrice.toLocaleString()}
+                                  </div>
                                 </div>
-                                <div className="text-xs text-gray-600">
-                                  {item.quantity} × 
-                                  {item.isDiscounted ? (
-                                    <span>
-                                      <span className="line-through text-gray-400">₱{item.originalPrice?.toLocaleString()}</span>
-                                      <span className="text-orange-600 font-medium ml-1">₱{item.unitPrice.toLocaleString()}</span>
-                                    </span>
-                                  ) : (
-                                    <span>₱{item.unitPrice.toLocaleString()}</span>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="text-right font-semibold text-sm text-gray-900 min-w-20">
-                                ₱{item.totalPrice.toLocaleString()}
-                              </div>
+                              ))
+                            )
+                          ) : (
+                            cart.length === 0 ? (
+                              <div className="text-xs sm:text-sm text-gray-500 text-center py-4">No items in cart</div>
+                            ) : (
+                              cart.map((item, index) => {
+                                const itemTotal = item.price * item.quantity;
+                                return (
+                                  <div key={item.id} className="flex justify-between items-start py-2 border-b border-gray-100">
+                                    <div className="flex-1">
+                                      <div className="font-medium text-xs sm:text-sm text-gray-900">
+                                        {item.name}
+                                        {item.isDiscounted && <span className="ml-2 text-[10px] sm:text-xs text-orange-600 bg-orange-100 px-2 py-1 rounded">DISCOUNTED</span>}
+                                      </div>
+                                      <div className="text-[10px] sm:text-xs text-gray-600">
+                                        {item.quantity} × 
+                                        {item.isDiscounted ? (
+                                          <span>
+                                            <span className="line-through text-gray-400">₱{item.originalPrice.toLocaleString()}</span>
+                                            <span className="text-orange-600 font-medium ml-1">₱{item.price.toLocaleString()}</span>
+                                            <span className="text-green-600 ml-1">(Save ₱{((item.originalPrice - item.price) * item.quantity).toLocaleString()})</span>
+                                          </span>
+                                        ) : (
+                                          <span>₱{item.price.toLocaleString()}</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="text-right font-semibold text-xs sm:text-sm text-gray-900 min-w-16 sm:min-w-20">
+                                      ₱{itemTotal.toLocaleString()}
+                                    </div>
+                                  </div>
+                                );
+                              })
+                            )
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Price Breakdown */}
+                      {(showReceipt && currentSaleData) || cart.length > 0 ? (
+                        <div className="border-t-2 border-b-2 border-gray-300 py-3 sm:py-4 space-y-2 sm:space-y-3">
+                          <div className="flex justify-between text-xs sm:text-sm">
+                            <span className="text-gray-700">Subtotal:</span>
+                            <span className="text-gray-900">
+                              ₱{(showReceipt && currentSaleData ? currentSaleData.subtotal : total).toLocaleString()}
+                            </span>
+                          </div>
+                          {(taxEnabled || (showReceipt && currentSaleData && currentSaleData.tax > 0)) && (
+                            <div className="flex justify-between text-xs sm:text-sm">
+                              <span className="text-gray-700">Tax ({showReceipt && currentSaleData ? (currentSaleData.tax / currentSaleData.subtotal * 100).toFixed(1) : taxRate}%):</span>
+                              <span className="text-gray-900">
+                                ₱{(showReceipt && currentSaleData ? currentSaleData.tax : Math.round(total * taxRate / 100)).toLocaleString()}
+                              </span>
                             </div>
-                          ))
-                        )
-                      ) : (
-                        cart.length === 0 ? (
-                          <div className="text-sm text-gray-500 text-center py-4">No items in cart</div>
-                        ) : (
-                          cart.map((item, index) => {
-                            const itemTotal = item.price * item.quantity;
-                            return (
-                              <div key={item.id} className="flex justify-between items-start py-2 border-b border-gray-100">
-                                <div className="flex-1">
-                                  <div className="font-medium text-sm text-gray-900">
-                                    {item.name}
-                                    {item.isDiscounted && <span className="ml-2 text-xs text-orange-600 bg-orange-100 px-2 py-1 rounded">DISCOUNTED</span>}
-                                  </div>
-                                  <div className="text-xs text-gray-600">
-                                    {item.quantity} × 
-                                    {item.isDiscounted ? (
-                                      <span>
-                                        <span className="line-through text-gray-400">₱{item.originalPrice.toLocaleString()}</span>
-                                        <span className="text-orange-600 font-medium ml-1">₱{item.price.toLocaleString()}</span>
-                                        <span className="text-green-600 ml-1">(Save ₱{((item.originalPrice - item.price) * item.quantity).toLocaleString()})</span>
-                                        <span className="text-gray-500 ml-1">= ₱{itemTotal.toLocaleString()}</span>
-                                      </span>
-                                    ) : (
-                                      <span>₱{item.price.toLocaleString()} = ₱{itemTotal.toLocaleString()}</span>
-                                    )}
-                                  </div>
-                                </div>
-                                <div className="text-right font-semibold text-sm text-gray-900 min-w-20">
-                                  ₱{itemTotal.toLocaleString()}
-                                </div>
+                          )}
+                          <div className="flex justify-between text-sm sm:text-lg font-bold">
+                            <span className="text-gray-900">TOTAL:</span>
+                            <span className="text-gray-900">
+                              ₱{(showReceipt && currentSaleData ? currentSaleData.total : Math.round(total * (1 + (taxEnabled ? taxRate / 100 : 0)))).toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {/* Payment Info */}
+                      {showReceipt && currentSaleData && (
+                        <div className="text-center space-y-2 sm:space-y-3 border-b border-gray-200 pb-4">
+                          <div className="text-xs sm:text-sm text-gray-700 font-medium">
+                            Payment: <span className="font-semibold text-gray-900">{currentSaleData.paymentMethod === 'Cash' ? '💵 Cash' : '📱 QRPH'}</span>
+                          </div>
+                          {currentSaleData.paymentMethod === 'Cash' && (
+                            <>
+                              <div className="text-xs sm:text-sm text-gray-700 font-medium">
+                                Cash Received: <span className="font-semibold text-gray-900">{currentSaleData.cashReceived}</span>
                               </div>
-                            );
-                          })
-                        )
+                              <div className="text-xs sm:text-sm text-gray-700 font-medium">
+                                Change: <span className="font-semibold text-gray-900">{currentSaleData.change}</span>
+                              </div>
+                            </>
+                          )}
+                          {currentSaleData.paymentMethod === 'QRPH' && currentSaleData.referenceNumber && (
+                            <div className="text-xs sm:text-sm text-gray-700 font-medium">
+                              Reference: <span className="font-semibold text-gray-900">{currentSaleData.referenceNumber}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Footer */}
+                      <div className="text-center pt-2 border-t border-gray-200">
+                        <p className="text-[10px] sm:text-xs text-gray-500">📱 {saleLocation === 'online' ? 'Online Order' : 'Physical Store'}</p>
+                      </div>
+
+                      {/* Action Buttons - Only show after sale completion */}
+                      {showReceipt && (
+                        <div className="flex gap-2 sm:gap-3 pt-4">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 text-xs sm:text-sm font-medium py-2 border-gray-300 text-gray-700 hover:bg-gray-50"
+                            onClick={() => {
+                              const receiptData = showReceipt && currentSaleData ? currentSaleData : getLiveReceiptData();
+                              printReceipt(receiptData);
+                            }}
+                          >
+                            🖨️ Print
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 text-xs sm:text-sm font-medium py-2 border-gray-300 text-gray-700 hover:bg-gray-50"
+                            onClick={() => {
+                              const receiptData = showReceipt && currentSaleData ? currentSaleData : getLiveReceiptData();
+                              exportToExcel(receiptData);
+                            }}
+                          >
+                            📊 Excel
+                          </Button>
+                          <Button
+                            size="sm"
+                            className="flex-1 text-xs sm:text-sm font-medium py-2 bg-primary hover:bg-primary/90 text-primary-foreground"
+                            onClick={() => {
+                              setShowReceipt(false);
+                              setCurrentSaleData(null);
+                              setReceiptTime(null);
+                            }}
+                          >
+                            New Sale
+                          </Button>
+                        </div>
                       )}
                     </div>
                   </div>
-
-                  {/* Price Breakdown */}
-                  {(showReceipt && currentSaleData) || cart.length > 0 ? (
-                    <div className="border-t-2 border-b-2 border-gray-300 py-4 space-y-3">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-700">Subtotal:</span>
-                        <span className="text-gray-900">
-                          ₱{(showReceipt && currentSaleData ? currentSaleData.subtotal : total).toLocaleString()}
-                        </span>
-                      </div>
-                      {(taxEnabled || (showReceipt && currentSaleData && currentSaleData.tax > 0)) && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-700">Tax ({showReceipt && currentSaleData ? (currentSaleData.tax / currentSaleData.subtotal * 100).toFixed(1) : taxRate}%):</span>
-                          <span className="text-gray-900">
-                            ₱{(showReceipt && currentSaleData ? currentSaleData.tax : Math.round(total * taxRate / 100)).toLocaleString()}
-                          </span>
-                        </div>
-                      )}
-                      <div className="flex justify-between text-lg font-bold">
-                        <span className="text-gray-900">TOTAL:</span>
-                        <span className="text-gray-900">
-                          ₱{(showReceipt && currentSaleData ? currentSaleData.total : Math.round(total * (1 + (taxEnabled ? taxRate / 100 : 0)))).toLocaleString()}
-                        </span>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {/* Payment Info */}
-                  {showReceipt && currentSaleData && (
-                    <div className="text-center space-y-3 border-b border-gray-200 pb-4">
-                      <div className="text-sm text-gray-700 font-medium">
-                        Payment: <span className="font-semibold text-gray-900">{currentSaleData.paymentMethod === 'Cash' ? '💵 Cash' : '📱 QRPH'}</span>
-                      </div>
-                      {currentSaleData.paymentMethod === 'Cash' && (
-                        <>
-                          <div className="text-sm text-gray-700 font-medium">
-                            Cash Received: <span className="font-semibold text-gray-900">{currentSaleData.cashReceived}</span>
-                          </div>
-                          <div className="text-sm text-gray-700 font-medium">
-                            Change: <span className="font-semibold text-gray-900">{currentSaleData.change}</span>
-                          </div>
-                        </>
-                      )}
-                      {currentSaleData.paymentMethod === 'QRPH' && currentSaleData.referenceNumber && (
-                        <div className="text-sm text-gray-700 font-medium">
-                          Reference: <span className="font-semibold text-gray-900">{currentSaleData.referenceNumber}</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Footer */}
-                  <div className="text-center pt-2 border-t border-gray-200">
-                    <p className="text-xs text-gray-500">📱 {saleLocation === 'online' ? 'Online Order' : 'Physical Store'}</p>
-                  </div>
-
-                  {/* Action Buttons - Only show after sale completion */}
-                  {showReceipt && (
-                    <div className="flex gap-3 pt-4">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1 text-sm font-medium py-2 border-gray-300 text-gray-700 hover:bg-gray-50"
-                        onClick={() => {
-                          const receiptData = showReceipt && currentSaleData ? currentSaleData : getLiveReceiptData();
-                          printReceipt(receiptData);
-                        }}
-                      >
-                        🖨️ Print
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1 text-sm font-medium py-2 border-gray-300 text-gray-700 hover:bg-gray-50"
-                        onClick={() => {
-                          const receiptData = showReceipt && currentSaleData ? currentSaleData : getLiveReceiptData();
-                          exportToExcel(receiptData);
-                        }}
-                      >
-                        📊 Excel
-                      </Button>
-                      <Button
-                        size="sm"
-                        className="flex-1 text-sm font-medium py-2 bg-primary hover:bg-primary/90 text-primary-foreground"
-                        onClick={() => {
-                          setShowReceipt(false);
-                          setCurrentSaleData(null);
-                          setReceiptTime(null); // Reset receipt time when starting new sale
-                        }}
-                      >
-                        New Sale
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+                )}
           </CardContent>
         </Card>
+      </div>
+
+      {/* Products Section */}
+      <div className="xl:col-span-2 space-y-4">
+        {/* Search and Filters */}
+        <div className="flex flex-col sm:flex-row gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+            <Input
+              placeholder="Search by product name or SKU..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+          <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+            <SelectTrigger className="w-full sm:w-48">
+              <SelectValue placeholder="Category" />
+            </SelectTrigger>
+            <SelectContent>
+              {categories.map((category) => (
+                <SelectItem key={category} value={category}>
+                  {category}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={saleLocation} onValueChange={(value) => setSaleLocation(value as 'online' | 'physical')}>
+            <SelectTrigger className="w-32">
+              <SelectValue placeholder="Store Type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="online">🌐 Online</SelectItem>
+              <SelectItem value="physical">🏪 Physical</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            variant={showOutOfStock ? "default" : "outline"}
+            onClick={() => setShowOutOfStock(!showOutOfStock)}
+            className="whitespace-nowrap"
+          >
+            {showOutOfStock ? "Hide Out of Stock" : "Show Out of Stock"}
+          </Button>
+        </div>
+
+        {/* Product Grid - Responsive for all devices */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4">
+          {filteredProducts.map((product) => (
+            <Card
+              key={product.id}
+              className={`relative overflow-hidden border-2 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer ${
+                product.stock > 0 
+                  ? 'bg-gradient-to-br from-[oklch(0.55_0.15_280)] to-[oklch(0.65_0.20_280)] border-[oklch(0.6_0.18_280)]' 
+                  : 'bg-gradient-to-br from-gray-100 to-gray-200 border-gray-300 opacity-60'
+              }`}
+              onClick={() => addToCart(product)}
+            >
+              {/* Glossy overlay */}
+              <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-white/20 to-transparent rounded-bl-full" />
+              
+              <CardContent className="p-3 sm:p-4 relative">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="space-y-1.5 flex-1 min-w-0">
+                    {/* Category - small, italic, muted */}
+                    <p className={`text-[10px] sm:text-[11px] italic truncate ${
+                      product.stock > 0 ? 'text-white/60' : 'text-gray-400'
+                    }`}>
+                      {product.category}
+                    </p>
+                    
+                    {/* Product Name - large, bold, prominent */}
+                    <p className={`text-base sm:text-lg font-extrabold leading-snug truncate drop-shadow ${
+                      product.stock > 0 ? 'text-white' : 'text-gray-700'
+                    }`}>
+                      {product.name}
+                    </p>
+                    
+                    {/* SKU - small, mono */}
+                    <p className={`text-[10px] font-mono truncate ${
+                      product.stock > 0 ? 'text-white/50' : 'text-gray-400'
+                    }`}>
+                      SKU: {product.sku}
+                    </p>
+                    
+                    {/* Stock info */}
+                    <div className="flex items-center gap-1.5 pt-1">
+                      <span className={`text-[10px] sm:text-xs ${
+                        product.stock > 0 ? 'text-white/70' : 'text-gray-400'
+                      }`}>
+                        Stock:
+                      </span>
+                      <span className={`text-[10px] sm:text-xs font-bold ${
+                        product.stock > 0 ? 'text-green-300 drop-shadow-sm' : 'text-red-400'
+                      }`}>
+                        {product.stock}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  {/* Icon */}
+                  <div className={`rounded-full p-2 sm:p-2.5 flex-shrink-0 shadow-md ${
+                    product.stock > 0 
+                      ? 'bg-[oklch(0.75_0.25_280)]' 
+                      : 'bg-gray-300'
+                  }`}>
+                    <Package size={18} className={product.stock > 0 ? 'text-[oklch(0.25_0.05_280)]' : 'text-gray-500'} />
+                  </div>
+                </div>
+
+                {/* Price and Add Button */}
+                <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-white/25">
+                  <p className={`text-lg sm:text-xl font-bold drop-shadow-sm ${
+                    product.stock > 0 ? 'text-white' : 'text-gray-600'
+                  }`}>
+                    ₱{product.price.toLocaleString()}
+                  </p>
+                  <Button
+                    size="sm"
+                    className={`h-9 w-9 sm:h-10 sm:w-10 rounded-full flex-shrink-0 shadow-lg ${
+                      product.stock > 0 
+                        ? 'bg-white hover:bg-white/95 text-[oklch(0.55_0.15_280)]' 
+                        : 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (product.stock > 0) {
+                        addToCart(product);
+                      }
+                    }}
+                    disabled={product.stock <= 0}
+                  >
+                    <Plus size={20} />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       </div>
 
       {/* Payment Method Selection Dialog */}

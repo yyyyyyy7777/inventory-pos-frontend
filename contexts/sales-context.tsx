@@ -244,7 +244,10 @@ export function SalesProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const getSalesByCabinet = (cabinet: string) => {
-    return sales.filter((sale) => sale.cabinet === cabinet && !sale.archived);
+    if (cabinet === 'all') {
+      return sales.filter((sale) => !sale.archived)
+    }
+    return sales.filter((sale) => sale.cabinet === cabinet && !sale.archived)
   };
 
   return (
