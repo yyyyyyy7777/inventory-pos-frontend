@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Plus, Search, Package, Clock, Trash2, Edit2, Filter, X, Calendar, DollarSign, ArrowUpDown, Zap, Check, AlertTriangle, XCircle, Printer, Download, RefreshCw } from "lucide-react"
+import { Plus, Search, Package, Clock, Trash2, Edit2, Filter, X, Calendar, DollarSign, ArrowUpDown, Zap, Check, AlertTriangle, XCircle, Printer, Download, RefreshCw, Globe, FileText, BarChart3, Folder } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useProducts, type Product, type ProductLocation } from "@/contexts/products-context"
 import { useToast } from "@/contexts/toast-context"
@@ -924,7 +924,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                   <SelectValue placeholder="All" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">🌐 All Categories</SelectItem>
+                  <SelectItem value="all"><span className="flex items-center gap-2"><Globe size={14} /> All Categories</span></SelectItem>
                   {categories.slice(0, 15).map((category) => (
                     <SelectItem key={category} value={category} className="text-xs">
                       {category}
@@ -945,9 +945,9 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                   <SelectValue placeholder="All" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">� All Stock</SelectItem>
-                  <SelectItem value="low">⚠️ Low Stock (&lt;20)</SelectItem>
-                  <SelectItem value="out">❌ Out of Stock</SelectItem>
+                  <SelectItem value="all">All Stock</SelectItem>
+                  <SelectItem value="low"><span className="flex items-center gap-2"><AlertTriangle size={14} /> Low Stock (&lt;20)</span></SelectItem>
+                  <SelectItem value="out"><span className="flex items-center gap-2"><XCircle size={14} /> Out of Stock</span></SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -984,11 +984,11 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                   <SelectValue placeholder="Sort" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="name">📝 Product Name</SelectItem>
-                  <SelectItem value="stock">📊 Stock Level</SelectItem>
-                  <SelectItem value="price">💰 Price</SelectItem>
-                  <SelectItem value="category">📁 Category</SelectItem>
-                  <SelectItem value="lastRestock">📅 Last Restock</SelectItem>
+                  <SelectItem value="name"><span className="flex items-center gap-2"><FileText size={14} /> Product Name</span></SelectItem>
+                  <SelectItem value="stock"><span className="flex items-center gap-2"><BarChart3 size={14} /> Stock Level</span></SelectItem>
+                  <SelectItem value="price"><span className="flex items-center gap-2"><DollarSign size={14} /> Price</span></SelectItem>
+                  <SelectItem value="category"><span className="flex items-center gap-2"><Folder size={14} /> Category</span></SelectItem>
+                  <SelectItem value="lastRestock"><span className="flex items-center gap-2"><Calendar size={14} /> Last Restock</span></SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1185,7 +1185,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
               <CardContent>
                 {filteredInventory.length === 0 ? (
                   <EmptyState
-                    icon="📦"
+                    icon={<Package size={48} className="text-gray-400" />}
                     title="No products found"
                     description={searchQuery ? "Try adjusting your search criteria" : "Start by adding your first product"}
                     action={{ label: "Add Product", onClick: () => setShowAddForm(true) }}

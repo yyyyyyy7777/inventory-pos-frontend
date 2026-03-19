@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Search, Download, Filter, Calendar, DollarSign, Package, ArrowUpDown, Store, CreditCard, Archive, Printer, X, Zap, Check } from "lucide-react"
+import { Search, Download, Filter, Calendar, DollarSign, Package, ArrowUpDown, X, RefreshCw, Wrench, LayoutList, Users, Boxes, Settings, Building2, Home, Folder, FolderOpen, FileText, Globe, Banknote, Smartphone, CreditCard, Tag, FileSpreadsheet, BarChart3, Check, Printer, Archive, Store, Zap } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useSales } from "@/contexts/sales-context"
@@ -99,7 +99,7 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
   // Print sales list
   const handleViewSaleDetails = (sale: any) => {
     const items = sale.items.map((item: any) => 
-      `${item.isDiscounted ? '🏷️ ' : ''}${item.productName} (${item.quantity}x) - ₱${item.price.toLocaleString()}${item.isDiscounted ? ` (was ₱${item.originalPrice?.toLocaleString()})` : ''}`
+      `${item.isDiscounted ? '[DISCOUNTED] ' : ''}${item.productName} (${item.quantity}x) - ₱${item.price.toLocaleString()}${item.isDiscounted ? ` (was ₱${item.originalPrice?.toLocaleString()})` : ''}`
     ).join('\n');
     
     alert(`Sale Details:\n\nID: ${createShortSaleId(sale.id)}\nDate: ${new Date(sale.date).toLocaleDateString()}\nStaff: ${sale.staffName}\nPayment: ${sale.paymentMethod}\nTotal: ₱${sale.amount.toLocaleString()}\n\nItems:\n${items}`);
@@ -435,7 +435,7 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
                     <SelectValue placeholder="All" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">🌐 All Categories</SelectItem>
+                    <SelectItem value="all"><span className="flex items-center gap-2"><Globe size={14} /> All Categories</span></SelectItem>
                     {categories.slice(0, 15).map((category) => (
                       <SelectItem key={category} value={category} className="text-xs">{category}</SelectItem>
                     ))}
@@ -486,9 +486,9 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
                     <SelectValue placeholder="All" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">💳 All Methods</SelectItem>
-                    <SelectItem value="Cash">💵 Cash</SelectItem>
-                    <SelectItem value="QRPH">📱 QRPH</SelectItem>
+                    <SelectItem value="all"><span className="flex items-center gap-2"><CreditCard size={14} /> All Methods</span></SelectItem>
+                    <SelectItem value="Cash"><span className="flex items-center gap-2"><Banknote size={14} /> Cash</span></SelectItem>
+                    <SelectItem value="QRPH"><span className="flex items-center gap-2"><Smartphone size={14} /> QRPH</span></SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -504,8 +504,8 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Sales</SelectItem>
-                      <SelectItem value="regular">💰 Regular Price</SelectItem>
-                      <SelectItem value="discounted">Discounted</SelectItem>
+                      <SelectItem value="regular"><span className="flex items-center gap-2"><DollarSign size={14} /> Regular Price</span></SelectItem>
+                      <SelectItem value="discounted"><span className="flex items-center gap-2"><Tag size={14} /> Discounted</span></SelectItem>
                     </SelectContent>
                   </Select>
                   {negotiationFilter !== "all" && (
@@ -525,9 +525,9 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
                     <SelectValue placeholder="Sort" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="date">📅 Date</SelectItem>
-                    <SelectItem value="amount">💰 Amount</SelectItem>
-                    <SelectItem value="staff">👤 Staff</SelectItem>
+                    <SelectItem value="date"><span className="flex items-center gap-2"><Calendar size={14} /> Date</span></SelectItem>
+                    <SelectItem value="amount"><span className="flex items-center gap-2"><DollarSign size={14} /> Amount</span></SelectItem>
+                    <SelectItem value="staff"><span className="flex items-center gap-2"><Users size={14} /> Staff</span></SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -541,12 +541,12 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
                     <SelectValue placeholder="All Time" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">📊 All Time</SelectItem>
-                    <SelectItem value="today">📅 Today</SelectItem>
-                    <SelectItem value="week">📆 This Week</SelectItem>
-                    <SelectItem value="month">🗓️ This Month</SelectItem>
-                    <SelectItem value="quarter">📈 Quarter</SelectItem>
-                    <SelectItem value="year">📋 This Year</SelectItem>
+                    <SelectItem value="all"><span className="flex items-center gap-2"><BarChart3 size={14} /> All Time</span></SelectItem>
+                    <SelectItem value="today"><span className="flex items-center gap-2"><Calendar size={14} /> Today</span></SelectItem>
+                    <SelectItem value="week"><span className="flex items-center gap-2"><Calendar size={14} /> This Week</span></SelectItem>
+                    <SelectItem value="month"><span className="flex items-center gap-2"><Calendar size={14} /> This Month</span></SelectItem>
+                    <SelectItem value="quarter"><span className="flex items-center gap-2"><BarChart3 size={14} /> Quarter</span></SelectItem>
+                    <SelectItem value="year"><span className="flex items-center gap-2"><FileText size={14} /> This Year</span></SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -611,10 +611,10 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
             </div>
             <div className="flex items-center gap-1 lg:gap-2 flex-wrap">
               <Button variant="outline" onClick={handlePrint} className="h-8 px-2 lg:px-3 rounded-md border-2 hover:bg-gray-50 text-xs" title="Print sales report">
-                <Printer size={12} className="mr-1 hidden sm:inline" /> <span className="hidden sm:inline">Print</span><span className="sm:hidden">🖨️</span>
+                <Printer size={12} className="mr-1" /> Print
               </Button>
               <Button variant="outline" onClick={handleExportExcel} className="h-8 px-2 lg:px-3 rounded-md border-2 hover:bg-gray-50 text-xs" title="Export to Excel">
-                <Download size={12} className="mr-1 hidden sm:inline" /> <span className="hidden sm:inline">Export</span><span className="sm:hidden">📊</span>
+                <Download size={12} className="mr-1" /> Export
               </Button>
               <Button onClick={handleExportReport} className="h-8 px-2 lg:px-3 bg-primary hover:bg-primary/90 text-primary-foreground text-xs flex items-center gap-1">
                 <Download size={14} /> <span className="hidden sm:inline">Report</span>
@@ -660,7 +660,7 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
                       ).length}
                     </p>
                     <p className="text-xs opacity-60">
-                      {negotiationFilter === "discounted" ? "✓ Click to clear filter" : "Click to filter discounts"}
+                      {negotiationFilter === "discounted" ? <span className="flex items-center gap-1 justify-center"><Check size={12} /></span> : "Click to filter"}
                     </p>
                   </div>
                   <div className={`rounded-full p-2 flex-shrink-0 ${negotiationFilter === "discounted" ? "bg-orange-200 text-orange-700" : "bg-[oklch(0.65_0.12_85)] text-white"}`}>
@@ -684,12 +684,12 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
                       <SelectValue placeholder="Period" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">📊 All Time</SelectItem>
-                      <SelectItem value="today">📅 Today</SelectItem>
-                      <SelectItem value="week">📆 This Week</SelectItem>
-                      <SelectItem value="month">🗓️ This Month</SelectItem>
-                      <SelectItem value="quarter">📈 Quarter</SelectItem>
-                      <SelectItem value="year">📋 This Year</SelectItem>
+                      <SelectItem value="all"><span className="flex items-center gap-2"><BarChart3 size={14} /> All Time</span></SelectItem>
+                      <SelectItem value="today"><span className="flex items-center gap-2"><Calendar size={14} /> Today</span></SelectItem>
+                      <SelectItem value="week"><span className="flex items-center gap-2"><Calendar size={14} /> This Week</span></SelectItem>
+                      <SelectItem value="month"><span className="flex items-center gap-2"><Calendar size={14} /> This Month</span></SelectItem>
+                      <SelectItem value="quarter"><span className="flex items-center gap-2"><BarChart3 size={14} /> Quarter</span></SelectItem>
+                      <SelectItem value="year"><span className="flex items-center gap-2"><FileText size={14} /> This Year</span></SelectItem>
                     </SelectContent>
                   </Select>
                   <div className="text-right">
@@ -704,7 +704,7 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
             </CardHeader>
             <CardContent>
               {filteredSales.length === 0 ? (
-                <EmptyState icon="💰" title="No sales found" description={searchQuery ? "Try adjusting your search criteria" : "Start by making your first sale"} action={{ label: "New Sale", onClick: () => {} }} />
+                <EmptyState icon={<DollarSign size={48} className="text-gray-400" />} title="No sales found" description={searchQuery ? "Try adjusting your search criteria" : "Start by making your first sale"} action={{ label: "New Sale", onClick: () => {} }} />
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[800px]">

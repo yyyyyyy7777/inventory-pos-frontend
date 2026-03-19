@@ -5,11 +5,14 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Plus, Trash2, ShoppingCart, Package, Search } from "lucide-react"
+import { Plus, Trash2, ShoppingCart, Package, Search, MapPin, Calendar, User, Banknote, Smartphone, Globe, Store, Printer, FileSpreadsheet, Sparkles } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useProducts, type Product } from "@/contexts/products-context"
 import { useSales, type SaleItem, type SalesRecord } from "@/contexts/sales-context"
 import { useFormAutosave } from "@/contexts/autosave-context"
+import { useToast } from "@/contexts/toast-context"
+import { useActivity } from "@/contexts/activity-context"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 // Type for receipt display (different from SaleItem)
 interface ReceiptItem {
@@ -36,9 +39,6 @@ interface ReceiptData {
   cashReceived: string;
   change: string;
 }
-import { useToast } from "@/contexts/toast-context"
-import { useActivity } from "@/contexts/activity-context"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 interface POSViewProps {
   cabinet: string
@@ -335,9 +335,9 @@ export function POSView({ cabinet, username }: POSViewProps) {
     // Create CSV that matches receipt design
     let csvContent = '\ufeff'; // UTF-8 BOM for Excel
     csvContent += 'The WheezardPH\n';
-    csvContent += '🧙‍♂️ The WheezardPH\n\n';
-    csvContent += '📍 Cabinet: ' + saleData.cabinet + '\n';
-    csvContent += '📅 ' + saleData.date + ' • ' + saleData.time + '\n';
+    csvContent += 'The WheezardPH\n\n';
+    csvContent += 'Cabinet: ' + saleData.cabinet + '\n';
+    csvContent += saleData.date + ' • ' + saleData.time + '\n';
     csvContent += 'Staff: ' + saleData.staff + '\n\n';
     
     csvContent += 'ITEMS PURCHASED\n';
@@ -356,12 +356,12 @@ export function POSView({ cabinet, username }: POSViewProps) {
     
     if (saleData.paymentMethod === 'Cash') {
       csvContent += '\nPAYMENT INFO\n';
-      csvContent += 'Payment Method,💵 Cash\n';
+      csvContent += 'Payment Method,Cash\n';
       csvContent += 'Cash Received,' + saleData.cashReceived + '\n';
       csvContent += 'Change,' + saleData.change + '\n';
     } else {
       csvContent += '\nPAYMENT INFO\n';
-      csvContent += 'Payment Method,📱 QRPH\n';
+      csvContent += 'Payment Method,QRPH\n';
       if (saleData.referenceNumber) {
         csvContent += 'Reference Number,' + saleData.referenceNumber + '\n';
       }
@@ -369,7 +369,7 @@ export function POSView({ cabinet, username }: POSViewProps) {
     
     csvContent += '\n*** Thank You! ***\n';
     csvContent += 'Please come again!\n';
-    csvContent += '📱 ' + saleData.location + '\n';
+    csvContent += saleData.location + '\n';
     
     // Create blob and download
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -476,13 +476,13 @@ export function POSView({ cabinet, username }: POSViewProps) {
         <div class="header">
           <div class="logo-container">
             <img src="/Wheezard%20logo.png" alt="The WheezardPH" class="logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
-            <span style="display:none;">🧙‍♂️</span>
+            <span style="display:none;"><Sparkles size={32} /></span>
             <div class="store-name">The WheezardPH</div>
           </div>
         </div>
 
-        <div class="info-left">📍 Cabinet: ${saleData.cabinet}</div>
-        <div class="info-left">📅 ${saleData.date} • ${saleData.time}</div>
+        <div class="info-left">Cabinet: ${saleData.cabinet}</div>
+        <div class="info-left">${saleData.date} • ${saleData.time}</div>
         <div class="info-left">Staff: ${saleData.staff}</div>
 
         <div class="items-header">
@@ -527,7 +527,7 @@ export function POSView({ cabinet, username }: POSViewProps) {
         </div>
 
         <div class="payment-info">
-          <div>Payment: ${saleData.paymentMethod === 'Cash' ? '💵 Cash' : '📱 QRPH'}</div>
+          <div>Payment: ${saleData.paymentMethod === 'Cash' ? 'Cash' : 'QRPH'}</div>
     `;
     
     if (saleData.paymentMethod === 'Cash') {
@@ -542,7 +542,7 @@ export function POSView({ cabinet, username }: POSViewProps) {
         <div class="footer">
           <div>*** Thank You! ***</div>
           <div>Please come again!</div>
-          <div style="margin-top: 6px;">📱 ${saleData.location}</div>
+          <div style="margin-top: 6px;">${saleData.location}</div>
         </div>
       </div>
     </body>
@@ -765,7 +765,37 @@ export function POSView({ cabinet, username }: POSViewProps) {
   }
 
   return (
-    <div className="flex flex-col xl:grid xl:grid-cols-3 gap-4 lg:gap-6">
+    <>
+      {/* Restore Prompt Dialog */}
+      {showRestorePrompt && (
+        <Dialog open={showRestorePrompt} onOpenChange={(open) => !open && rejectRestore()}>
+          <DialogContent className="max-w-md mx-4">
+            <DialogHeader>
+              <DialogTitle>Restore Previous Session?</DialogTitle>
+              <DialogDescription>
+                You have unsaved items from your previous cart session. Would you like to restore them?
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex gap-3">
+              <Button
+                onClick={acceptRestore}
+                className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground"
+              >
+                Restore Cart
+              </Button>
+              <Button
+                onClick={rejectRestore}
+                variant="outline"
+                className="flex-1"
+              >
+                Start Fresh
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      <div className="flex flex-col xl:grid xl:grid-cols-3 gap-4 lg:gap-6">
       {/* Cart - Shows first on mobile, sticky on desktop */}
       <div className="xl:col-span-1 order-first xl:order-last">
         <Card className="bg-card border-primary/10 xl:sticky xl:top-8 h-fit shadow-md">
@@ -921,21 +951,20 @@ export function POSView({ cabinet, username }: POSViewProps) {
                             onError={(e) => {
                               const target = e.target as HTMLImageElement;
                               target.style.display = 'none';
-                              const parent = target.parentElement;
-                              if (parent) {
-                                const emoji = document.createElement('div');
-                                emoji.textContent = '🧙‍♂️';
-                                emoji.className = 'text-2xl sm:text-3xl mr-2';
-                                parent.insertBefore(emoji, parent.firstChild);
-                              }
                             }}
                           />
                           <h3 className="font-bold text-base sm:text-lg text-gray-900">The WheezardPH</h3>
                         </div>
                         <div className="text-left space-y-1">
-                          <p className="text-xs sm:text-sm text-gray-700 font-medium">📍 Cabinet: {cabinet}</p>
-                          <p className="text-xs text-gray-600">📅 {receiptTime ? receiptTime.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : currentTime.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} • {receiptTime ? receiptTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</p>
-                          <p className="text-xs text-gray-600">👤 Staff: {username}</p>
+                          <p className="text-xs sm:text-sm text-gray-700 font-medium flex items-center gap-1">
+                            <MapPin size={14} className="text-gray-500" /> Cabinet: {cabinet}
+                          </p>
+                          <p className="text-xs text-gray-600 flex items-center gap-1">
+                            <Calendar size={14} className="text-gray-500" /> {receiptTime ? receiptTime.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : currentTime.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} • {receiptTime ? receiptTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                          <p className="text-xs text-gray-600 flex items-center gap-1">
+                            <User size={14} className="text-gray-500" /> Staff: {username}
+                          </p>
                         </div>
                       </div>
 
@@ -1041,7 +1070,7 @@ export function POSView({ cabinet, username }: POSViewProps) {
                       {showReceipt && currentSaleData && (
                         <div className="text-center space-y-2 sm:space-y-3 border-b border-gray-200 pb-4">
                           <div className="text-xs sm:text-sm text-gray-700 font-medium">
-                            Payment: <span className="font-semibold text-gray-900">{currentSaleData.paymentMethod === 'Cash' ? '💵 Cash' : '📱 QRPH'}</span>
+                            Payment: <span className="font-semibold text-gray-900">{currentSaleData.paymentMethod === 'Cash' ? <span className="flex items-center gap-1 inline-flex"><Banknote size={16} /> Cash</span> : <span className="flex items-center gap-1 inline-flex"><Smartphone size={16} /> QRPH</span>}</span>
                           </div>
                           {currentSaleData.paymentMethod === 'Cash' && (
                             <>
@@ -1063,7 +1092,7 @@ export function POSView({ cabinet, username }: POSViewProps) {
 
                       {/* Footer */}
                       <div className="text-center pt-2 border-t border-gray-200">
-                        <p className="text-[10px] sm:text-xs text-gray-500">📱 {saleLocation === 'online' ? 'Online Order' : 'Physical Store'}</p>
+                        <p className="text-[10px] sm:text-xs text-gray-500 flex items-center justify-center gap-1"><Smartphone size={12} /> {saleLocation === 'online' ? 'Online Order' : 'Physical Store'}</p>
                       </div>
 
                       {/* Action Buttons - Only show after sale completion */}
@@ -1078,7 +1107,7 @@ export function POSView({ cabinet, username }: POSViewProps) {
                               printReceipt(receiptData);
                             }}
                           >
-                            🖨️ Print
+                            <Printer size={16} className="mr-1" /> Print
                           </Button>
                           <Button
                             variant="outline"
@@ -1089,7 +1118,7 @@ export function POSView({ cabinet, username }: POSViewProps) {
                               exportToExcel(receiptData);
                             }}
                           >
-                            📊 Excel
+                            <FileSpreadsheet size={16} className="mr-1" /> Excel
                           </Button>
                           <Button
                             size="sm"
@@ -1141,8 +1170,8 @@ export function POSView({ cabinet, username }: POSViewProps) {
               <SelectValue placeholder="Store Type" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="online">🌐 Online</SelectItem>
-              <SelectItem value="physical">🏪 Physical</SelectItem>
+              <SelectItem value="online"><span className="flex items-center gap-2"><Globe size={16} /> Online</span></SelectItem>
+              <SelectItem value="physical"><span className="flex items-center gap-2"><Store size={16} /> Physical</span></SelectItem>
             </SelectContent>
           </Select>
           <Button
@@ -1179,9 +1208,9 @@ export function POSView({ cabinet, username }: POSViewProps) {
                       {product.category}
                     </p>
                     
-                    {/* Product Name - large, bold, prominent */}
-                    <p className={`text-base sm:text-lg font-extrabold leading-snug truncate drop-shadow ${
-                      product.stock > 0 ? 'text-white' : 'text-gray-700'
+                    {/* Product Name - large, distinctive color */}
+                    <p className={`text-base sm:text-lg font-bold leading-snug truncate drop-shadow-md ${
+                      product.stock > 0 ? 'text-yellow-300' : 'text-gray-600'
                     }`}>
                       {product.name}
                     </p>
@@ -1229,7 +1258,7 @@ export function POSView({ cabinet, username }: POSViewProps) {
                     size="sm"
                     className={`h-9 w-9 sm:h-10 sm:w-10 rounded-full flex-shrink-0 shadow-lg ${
                       product.stock > 0 
-                        ? 'bg-white hover:bg-white/95 text-[oklch(0.55_0.15_280)]' 
+                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white' 
                         : 'bg-gray-400 text-gray-200 cursor-not-allowed'
                     }`}
                     onClick={(e) => {
@@ -1270,7 +1299,7 @@ export function POSView({ cabinet, username }: POSViewProps) {
                   setChange(0);
                 }}
               >
-                <span className="text-2xl">💵</span>
+                <Banknote size={24} />
                 <span className="font-medium">Cash</span>
               </Button>
               
@@ -1284,7 +1313,7 @@ export function POSView({ cabinet, username }: POSViewProps) {
                   setReferenceNumber('');
                 }}
               >
-                <span className="text-2xl">📱</span>
+                <Smartphone size={24} />
                 <span className="font-medium">QRPH</span>
               </Button>
             </div>
@@ -1408,6 +1437,7 @@ export function POSView({ cabinet, username }: POSViewProps) {
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </>
   )
 }

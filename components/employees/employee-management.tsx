@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Plus, Trash2, Edit2, Search, Settings } from "lucide-react"
+import { Plus, Trash2, Edit2, Search, Settings, Users } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useEmployees } from "@/contexts/employees-context"
 import { useToast } from "@/contexts/toast-context"
@@ -323,7 +323,7 @@ export function EmployeeManagement({ username, cabinet }: EmployeeManagementProp
         <CardContent>
           {filteredEmployees.length === 0 ? (
             <EmptyState
-              icon="👥"
+              icon={<Users size={48} className="text-gray-400" />}
               title="No employees found"
               description={searchQuery ? "Try adjusting your search criteria" : "Start by adding your first employee"}
               action={{ label: "Add Employee", onClick: () => setShowAddForm(true) }}
@@ -348,8 +348,8 @@ export function EmployeeManagement({ username, cabinet }: EmployeeManagementProp
                     <td className="py-3 px-4">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                         employee.role === "admin" 
-                          ? "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200" 
-                          : "bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-200"
+                          ? "bg-primary/20 text-primary border border-primary/30" 
+                          : "bg-muted text-muted-foreground border border-border"
                       }`}>
                         {employee.role === "admin" ? "Admin" : "Staff"}
                       </span>

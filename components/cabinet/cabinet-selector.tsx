@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
-import { ChevronDown, Plus, Trash2, AlertTriangle } from "lucide-react"
+import { ChevronDown, Plus, Trash2, AlertTriangle, Store, DoorOpen, LayoutList, Check, Package, Archive, ShoppingBasket, BarChart3 } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -22,9 +22,9 @@ interface Cabinet {
 }
 
 const INITIAL_CABINETS: Cabinet[] = [
-  { id: "main", name: "Main Shop", icon: "🏪" },
-  { id: "cabinet1", name: "Cabinet - Renter 1", icon: "🚪" },
-  { id: "cabinet2", name: "Cabinet - Renter 2", icon: "🚪" },
+  { id: "main", name: "Main Shop", icon: "store" },
+  { id: "cabinet1", name: "Cabinet - Renter 1", icon: "door" },
+  { id: "cabinet2", name: "Cabinet - Renter 2", icon: "door" },
 ]
 
 export function CabinetSelector({ selectedCabinet, onSelectCabinet, showAllOption = true }: CabinetSelectorProps) {
@@ -34,10 +34,10 @@ export function CabinetSelector({ selectedCabinet, onSelectCabinet, showAllOptio
   const [cabinetToDelete, setCabinetToDelete] = useState<Cabinet | null>(null)
   const [deleteConfirmText, setDeleteConfirmText] = useState("")
   const [newCabinetName, setNewCabinetName] = useState("")
-  const [newCabinetIcon, setNewCabinetIcon] = useState("🚪")
+  const [newCabinetIcon, setNewCabinetIcon] = useState("door")
 
   const allCabinets = showAllOption
-    ? [{ id: "all", name: "All (Main + Cabinets)", icon: "📊" }, ...cabinets]
+    ? [{ id: "all", name: "All (Main + Cabinets)", icon: "chart" }, ...cabinets]
     : cabinets
 
   const currentCabinet = allCabinets.find((c) => c.id === selectedCabinet) || allCabinets[0]
@@ -90,7 +90,7 @@ export function CabinetSelector({ selectedCabinet, onSelectCabinet, showAllOptio
             variant="outline"
             className="flex items-center gap-2 border-white/40 hover:bg-white/20 bg-white/10 text-white text-sm h-10 px-3 backdrop-blur-sm"
           >
-            <span className="text-base sm:text-lg">{currentCabinet?.icon}</span>
+            <span className="text-base sm:text-lg">{currentCabinet?.icon === "store" && <Store size={20} />}{currentCabinet?.icon === "door" && <DoorOpen size={20} />}{currentCabinet?.icon === "chart" && <BarChart3 size={20} />}{currentCabinet?.icon === "package" && <Package size={20} />}{currentCabinet?.icon === "archive" && <Archive size={20} />}{currentCabinet?.icon === "basket" && <ShoppingBasket size={20} />}</span>
             <span className="hidden sm:inline font-medium">{currentCabinet?.name}</span>
             <span className="sm:hidden font-medium">{currentCabinet?.name?.split(' ')[0]}</span>
             <ChevronDown size={16} className="opacity-70" />
@@ -103,9 +103,9 @@ export function CabinetSelector({ selectedCabinet, onSelectCabinet, showAllOptio
                 onClick={() => onSelectCabinet(cabinet.id)} 
                 className="cursor-pointer py-2 flex-1"
               >
-                <span className="text-base sm:text-lg mr-2">{cabinet.icon}</span>
+                <span className="text-base sm:text-lg mr-2">{cabinet.icon === "store" && <Store size={18} />}{cabinet.icon === "door" && <DoorOpen size={18} />}{cabinet.icon === "chart" && <BarChart3 size={18} />}{cabinet.icon === "package" && <Package size={18} />}{cabinet.icon === "archive" && <Archive size={18} />}{cabinet.icon === "basket" && <ShoppingBasket size={18} />}</span>
                 <span className="text-sm">{cabinet.name}</span>
-                {selectedCabinet === cabinet.id && <span className="ml-auto text-primary text-sm">✓</span>}
+                {selectedCabinet === cabinet.id && <span className="ml-auto text-primary text-sm"><Check size={16} /></span>}
               </DropdownMenuItem>
               {cabinet.id !== "main" && cabinet.id !== "all" && (
                 <Button
@@ -150,7 +150,7 @@ export function CabinetSelector({ selectedCabinet, onSelectCabinet, showAllOptio
             <div className="grid gap-2">
               <Label htmlFor="cabinetIcon">Icon</Label>
               <div className="flex gap-2">
-                {["🚪", "🏪", "📦", "🗄️", "🧺", "📊"].map((icon) => (
+                {["door", "store", "package", "archive", "basket", "chart"].map((icon) => (
                   <Button
                     key={icon}
                     type="button"
@@ -159,7 +159,12 @@ export function CabinetSelector({ selectedCabinet, onSelectCabinet, showAllOptio
                     onClick={() => setNewCabinetIcon(icon)}
                     className="text-lg"
                   >
-                    {icon}
+                    {icon === "door" && <DoorOpen size={20} />}
+                    {icon === "store" && <Store size={20} />}
+                    {icon === "package" && <Package size={20} />}
+                    {icon === "archive" && <Archive size={20} />}
+                    {icon === "basket" && <ShoppingBasket size={20} />}
+                    {icon === "chart" && <BarChart3 size={20} />}
                   </Button>
                 ))}
               </div>

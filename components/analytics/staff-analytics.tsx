@@ -2,6 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useProducts } from "@/contexts/products-context"
+import { Banknote, BarChart3, TrendingUp, AlertTriangle, Zap, ArrowUp, CheckCircle2 } from "lucide-react"
 
 interface StaffAnalyticsProps {
   cabinet: string
@@ -44,11 +45,11 @@ export function StaffAnalytics({ cabinet }: StaffAnalyticsProps) {
                 </p>
                 <p className="mt-2 text-3xl font-semibold">₱5,240</p>
                 <p className="mt-2 inline-flex items-center rounded-full bg-primary-foreground/10 px-2 py-1 text-xs font-medium">
-                  <span className="mr-1 text-emerald-200">▲</span>
+                  <ArrowUp size={12} className="mr-1 text-emerald-200" />
                   <span>18 transactions</span>
                 </p>
               </div>
-              <span className="text-3xl">💵</span>
+              <span className="text-3xl"><Banknote size={32} /></span>
             </div>
           </CardContent>
         </Card>
@@ -64,7 +65,7 @@ export function StaffAnalytics({ cabinet }: StaffAnalyticsProps) {
                 <p className="mt-2 text-3xl font-semibold text-foreground">142</p>
                 <p className="mt-2 text-xs text-emerald-500">Best: Funko POP</p>
               </div>
-              <span className="rounded-full bg-primary/10 px-3 py-2 text-2xl">📊</span>
+              <span className="rounded-full bg-primary/10 px-3 py-2 text-2xl"><BarChart3 size={24} /></span>
             </div>
           </CardContent>
         </Card>
@@ -80,7 +81,7 @@ export function StaffAnalytics({ cabinet }: StaffAnalyticsProps) {
                 <p className="mt-2 text-3xl font-semibold text-foreground">3</p>
                 <p className="mt-2 text-xs text-destructive">Action needed</p>
               </div>
-              <span className="rounded-full bg-primary/10 px-3 py-2 text-2xl">⚠️</span>
+              <span className="rounded-full bg-primary/10 px-3 py-2 text-2xl"><AlertTriangle size={24} /></span>
             </div>
           </CardContent>
         </Card>
@@ -96,7 +97,7 @@ export function StaffAnalytics({ cabinet }: StaffAnalyticsProps) {
                 <p className="mt-2 text-3xl font-semibold text-foreground">₱31,240</p>
                 <p className="mt-2 text-xs text-muted-foreground">4 days completed</p>
               </div>
-              <span className="rounded-full bg-primary/10 px-3 py-2 text-2xl">📈</span>
+              <span className="rounded-full bg-primary/10 px-3 py-2 text-2xl"><TrendingUp size={24} /></span>
             </div>
           </CardContent>
         </Card>
@@ -108,7 +109,7 @@ export function StaffAnalytics({ cabinet }: StaffAnalyticsProps) {
         <Card className="bg-card/60 border border-primary/10 shadow-sm backdrop-blur-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <span className="text-xl">⚡</span>
+              <Zap size={20} />
               Quick Actions
             </CardTitle>
             <CardDescription>Common tasks for your shift</CardDescription>
@@ -136,7 +137,7 @@ export function StaffAnalytics({ cabinet }: StaffAnalyticsProps) {
           <CardHeader>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="text-2xl">⚠️</span>
+                <AlertTriangle size={24} />
                 <div>
                   <CardTitle>Low Stock Advisory</CardTitle>
                   <CardDescription>Products that need immediate restocking</CardDescription>
@@ -148,7 +149,7 @@ export function StaffAnalytics({ cabinet }: StaffAnalyticsProps) {
           <CardContent>
             {lowStockProducts.length === 0 ? (
               <div className="text-center py-8">
-                <p className="text-muted-foreground">✓ All products have healthy stock levels</p>
+                <p className="text-muted-foreground flex items-center gap-1"><CheckCircle2 size={16} /> All products have healthy stock levels</p>
               </div>
             ) : (
               <div className="space-y-2">

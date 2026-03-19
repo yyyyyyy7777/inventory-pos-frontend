@@ -7,7 +7,7 @@ import { StaffDashboard } from "@/components/dashboards/staff-dashboard"
 
 type UserRole = "admin" | "staff" | null
 
-const STORAGE_KEY = "currentUserSession"
+const STORAGE_KEY = 'inventory-pos-session-v1'
 
 export default function Home() {
   const [currentUser, setCurrentUser] = useState<{ username: string; role: UserRole } | null>(null)
@@ -27,16 +27,27 @@ export default function Home() {
     }
   }, [])
 
-  // Check for previous session on mount and log it out
+  // Check for previous session on mount (handles reloads and closes)
   useEffect(() => {
     const checkPreviousSession = async () => {
       try {
-        const stored = sessionStorage.getItem(STORAGE_KEY)
+        // Use localStorage instead of sessionStorage - it persists through reloads
+        const stored = localStorage.getItem(STORAGE_KEY)
+        console.log('Checking for previous session:', stored);
         if (stored) {
           const previousUser = JSON.parse(stored)
           if (previousUser?.username) {
-            // Log the logout for the previous session
-            await logLogoutActivity(previousUser.username)
+            console.log('Found previous session for:', previousUser.username);
+            // Log the logout activity for the interrupted session
+            try {
+              await logLogoutActivity(previousUser.username);
+              console.log('Successfully logged logout for:', previousUser.username);
+            } catch (err) {
+              console.error('Failed to log reload logout:', err);
+            }
+            // Clear the old session after logging
+            localStorage.removeItem(STORAGE_KEY)
+            console.log('Cleared previous session for:', previousUser.username);
           }
         }
       } catch (error) {
@@ -49,22 +60,34 @@ export default function Home() {
     checkPreviousSession()
   }, [logLogoutActivity])
 
-  // Store current user in sessionStorage and handle page unload
+  // Store current user in localStorage and handle page unload
   useEffect(() => {
     if (currentUser) {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(currentUser))
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(currentUser))
 
-      // Handle page unload (reload/close) - log logout
+      // Handle page unload (reload/close) - DON'T clear localStorage here, let checkPreviousSession handle it
       const handleBeforeUnload = () => {
-        // Use sendBeacon for reliable delivery during page unload
+        // Try to log logout, but localStorage will persist for checkPreviousSession to find
         const logoutData = JSON.stringify({ username: currentUser.username })
-        navigator.sendBeacon('/api/auth/logout', new Blob([logoutData], { type: 'application/json' }))
+        
+        try {
+          fetch('/api/auth/logout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: logoutData,
+            keepalive: true
+          }).catch(() => {
+            navigator.sendBeacon('/api/auth/logout', new Blob([logoutData], { type: 'application/json' }))
+          })
+        } catch (e) {
+          navigator.sendBeacon('/api/auth/logout', new Blob([logoutData], { type: 'application/json' }))
+        }
       }
 
       window.addEventListener('beforeunload', handleBeforeUnload)
       return () => window.removeEventListener('beforeunload', handleBeforeUnload)
     } else {
-      sessionStorage.removeItem(STORAGE_KEY)
+      localStorage.removeItem(STORAGE_KEY)
     }
   }, [currentUser])
 
@@ -77,7 +100,7 @@ export default function Home() {
       await logLogoutActivity(currentUser.username)
     }
     setCurrentUser(null)
-    sessionStorage.removeItem(STORAGE_KEY)
+    localStorage.removeItem(STORAGE_KEY)
   }
 
   if (isLoading) {

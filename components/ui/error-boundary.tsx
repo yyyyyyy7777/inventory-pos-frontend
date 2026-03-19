@@ -1,6 +1,7 @@
 "use client"
 
 import React, { ReactNode } from "react"
+import { AlertTriangle } from "lucide-react"
 
 interface ErrorBoundaryProps {
   children: ReactNode
@@ -30,7 +31,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
       return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4">
           <div className="max-w-md text-center">
-            <div className="text-6xl mb-4">⚠️</div>
+            <div className="flex justify-center mb-4"><AlertTriangle size={48} className="text-yellow-500" /></div>
             <h1 className="text-2xl font-bold text-foreground mb-2">Something went wrong</h1>
             <p className="text-muted-foreground mb-6">
               {this.state.error?.message || "An unexpected error occurred"}

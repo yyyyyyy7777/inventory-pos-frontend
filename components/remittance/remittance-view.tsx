@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Search, Download, Edit2, Trash2, Plus } from "lucide-react"
+import { Search, Download, Edit2, Trash2, Plus, Check, Users, AlertTriangle, Clock, DollarSign } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
@@ -143,11 +143,7 @@ export function RemittanceView({ isAdmin, cabinet }: RemittanceViewProps) {
       case "collected":
         return "bg-emerald-50 border-emerald-200 text-emerald-900"
       case "released":
-<<<<<<< HEAD
-        return "bg-blue-50 border-blue-200 text-blue-900"
-=======
         return "bg-violet-50 border-violet-200 text-violet-900"
->>>>>>> clean-branch
       case "pending":
         return "bg-orange-50 border-orange-200 text-orange-900"
       default:
@@ -170,7 +166,7 @@ export function RemittanceView({ isAdmin, cabinet }: RemittanceViewProps) {
                 <p className="mt-2 text-3xl font-semibold text-foreground">{rentSummary.totalRenters}</p>
                 <p className="mt-2 text-xs text-muted-foreground">Cabinet: {cabinet}</p>
               </div>
-              <span className="rounded-full bg-primary/10 px-3 py-2 text-2xl">👥</span>
+              <span className="rounded-full bg-primary/10 px-3 py-2 text-2xl"><Users size={24} /></span>
             </div>
           </CardContent>
         </Card>
@@ -188,7 +184,7 @@ export function RemittanceView({ isAdmin, cabinet }: RemittanceViewProps) {
                   ₱{rentSummary.totalUnpaidRent.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
               </div>
-              <span className="rounded-full bg-destructive/10 px-3 py-2 text-2xl">⚠️</span>
+              <span className="rounded-full bg-destructive/10 px-3 py-2 text-2xl"><AlertTriangle size={24} /></span>
             </div>
           </CardContent>
         </Card>
@@ -204,7 +200,7 @@ export function RemittanceView({ isAdmin, cabinet }: RemittanceViewProps) {
                 <p className="mt-2 text-3xl font-semibold text-orange-600">{remittanceSummary.pendingRemittances}</p>
                 <p className="mt-2 text-xs text-orange-600">Awaiting release</p>
               </div>
-              <span className="rounded-full bg-orange-100 px-3 py-2 text-2xl">⏳</span>
+              <span className="rounded-full bg-orange-100 px-3 py-2 text-2xl"><Clock size={24} /></span>
             </div>
           </CardContent>
         </Card>
@@ -222,7 +218,7 @@ export function RemittanceView({ isAdmin, cabinet }: RemittanceViewProps) {
                 </p>
                 <p className="mt-2 text-xs text-emerald-600">Pending + Released</p>
               </div>
-              <span className="rounded-full bg-emerald-100 px-3 py-2 text-2xl">💰</span>
+              <span className="rounded-full bg-emerald-100 px-3 py-2 text-2xl"><DollarSign size={24} /></span>
             </div>
           </CardContent>
         </Card>
@@ -316,7 +312,7 @@ export function RemittanceView({ isAdmin, cabinet }: RemittanceViewProps) {
                                     className="px-2 py-1 text-xs bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded transition-colors font-medium"
                                     title="Mark as Paid"
                                   >
-                                    ✓ Paid
+                                    <span className="flex items-center gap-1"><Check size={12} /> Paid</span>
                                   </button>
                                 )}
                                 <button
@@ -403,7 +399,7 @@ export function RemittanceView({ isAdmin, cabinet }: RemittanceViewProps) {
                                     className="px-2 py-1 text-xs bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded transition-colors font-medium"
                                     title="Mark as Collected"
                                   >
-                                    ✓ Collected
+                                    <span className="flex items-center gap-1"><Check size={12} /> Collected</span>
                                   </button>
                                 )}
                                 <button

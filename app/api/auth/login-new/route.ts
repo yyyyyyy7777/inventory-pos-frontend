@@ -33,6 +33,33 @@ export async function POST(request: NextRequest) {
     // Update last login time
     await updateLastLogin(username)
     
+    // Check if user was previously logged in without logout (page reload scenario)
+    try {
+      const lastActivity = await query(
+        `SELECT activity, timestamp FROM activities 
+         WHERE username = $1 AND (activity = 'User logged in' OR activity = 'User logged out')
+         ORDER BY timestamp DESC LIMIT 1`,
+        [username]
+      ) as any[]
+      
+      // If last activity was login without logout, log a logout first
+      if (lastActivity.length > 0 && lastActivity[0].activity === 'User logged in') {
+        const now = new Date()
+        const utcTime = now.getTime()
+        const philippinesTime = new Date(utcTime + (8 * 60 * 60 * 1000))
+        const timestamp = philippinesTime.toISOString()
+        
+        await query(
+          `INSERT INTO activities (id, timestamp, username, activity, details, category)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [Date.now().toString(), timestamp, username, 'User logged out', `User ${username} session ended (page reload)`, 'employee']
+        )
+        console.log('Logged previous session logout for:', username)
+      }
+    } catch (checkError) {
+      console.error('Error checking previous session:', checkError)
+    }
+    
     // Log login activity with Philippines time (UTC+8)
     try {
       const now = new Date()

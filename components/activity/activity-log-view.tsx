@@ -4,17 +4,17 @@ import React, { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Search, Filter, Calendar, User, Activity, Package, DollarSign, Trash2, Edit2, Plus, ArrowUpDown, X, RefreshCw, Wrench } from "lucide-react"
+import { Search, Filter, Calendar, User, Activity, Package, DollarSign, Trash2, Edit2, Plus, ArrowUpDown, X, RefreshCw, Wrench, LayoutList, Users, Boxes, Settings, Building2, Home, Folder, FolderOpen, FileText } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useActivity } from "@/contexts/activity-context"
 
 const activityCategories = [
-  { value: "all", label: "All Activities", icon: "📋" },
-  { value: "product", label: "Products", icon: "📦" },
-  { value: "sale", label: "Sales", icon: "💰" },
-  { value: "employee", label: "Employees", icon: "👥" },
-  { value: "inventory", label: "Inventory", icon: "�" },
-  { value: "system", label: "System", icon: "⚙️" }
+  { value: "all", label: "All Activities", icon: LayoutList },
+  { value: "product", label: "Products", icon: Package },
+  { value: "sale", label: "Sales", icon: DollarSign },
+  { value: "employee", label: "Employees", icon: Users },
+  { value: "inventory", label: "Inventory", icon: Boxes },
+  { value: "system", label: "System", icon: Settings }
 ]
 
 export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
@@ -60,10 +60,10 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
   const activities = getActivities() // Get all activities from database
 
   const cabinetOptions = [
-    { value: "all", label: "All Cabinets", icon: "🏢" },
-    { value: "main", label: "Main", icon: "🏠" },
-    { value: "cabinet1", label: "Cabinet 1", icon: "📁" },
-    { value: "cabinet2", label: "Cabinet 2", icon: "📂" },
+    { value: "all", label: "All Cabinets", icon: Building2 },
+    { value: "main", label: "Main", icon: Home },
+    { value: "cabinet1", label: "Cabinet 1", icon: Folder },
+    { value: "cabinet2", label: "Cabinet 2", icon: FolderOpen },
   ]
 
   const filteredActivities = activities
@@ -128,7 +128,7 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
 
   const getCategoryIcon = (category: string) => {
     const cat = activityCategories.find(c => c.value === category);
-    return cat ? cat.icon : "📋";
+    return cat ? cat.icon : LayoutList;
   }
 
   const getActivityColor = (activity: string) => {
@@ -189,17 +189,20 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
                 </label>
                 <Select value={selectedCategory} onValueChange={setSelectedCategory}>
                   <SelectTrigger className="h-7 border-2 focus:border-violet-500 text-xs">
-                    <SelectValue placeholder="All" />
+                    <SelectValue placeholder="All Categories" />
                   </SelectTrigger>
-                  <SelectContent>
-                    {activityCategories.map((category) => (
-                      <SelectItem key={category.value} value={category.value} className="text-xs">
-                        <span className="flex items-center gap-2">
-                          <span>{category.icon}</span>
-                          <span>{category.label}</span>
-                        </span>
-                      </SelectItem>
-                    ))}
+                  <SelectContent position="popper" sideOffset={4} className="z-[100] max-h-60">
+                    {activityCategories.map((category) => {
+                      const IconComponent = category.icon;
+                      return (
+                        <SelectItem key={category.value} value={category.value} className="text-xs cursor-pointer">
+                          <span className="flex items-center gap-2">
+                            <IconComponent size={14} />
+                            <span>{category.label}</span>
+                          </span>
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
               </div>
@@ -210,17 +213,20 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
                 </label>
                 <Select value={selectedCabinet} onValueChange={setSelectedCabinet}>
                   <SelectTrigger className="h-7 border-2 focus:border-green-500 text-xs">
-                    <SelectValue placeholder="All" />
+                    <SelectValue placeholder="All Cabinets" />
                   </SelectTrigger>
-                  <SelectContent>
-                    {cabinetOptions.map((cabinet) => (
-                      <SelectItem key={cabinet.value} value={cabinet.value} className="text-xs">
-                        <span className="flex items-center gap-2">
-                          <span>{cabinet.icon}</span>
-                          <span>{cabinet.label}</span>
-                        </span>
-                      </SelectItem>
-                    ))}
+                  <SelectContent position="popper" sideOffset={4} className="z-[100] max-h-60">
+                    {cabinetOptions.map((cabinet) => {
+                      const IconComponent = cabinet.icon;
+                      return (
+                        <SelectItem key={cabinet.value} value={cabinet.value} className="text-xs cursor-pointer">
+                          <span className="flex items-center gap-2">
+                            <IconComponent size={14} />
+                            <span>{cabinet.label}</span>
+                          </span>
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
               </div>
@@ -280,7 +286,7 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
                       <SelectTrigger className="h-7 text-xs border-2 focus:border-purple-500">
                         <SelectValue placeholder="Year" />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent position="popper" sideOffset={4} className="z-[100] max-h-60">
                         <SelectItem value="all">All</SelectItem>
                         {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map(year => (
                           <SelectItem key={year} value={year.toString()}>
@@ -296,7 +302,7 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
                       <SelectTrigger className="h-7 text-xs border-2 focus:border-purple-500">
                         <SelectValue placeholder="Month" />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent position="popper" sideOffset={4} className="z-[100] max-h-60">
                         <SelectItem value="all">All</SelectItem>
                         {[
                           { value: "1", label: "Jan" },
@@ -325,7 +331,7 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
                       <SelectTrigger className="h-7 text-xs border-2 focus:border-purple-500">
                         <SelectValue placeholder="Day" />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent position="popper" sideOffset={4} className="z-[100] max-h-60">
                         <SelectItem value="all">All</SelectItem>
                         {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
                           <SelectItem key={day} value={day.toString()}>
@@ -346,10 +352,10 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
                   <SelectTrigger className="h-7 border-2 focus:border-indigo-500 text-xs">
                     <SelectValue placeholder="Sort by" />
                   </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="timestamp">📅 Timestamp (Newest)</SelectItem>
-                    <SelectItem value="username">👤 Username</SelectItem>
-                    <SelectItem value="activity">📝 Activity</SelectItem>
+                  <SelectContent position="popper" sideOffset={4} className="z-[100] max-h-60">
+                    <SelectItem value="timestamp"><span className="flex items-center gap-2"><Calendar size={14} /> Timestamp (Newest)</span></SelectItem>
+                    <SelectItem value="username"><span className="flex items-center gap-2"><User size={14} /> Username</span></SelectItem>
+                    <SelectItem value="activity"><span className="flex items-center gap-2"><FileText size={14} /> Activity</span></SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -439,7 +445,10 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
                       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                         <div className="flex-1">
                           <div className="flex items-center gap-2 lg:gap-3 mb-2">
-                            <span className="text-xl lg:text-2xl">{getCategoryIcon(activity.category)}</span>
+                            {(() => {
+                              const IconComponent = getCategoryIcon(activity.category);
+                              return <IconComponent size={20} className="text-gray-600" />;
+                            })()}
                             <div className="min-w-0 flex-1">
                               <h4 className="font-semibold text-foreground text-sm lg:text-base truncate">{activity.activity}</h4>
                               <p className="text-xs lg:text-sm text-muted-foreground">by {activity.username}</p>

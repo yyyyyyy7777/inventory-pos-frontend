@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { LogOut, Menu, X } from "lucide-react"
+import { LogOut, Menu, X, LayoutDashboard, Package, DollarSign, ShoppingCart, Users, FileText } from "lucide-react"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 
 interface StaffSidebarProps {
@@ -17,10 +17,10 @@ export function StaffSidebar({ currentView, onViewChange, onLogout, username }: 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   
   const menuItems = [
-    { id: "dashboard", label: "Dashboard", icon: "📊" },
-    { id: "inventory", label: "Inventory", icon: "🗂️" },
-    { id: "sales", label: "Sales", icon: "💰" },
-    { id: "pos", label: "POS System", icon: "🛒" },
+    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { id: "inventory", label: "Inventory", icon: Package },
+    { id: "sales", label: "Sales", icon: DollarSign },
+    { id: "pos", label: "POS System", icon: ShoppingCart },
   ]
 
   // Lock body scroll when sidebar is open on mobile
@@ -72,23 +72,26 @@ export function StaffSidebar({ currentView, onViewChange, onLogout, username }: 
         </div>
 
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-          {menuItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => {
-                onViewChange(item.id)
-                setIsMobileMenuOpen(false)
-              }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
-                currentView === item.id
-                  ? "bg-sidebar-primary text-sidebar-primary-foreground font-semibold"
-                  : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-              }`}
-            >
-              <span className="text-xl">{item.icon}</span>
-              <span>{item.label}</span>
-            </button>
-          ))}
+          {menuItems.map((item) => {
+            const IconComponent = item.icon;
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  onViewChange(item.id)
+                  setIsMobileMenuOpen(false)
+                }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+                  currentView === item.id
+                    ? "bg-sidebar-primary text-sidebar-primary-foreground font-semibold"
+                    : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <IconComponent size={20} />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
         </nav>
 
         <div className="p-4 border-t border-sidebar-border">
