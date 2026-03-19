@@ -616,9 +616,6 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
               <Button variant="outline" onClick={handleExportExcel} className="h-8 px-2 lg:px-3 rounded-md border-2 hover:bg-gray-50 text-xs" title="Export to Excel">
                 <Download size={12} className="mr-1" /> Export
               </Button>
-              <Button onClick={handleExportReport} className="h-8 px-2 lg:px-3 bg-primary hover:bg-primary/90 text-primary-foreground text-xs flex items-center gap-1">
-                <Download size={14} /> <span className="hidden sm:inline">Report</span>
-              </Button>
               <Button variant="outline" onClick={() => setShowManageArchives(true)} className="h-8 px-2 lg:px-3 rounded-md border-2 hover:bg-gray-50 text-xs">
                 <Archive size={14} className="mr-1" /> <span className="hidden sm:inline">Archive</span>
               </Button>
