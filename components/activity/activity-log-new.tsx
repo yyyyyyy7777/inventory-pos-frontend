@@ -43,9 +43,13 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Use relative time for activity log
-  const formatPhilippinesTime = (timestamp: string) => {
-    return formatRelativeTime(timestamp);
+  // Use relative time only for employee category, regular time for others
+  const formatPhilippinesTime = (timestamp: string, category: string) => {
+    if (category === 'employee') {
+      return formatRelativeTime(timestamp);
+    } else {
+      return formatToLocalTime(timestamp, { includeSeconds: true });
+    }
   }
 
   const filteredActivities = activities
@@ -237,7 +241,7 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
                         </div>
                         <div className="text-left sm:text-right flex-shrink-0">
                           <p className="text-xs sm:text-sm font-medium">
-                            {formatPhilippinesTime(activity.timestamp)}
+                            {formatPhilippinesTime(activity.timestamp, activity.category)}
                           </p>
                           <p className="text-xs text-muted-foreground">
                             {activity.category}
