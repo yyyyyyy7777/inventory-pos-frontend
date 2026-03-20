@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Search, Filter, Calendar, User, Activity, RefreshCw, X, Package, DollarSign, Users, Boxes, Settings, LayoutList, ArrowUpDown } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useActivity } from "@/contexts/activity-context"
+import { formatToLocalTime } from "@/lib/datetime-utils"
 
 const activityCategories = [
   { value: "all", label: "All Activities", icon: LayoutList },
@@ -42,26 +43,9 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Philippines time formatter (UTC+8) - Fixed to use proper timezone
+  // Use the fixed formatToLocalTime function that handles timezone properly
   const formatPhilippinesTime = (timestamp: string) => {
-    try {
-      const date = new Date(timestamp)
-      if (isNaN(date.getTime())) return 'Invalid time'
-      
-      // Use Asia/Manila timezone directly for accurate Philippines time
-      return date.toLocaleString('en-US', {
-        month: 'short',
-        day: 'numeric', 
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: true,
-        timeZone: 'Asia/Manila'
-      })
-    } catch (error) {
-      return 'Invalid time'
-    }
+    return formatToLocalTime(timestamp, { includeSeconds: true });
   }
 
   const filteredActivities = activities
