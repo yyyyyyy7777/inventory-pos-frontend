@@ -42,16 +42,14 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Philippines time formatter (UTC+8)
+  // Philippines time formatter (UTC+8) - Fixed to use proper timezone
   const formatPhilippinesTime = (timestamp: string) => {
     try {
       const date = new Date(timestamp)
       if (isNaN(date.getTime())) return 'Invalid time'
       
-      // Add 8 hours for Philippines timezone (UTC+8)
-      const phDate = new Date(date.getTime() + (8 * 60 * 60 * 1000))
-      
-      return phDate.toLocaleString('en-US', {
+      // Use Asia/Manila timezone directly for accurate Philippines time
+      return date.toLocaleString('en-US', {
         month: 'short',
         day: 'numeric', 
         year: 'numeric',
@@ -59,7 +57,7 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
         minute: '2-digit',
         second: '2-digit',
         hour12: true,
-        timeZone: 'UTC' // Use UTC since we already added 8 hours
+        timeZone: 'Asia/Manila'
       })
     } catch (error) {
       return 'Invalid time'

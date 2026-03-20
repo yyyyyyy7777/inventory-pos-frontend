@@ -97,7 +97,12 @@ export default function Home() {
 
   const handleLogout = async () => {
     if (currentUser?.username) {
-      await logLogoutActivity(currentUser.username)
+      try {
+        await logLogoutActivity(currentUser.username)
+        console.log('Logout activity logged for:', currentUser.username)
+      } catch (error) {
+        console.error('Failed to log logout:', error)
+      }
     }
     setCurrentUser(null)
     localStorage.removeItem(STORAGE_KEY)
