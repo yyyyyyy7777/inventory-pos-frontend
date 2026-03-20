@@ -338,8 +338,8 @@ export function EmployeeManagement({ username, cabinet }: EmployeeManagementProp
                     <th className="text-left py-3 px-4 font-semibold text-foreground">Name</th>
                     <th className="text-left py-3 px-4 font-semibold text-foreground">Username</th>
                     <th className="text-left py-3 px-4 font-semibold text-foreground">Join Date</th>
-                    <th className="text-left py-3 px-4 font-semibold text-foreground">Last Login</th>
-                    <th className="text-left py-3 px-4 font-semibold text-foreground">Last Logout</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Login</th>
+                    <th className="text-left py-3 px-4 font-semibold text-foreground">Logout</th>
                     <th className="text-left py-3 px-4 font-semibold text-foreground">Actions</th>
                   </tr>
                 </thead>
