@@ -69,8 +69,8 @@ export function formatToLocalTime(
   try {
     let date: Date;
     
-    // Check if it's in Manila time format (e.g., "3/20/2026 5:30:00 PM")
-    if (timestamp.match(/^\d{1,2}\/\d{1,2}\/\d{4} \d{1,2}:\d{2}:\d{2} (AM|PM)$/)) {
+    // Check if it's in Manila time format (e.g., "3/20/2026, 5:30:00 PM" or "3/20/2026 5:30:00 PM")
+    if (timestamp.match(/^\d{1,2}\/\d{1,2}\/\d{4}[, ]\d{1,2}:\d{2}:\d{2} (AM|PM)$/)) {
       // Parse Manila time format - it's already in local time, so parse as is
       date = new Date(timestamp);
     } else {
