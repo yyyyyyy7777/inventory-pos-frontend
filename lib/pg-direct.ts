@@ -67,9 +67,9 @@ export async function updateLastLogin(username: string, clientTimestamp?: string
     let localTime: string;
     
     if (clientTimestamp) {
-      // Parse client timestamp and subtract 16 hours for login
+      // Parse client timestamp and subtract 8 hours
       const date = new Date(clientTimestamp);
-      const adjustedTime = new Date(date.getTime() - (16 * 60 * 60 * 1000));
+      const adjustedTime = new Date(date.getTime() - (8 * 60 * 60 * 1000));
       const month = adjustedTime.getMonth() + 1;
       const day = adjustedTime.getDate();
       const year = adjustedTime.getFullYear();
@@ -113,7 +113,7 @@ export async function updateLastLogout(username: string, clientTimestamp?: strin
     let localTime: string;
     
     if (clientTimestamp) {
-      // Parse client timestamp and subtract 8 hours for logout
+      // Parse client timestamp and subtract 8 hours
       const date = new Date(clientTimestamp);
       const adjustedTime = new Date(date.getTime() - (8 * 60 * 60 * 1000));
       const month = adjustedTime.getMonth() + 1;
