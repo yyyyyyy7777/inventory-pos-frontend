@@ -118,27 +118,6 @@ export function AdminSidebar({ currentView, onViewChange, onLogout, username }: 
         isDangerous={true}
         onConfirm={async () => {
           setShowLogoutConfirm(false)
-          
-          // Call logout API to update last logout
-          console.log('Admin sidebar: Calling logout API for username:', username);
-          try {
-            const response = await fetch('/api/auth/logout-new', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ username }),
-            });
-            
-            if (!response.ok) {
-              console.error('Logout API returned error:', response.status);
-            } else {
-              console.log('Admin sidebar: Logout API call successful');
-            }
-          } catch (error) {
-            console.error('Admin sidebar: Error updating logout time:', error);
-          }
-          
           onLogout()
         }}
         onCancel={() => setShowLogoutConfirm(false)}

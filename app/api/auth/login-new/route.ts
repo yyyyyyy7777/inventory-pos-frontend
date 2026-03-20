@@ -5,7 +5,11 @@ import { query } from '@/lib/pg-direct'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { username, password } = body
+    const { username, password, clientTimestamp } = body
+    
+    console.log('=== LOGIN API DEBUG ===');
+    console.log('Received body:', body);
+    console.log('clientTimestamp:', clientTimestamp);
 
     if (!username || !password) {
       return NextResponse.json(
@@ -31,7 +35,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Update last login time
-    await updateLastLogin(username)
+    await updateLastLogin(username, clientTimestamp);
     
     // Check if user was previously logged in without logout (page reload scenario)
     try {
@@ -44,10 +48,8 @@ export async function POST(request: NextRequest) {
       
       // If last activity was login without logout, log a logout first
       if (lastActivity.length > 0 && lastActivity[0].activity === 'User logged in') {
-        const now = new Date()
-        const utcTime = now.getTime()
-        const philippinesTime = new Date(utcTime + (8 * 60 * 60 * 1000))
-        const timestamp = philippinesTime.toISOString()
+        const now = new Date();
+        const timestamp = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${now.getHours() >= 12 ? 'PM' : 'AM'}`;
         
         await query(
           `INSERT INTO activities (id, timestamp, username, activity, details, category)
@@ -60,16 +62,12 @@ export async function POST(request: NextRequest) {
       console.error('Error checking previous session:', checkError)
     }
     
-    // Log login activity with Philippines time (UTC+8)
+    // Log login activity with client timestamp
     try {
-      const now = new Date()
-      // Get current UTC time and add 8 hours for Philippines
-      const utcTime = now.getTime()
-      const philippinesTime = new Date(utcTime + (8 * 60 * 60 * 1000))
-      const timestamp = philippinesTime.toISOString()
-      
-      console.log('Server UTC time:', now.toISOString())
-      console.log('Philippines time:', timestamp)
+      const timestamp = clientTimestamp || (() => {
+        const now = new Date();
+        return `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${now.getHours() >= 12 ? 'PM' : 'AM'}`;
+      })();
       
       await query(
         `INSERT INTO activities (id, timestamp, username, activity, details, category)

@@ -45,7 +45,10 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
 
   // Use the fixed formatToLocalTime function that handles timezone properly
   const formatPhilippinesTime = (timestamp: string) => {
-    return formatToLocalTime(timestamp, { includeSeconds: true });
+    console.log('🔧 DEBUG: formatPhilippinesTime called with:', timestamp);
+    const result = formatToLocalTime(timestamp, { includeSeconds: true });
+    console.log('🔧 DEBUG: formatPhilippinesTime result:', result);
+    return result;
   }
 
   const filteredActivities = activities

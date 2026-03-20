@@ -11,6 +11,7 @@ import { useToast } from "@/contexts/toast-context"
 import { useActivity } from "@/contexts/activity-context"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { EmptyState } from "@/components/ui/empty-state"
+import { formatToLocalTime, debugTimezone } from "@/lib/datetime-utils"
 
 interface Employee {
   id: number
@@ -364,10 +365,10 @@ export function EmployeeManagement({ username, cabinet }: EmployeeManagementProp
                       })}
                     </td>
                     <td className="py-3 px-4 text-muted-foreground text-sm">
-                      {employee.lastLogin}
+                      {formatToLocalTime(employee.lastLogin, { includeSeconds: false })}
                     </td>
                     <td className="py-3 px-4 text-muted-foreground text-sm">
-                      {employee.lastLogout}
+                      {formatToLocalTime(employee.lastLogout, { includeSeconds: false })}
                     </td>
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-2">

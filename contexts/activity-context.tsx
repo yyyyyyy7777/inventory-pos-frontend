@@ -44,9 +44,11 @@ export function ActivityProvider({ children }: ActivityProviderProps) {
   const fetchActivities = useCallback(async (showLoading = true) => {
     try {
       if (showLoading) setLoading(true)
+      console.log('Fetching activities from /api/activities-new...')
       const response = await fetch('/api/activities-new?limit=1000')
       if (response.ok) {
         const data = await response.json()
+        console.log('Activities fetched:', data.length, 'items')
         setActivities(data)
         setLastFetchTime(new Date())
       } else {

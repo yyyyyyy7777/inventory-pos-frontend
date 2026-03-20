@@ -61,31 +61,66 @@ export async function verifyEmployee(username: string, password: string) {
   };
 }
 
-export async function updateLastLogin(username: string) {
+export async function updateLastLogin(username: string, clientTimestamp?: string) {
   try {
-    // Store as UTC - display will convert to Manila timezone
+    // Force Asia/Manila timezone - subtract 8 hours from UTC to get local time
+    const now = new Date();
+    const manilaTime = new Date(now.getTime() - (8 * 60 * 60 * 1000));
+    
+    const month = manilaTime.getMonth() + 1;
+    const day = manilaTime.getDate();
+    const year = manilaTime.getFullYear();
+    let hours = manilaTime.getHours();
+    const minutes = manilaTime.getMinutes();
+    const seconds = manilaTime.getSeconds();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12 || 12; // Convert 0 to 12
+    
+    const localTime = `${month}/${day}/${year} ${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')} ${ampm}`;
+    
+    console.log('updateLastLogin - UTC time:', now.toISOString());
+    console.log('updateLastLogin - Manila time:', localTime, 'for user:', username);
+    
     await query(
-      `UPDATE employee SET "lastLogin" = NOW() WHERE username = $1`,
-      [username]
+      'UPDATE employee SET "lastLogin" = $1 WHERE username = $2',
+      [localTime, username]
     );
+    
     return { success: true };
   } catch (error) {
     console.error('Error updating last login:', error);
-    return { success: false };
+    return { success: false, error };
   }
 }
 
-export async function updateLastLogout(username: string) {
+export async function updateLastLogout(username: string, clientTimestamp?: string) {
   try {
-    // Store as UTC - display will convert to Manila timezone  
+    // Force Asia/Manila timezone - subtract 8 hours from UTC to get local time (same as lastLogin)
+    const now = new Date();
+    const manilaTime = new Date(now.getTime() - (8 * 60 * 60 * 1000));
+    
+    const month = manilaTime.getMonth() + 1;
+    const day = manilaTime.getDate();
+    const year = manilaTime.getFullYear();
+    let hours = manilaTime.getHours();
+    const minutes = manilaTime.getMinutes();
+    const seconds = manilaTime.getSeconds();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12 || 12; // Convert 0 to 12
+    
+    const localTime = `${month}/${day}/${year} ${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')} ${ampm}`;
+    
+    console.log('updateLastLogout - Manila time:', localTime, 'for user:', username);
+    
     await query(
-      `UPDATE employee SET "lastLogout" = NOW() WHERE username = $1`,
-      [username]
+      'UPDATE employee SET "lastLogout" = $1 WHERE username = $2',
+      [localTime, username]
     );
+    
     return { success: true };
   } catch (error) {
     console.error('Error updating last logout:', error);
-    return { success: false };
+    return { success: false, error };
   }
 }
 
@@ -98,20 +133,8 @@ export async function getAllEmployees() {
     return rows.map(employee => ({
       ...employee,
       joinDate: new Date(employee.joinDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-      lastLogin: employee.lastLogin ? new Date(new Date(employee.lastLogin).getTime() + (8 * 60 * 60 * 1000)).toLocaleString('en-US', { 
-        month: 'short', 
-        day: 'numeric', 
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      }) : 'Never',
-      lastLogout: employee.lastLogout ? new Date(new Date(employee.lastLogout).getTime() + (8 * 60 * 60 * 1000)).toLocaleString('en-US', { 
-        month: 'short', 
-        day: 'numeric', 
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      }) : 'Never',
+      lastLogin: employee.lastLogin ? employee.lastLogin : null,
+      lastLogout: employee.lastLogout ? employee.lastLogout : null,
       createdAt: employee.createdAt,
       updatedAt: employee.updatedAt
     }));

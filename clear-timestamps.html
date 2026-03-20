@@ -1,0 +1,18 @@
+/**
+ * Clear old employee timestamps via API
+ */
+
+fetch('/api/employees/clear-timestamps', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  }
+})
+.then(response => response.json())
+.then(data => {
+  console.log('✅ Timestamps cleared:', data);
+  console.log('Now login again to set correct timestamps!');
+})
+.catch(error => {
+  console.error('❌ Error:', error);
+});

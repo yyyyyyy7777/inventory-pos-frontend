@@ -5,7 +5,7 @@ import { query } from '@/lib/pg-direct'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { username } = body
+    const { username, clientTimestamp } = body
 
     if (!username) {
       return NextResponse.json(
@@ -15,13 +15,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Update last logout time
-    await updateLastLogout(username)
+    await updateLastLogout(username, clientTimestamp)
 
-    // Log logout activity with Philippines time
+    // Log logout activity with client timestamp
     try {
-      const now = new Date()
-      const philippinesTime = new Date(now.getTime() + (8 * 60 * 60 * 1000))
-      const timestamp = philippinesTime.toISOString()
+      const timestamp = clientTimestamp || (() => {
+        const now = new Date();
+        return `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${now.getHours() >= 12 ? 'PM' : 'AM'}`;
+      })();
       
       await query(
         `INSERT INTO activities (id, timestamp, username, activity, details, category)

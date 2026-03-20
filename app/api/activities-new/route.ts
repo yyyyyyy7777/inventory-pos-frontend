@@ -8,6 +8,11 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '100')
     const offset = parseInt(searchParams.get('offset') || '0')
 
+    console.log('=== ACTIVITIES API DEBUG ===');
+    console.log('Request URL:', request.url);
+    console.log('Limit:', limit);
+    console.log('Offset:', offset);
+
     const rows = await query(
       `SELECT * FROM activities 
        ORDER BY timestamp DESC 
@@ -15,11 +20,12 @@ export async function GET(request: NextRequest) {
       [limit, offset]
     ) as any[]
 
+    console.log('Activities fetched successfully:', rows.length);
     return NextResponse.json(rows)
   } catch (error: any) {
     console.error('Activities fetch error:', error)
     return NextResponse.json(
-      { error: 'Failed to fetch activities' },
+      { error: error.message || 'Failed to fetch activities' },
       { status: 500 }
     )
   }
@@ -40,10 +46,9 @@ export async function POST(request: NextRequest) {
 
     const id = Date.now().toString()
     
-    // Create proper Philippines timestamp (UTC+8)
-    const now = new Date()
-    const philippinesTime = new Date(now.getTime() + (8 * 60 * 60 * 1000))
-    const timestamp = philippinesTime.toISOString()
+    // Use simple local time format (no timezone conversion)
+    const now = new Date();
+    const timestamp = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${now.getHours() >= 12 ? 'PM' : 'AM'}`;
 
     await query(
       `INSERT INTO activities (id, timestamp, username, activity, details, category, cabinet) 

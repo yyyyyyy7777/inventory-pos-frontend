@@ -13,7 +13,7 @@ interface LoginPageProps {
 }
 
 export function LoginPage({ onLogin }: LoginPageProps) {
-  const { getUserCredentials } = useEmployees()
+  const { getUserCredentials, refreshEmployees } = useEmployees()
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
@@ -27,18 +27,49 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     setLoading(true)
 
     try {
+      // Get current client timestamp
+      const now = new Date();
+      const hours = now.getHours();
+      const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      const clientTimestamp = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${displayHours}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${ampm}`;
+      
+      console.log('=== LOGIN PAGE DEBUG ===');
+      console.log('Current client time:', now.toString());
+      console.log('Client timestamp being sent:', clientTimestamp);
+      
       // Use new API for authentication
       const response = await fetch('/api/auth/login-new', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, clientTimestamp }),
       })
 
+      console.log('=== LOGIN RESPONSE DEBUG ===');
+      console.log('Response status:', response.status);
+      console.log('Response ok:', response.ok);
+
       const data = await response.json()
+      console.log('Response data:', data);
 
       if (response.ok) {
+        // Direct timestamp update - let server generate correct local time
+        try {
+          const updateResponse = await fetch('/api/employees/update-timestamp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, type: 'login' })
+          });
+          const updateData = await updateResponse.json();
+          console.log('Direct timestamp update:', updateData);
+        } catch (updateError) {
+          console.error('Direct update failed:', updateError);
+        }
+        
+        // Refresh employee data to get updated last login time
+        await refreshEmployees();
         onLogin(data.user.username, data.user.role)
       } else {
         setError(data.error || 'Invalid username or password')

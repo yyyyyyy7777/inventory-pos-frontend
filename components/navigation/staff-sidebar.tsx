@@ -117,19 +117,7 @@ export function StaffSidebar({ currentView, onViewChange, onLogout, username }: 
             onConfirm={async () => {
               setShowLogoutConfirm(false)
               
-              // Call logout API to update last logout
-              try {
-                await fetch('/api/auth/logout', {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({ username }),
-                });
-              } catch (error) {
-                console.error('Error updating logout time:', error);
-              }
-              
+              // Just call the main logout function - don't do duplicate API calls
               onLogout()
             }}
             onCancel={() => setShowLogoutConfirm(false)}

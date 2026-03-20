@@ -4,24 +4,42 @@ import { useState, useEffect, useCallback } from "react"
 import { LoginPage } from "@/components/auth/login-page"
 import { AdminDashboard } from "@/components/dashboards/admin-dashboard"
 import { StaffDashboard } from "@/components/dashboards/staff-dashboard"
+import { useEmployees } from "@/contexts/employees-context"
 
 type UserRole = "admin" | "staff" | null
 
 const STORAGE_KEY = 'inventory-pos-session-v1'
 
 export default function Home() {
+  const { refreshEmployees } = useEmployees()
   const [currentUser, setCurrentUser] = useState<{ username: string; role: UserRole } | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   // Log logout activity to database
   const logLogoutActivity = useCallback(async (username: string) => {
     try {
-      // Call logout API which logs the activity
-      await fetch('/api/auth/logout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username }),
-      })
+      // Get current client timestamp
+      const now = new Date();
+      const hours = now.getHours();
+      const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      const clientTimestamp = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${displayHours}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${ampm}`;
+      
+      // Direct timestamp update - let server generate correct local time
+      try {
+        const updateResponse = await fetch('/api/employees/update-timestamp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, type: 'logout' })
+        });
+        const updateData = await updateResponse.json();
+        console.log('Direct logout timestamp update:', updateData);
+      } catch (updateError) {
+        console.error('Direct logout update failed:', updateError);
+      }
+      
+      // REMOVED: Don't call logout-new API here to avoid duplicate activity logging
+      
     } catch (error) {
       console.error('Failed to log logout activity:', error)
     }
@@ -100,6 +118,8 @@ export default function Home() {
       try {
         await logLogoutActivity(currentUser.username)
         console.log('Logout activity logged for:', currentUser.username)
+        // Refresh employee data to get updated last logout time
+        await refreshEmployees()
       } catch (error) {
         console.error('Failed to log logout:', error)
       }
