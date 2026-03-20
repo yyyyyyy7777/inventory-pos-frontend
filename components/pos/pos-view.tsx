@@ -714,21 +714,8 @@ export function POSView({ cabinet, username }: POSViewProps) {
       
       console.log('Sending sale data:', JSON.stringify(saleDataToSend, null, 2));
       
-      // IMMEDIATELY close dialog and show receipt while processing in background
-      setShowPaymentDialog(false);
-      setShowReceipt(true);
-      addToast("Sale completed successfully!", "success");
-      
-      // Clear cart and reset states immediately
-      setCart([]);
-      setReceiptTime(null);
-      setReferenceNumber('');
-      setCashAmount('');
-      setChange(0);
-      rejectRestore();
-      
-      // Process sale and activity in background (non-blocking)
-      Promise.allSettled([
+      // Process sale and activity in parallel for speed
+      const [saleResult] = await Promise.allSettled([
         addSale(saleDataToSend),
         // Log activity in parallel
         (async () => {
@@ -744,12 +731,27 @@ export function POSView({ cabinet, username }: POSViewProps) {
             category: "sale"
           });
         })()
-      ]).then(([saleResult]) => {
-        if (saleResult.status === 'rejected') {
-          console.error('Sale failed:', saleResult.reason);
-          addToast("Sale failed to save. Please check your connection.", "error");
-        }
-      });
+      ]);
+      
+      // Check if sale failed
+      if (saleResult.status === 'rejected') {
+        throw saleResult.reason;
+      }
+      
+      console.log('Sale added successfully!');
+      
+      // Only close dialog and show receipt AFTER sale is confirmed
+      setShowPaymentDialog(false);
+      setShowReceipt(true);
+      addToast("Sale completed successfully!", "success");
+      
+      // Clear cart and reset states
+      setCart([]);
+      setReceiptTime(null);
+      setReferenceNumber('');
+      setCashAmount('');
+      setChange(0);
+      rejectRestore();
       
       // Refresh data in background (non-blocking)
       setTimeout(() => {
