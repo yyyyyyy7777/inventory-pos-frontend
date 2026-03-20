@@ -27,14 +27,17 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     setLoading(true)
 
     try {
-      // Get current client timestamp with timezone
+      // Get current client timestamp - real device time
       const now = new Date();
-      const hours = now.getHours();
-      const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
+      const month = now.getMonth() + 1;
+      const day = now.getDate();
+      const year = now.getFullYear();
+      let hours = now.getHours();
+      const minutes = now.getMinutes();
+      const seconds = now.getSeconds();
       const ampm = hours >= 12 ? 'PM' : 'AM';
-      const tzOffset = -now.getTimezoneOffset() / 60; // Hours from UTC
-      const tzSign = tzOffset >= 0 ? '+' : '-';
-      const clientTimestamp = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${displayHours}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${ampm} (UTC${tzSign}${Math.abs(tzOffset)})`;
+      hours = hours % 12 || 12;
+      const clientTimestamp = `${month}/${day}/${year}, ${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')} ${ampm}`;
       
       console.log('=== LOGIN PAGE DEBUG ===');
       console.log('Current client time:', now.toString());
