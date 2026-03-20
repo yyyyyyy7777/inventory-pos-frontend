@@ -691,15 +691,14 @@ export function POSView({ cabinet, username }: POSViewProps) {
       // Calculate total amount from items
       const totalAmount = total;
       
-      // Generate client timestamp with explicit local timezone (minus 9 hours adjustment)
+      // Generate client timestamp with explicit local timezone (same format as activities)
       const now = new Date();
-      const adjustedTime = new Date(now.getTime() - (9 * 60 * 60 * 1000));
-      const hours = adjustedTime.getHours();
+      const hours = now.getHours();
       const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
       const ampm = hours >= 12 ? 'PM' : 'AM';
       const tzOffset = -now.getTimezoneOffset() / 60;
       const tzSign = tzOffset >= 0 ? '+' : '-';
-      const saleTimestamp = `${adjustedTime.getMonth() + 1}/${adjustedTime.getDate()}/${adjustedTime.getFullYear()}, ${displayHours}:${adjustedTime.getMinutes().toString().padStart(2, '0')}:${adjustedTime.getSeconds().toString().padStart(2, '0')} ${ampm} (UTC${tzSign}${Math.abs(tzOffset)})`;
+      const saleTimestamp = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${displayHours}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${ampm} (UTC${tzSign}${Math.abs(tzOffset)})`;
       
       // Add the sale to the database
       const saleDataToSend: Omit<SalesRecord, 'id' | 'createdAt' | 'updatedAt'> = {
