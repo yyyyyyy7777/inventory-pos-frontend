@@ -674,6 +674,8 @@ export function POSView({ cabinet, username }: POSViewProps) {
         
         // Always compare against current inventory price for discount detection
         const isDiscounted = item.price < product.price;
+        console.log(`Discount check for ${item.name}: sale price=${item.price}, product price=${product.price}, isDiscounted=${isDiscounted}`);
+        
         const saleItem: SaleItem = {
           productName: item.name,
           category: product.category || 'Unknown',
@@ -684,6 +686,8 @@ export function POSView({ cabinet, username }: POSViewProps) {
           isDiscounted: isDiscounted,
           profit: (item.price - (item.costPrice || product.price * 0.7)) * item.quantity
         };
+        
+        console.log(`Sale item for ${item.name}:`, saleItem);
         
         return saleItem;
       });
