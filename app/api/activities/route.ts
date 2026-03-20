@@ -98,11 +98,10 @@ export async function POST(request: NextRequest) {
     }
 
     const id = Date.now().toString()
-    // Store timestamp as UTC
+    // Store timestamp as local time (consistent with other activity routes)
     const now = new Date();
-    const timestamp = now.toISOString();
-    console.log('Current time (UTC):', timestamp);
-    console.log('Current time (PH local):', now.toLocaleString("en-US", {timeZone: "Asia/Manila"}));
+    const timestamp = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${now.getHours() >= 12 ? 'PM' : 'AM'}`;
+    console.log('Activity timestamp (local):', timestamp);
 
     await query(
       `INSERT INTO activities (id, timestamp, username, activity, details, category, cabinet) 
