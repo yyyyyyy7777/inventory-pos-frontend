@@ -63,23 +63,21 @@ export async function verifyEmployee(username: string, password: string) {
 
 export async function updateLastLogin(username: string, clientTimestamp?: string) {
   try {
-    // Force Asia/Manila timezone - subtract 8 hours from UTC to get local time
+    // Use current local time directly (no timezone conversion needed)
     const now = new Date();
-    const manilaTime = new Date(now.getTime() - (8 * 60 * 60 * 1000));
     
-    const month = manilaTime.getMonth() + 1;
-    const day = manilaTime.getDate();
-    const year = manilaTime.getFullYear();
-    let hours = manilaTime.getHours();
-    const minutes = manilaTime.getMinutes();
-    const seconds = manilaTime.getSeconds();
+    const month = now.getMonth() + 1;
+    const day = now.getDate();
+    const year = now.getFullYear();
+    let hours = now.getHours();
+    const minutes = now.getMinutes();
+    const seconds = now.getSeconds();
     const ampm = hours >= 12 ? 'PM' : 'AM';
     hours = hours % 12 || 12; // Convert 0 to 12
     
     const localTime = `${month}/${day}/${year} ${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')} ${ampm}`;
     
-    console.log('updateLastLogin - UTC time:', now.toISOString());
-    console.log('updateLastLogin - Manila time:', localTime, 'for user:', username);
+    console.log('updateLastLogin - Local time:', localTime, 'for user:', username);
     
     await query(
       'UPDATE employee SET "lastLogin" = $1 WHERE username = $2',
@@ -95,22 +93,21 @@ export async function updateLastLogin(username: string, clientTimestamp?: string
 
 export async function updateLastLogout(username: string, clientTimestamp?: string) {
   try {
-    // Force Asia/Manila timezone - subtract 8 hours from UTC to get local time (same as lastLogin)
+    // Use current local time directly (no timezone conversion needed)
     const now = new Date();
-    const manilaTime = new Date(now.getTime() - (8 * 60 * 60 * 1000));
     
-    const month = manilaTime.getMonth() + 1;
-    const day = manilaTime.getDate();
-    const year = manilaTime.getFullYear();
-    let hours = manilaTime.getHours();
-    const minutes = manilaTime.getMinutes();
-    const seconds = manilaTime.getSeconds();
+    const month = now.getMonth() + 1;
+    const day = now.getDate();
+    const year = now.getFullYear();
+    let hours = now.getHours();
+    const minutes = now.getMinutes();
+    const seconds = now.getSeconds();
     const ampm = hours >= 12 ? 'PM' : 'AM';
     hours = hours % 12 || 12; // Convert 0 to 12
     
     const localTime = `${month}/${day}/${year} ${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')} ${ampm}`;
     
-    console.log('updateLastLogout - Manila time:', localTime, 'for user:', username);
+    console.log('updateLastLogout - Local time:', localTime, 'for user:', username);
     
     await query(
       'UPDATE employee SET "lastLogout" = $1 WHERE username = $2',

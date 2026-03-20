@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Search, Filter, Calendar, User, Activity, RefreshCw, X, Package, DollarSign, Users, Boxes, Settings, LayoutList, ArrowUpDown } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useActivity } from "@/contexts/activity-context"
-import { formatToLocalTime } from "@/lib/datetime-utils"
+import { formatToLocalTime, formatRelativeTime } from "@/lib/datetime-utils"
 
 const activityCategories = [
   { value: "all", label: "All Activities", icon: LayoutList },
@@ -43,9 +43,9 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Use the fixed formatToLocalTime function that handles timezone properly
+  // Use relative time for activity log
   const formatPhilippinesTime = (timestamp: string) => {
-    return formatToLocalTime(timestamp, { includeSeconds: true });
+    return formatRelativeTime(timestamp);
   }
 
   const filteredActivities = activities

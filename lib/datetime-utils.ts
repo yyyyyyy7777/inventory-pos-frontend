@@ -119,7 +119,28 @@ export function formatRelativeTime(utcTimestamp: string | null | undefined): str
   if (!utcTimestamp) return 'Never';
   
   try {
-    const date = new Date(utcTimestamp);
+    let date: Date;
+    
+    // Check if it's in Manila time format (e.g., "3/20/2026, 5:30:00 PM" or "3/20/2026 5:30:00 PM")
+    if (utcTimestamp.match(/^\d{1,2}\/\d{1,2}\/\d{4}(?:, | )\d{1,2}:\d{2}:\d{2} (AM|PM)$/)) {
+      // Parse Manila time format manually to avoid timezone issues
+      const match = utcTimestamp.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})(?:, | )(\d{1,2}):(\d{2}):(\d{2}) (AM|PM)/);
+      if (match) {
+        const [, month, day, year, hours, minutes, seconds, ampm] = match;
+        let hour24 = parseInt(hours);
+        if (ampm === 'PM' && hour24 !== 12) hour24 += 12;
+        if (ampm === 'AM' && hour24 === 12) hour24 = 0;
+        
+        // Create date in local timezone (no timezone conversion)
+        date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day), hour24, parseInt(minutes), parseInt(seconds));
+      } else {
+        date = new Date(utcTimestamp); // fallback
+      }
+    } else {
+      // Assume it's UTC ISO format
+      date = new Date(utcTimestamp);
+    }
+    
     if (isNaN(date.getTime())) return 'Invalid date';
     
     const now = new Date();
@@ -127,14 +148,17 @@ export function formatRelativeTime(utcTimestamp: string | null | undefined): str
     const diffMins = Math.floor(diffMs / (1000 * 60));
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const diffWeeks = Math.floor(diffDays / 7);
+    const diffMonths = Math.floor(diffDays / 30);
+    const diffYears = Math.floor(diffDays / 365);
     
     if (diffMins < 1) return 'Just now';
     if (diffMins < 60) return `${diffMins} minute${diffMins === 1 ? '' : 's'} ago`;
     if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`;
     if (diffDays < 7) return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
-    
-    // Fall back to full date for older entries
-    return formatToLocalTime(utcTimestamp);
+    if (diffWeeks < 4) return `${diffWeeks} week${diffWeeks === 1 ? '' : 's'} ago`;
+    if (diffMonths < 12) return `${diffMonths} month${diffMonths === 1 ? '' : 's'} ago`;
+    return `${diffYears} year${diffYears === 1 ? '' : 's'} ago`;
   } catch (error) {
     return 'Invalid date';
   }
