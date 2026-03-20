@@ -55,12 +55,12 @@ export function LoginPage({ onLogin }: LoginPageProps) {
       console.log('Response data:', data);
 
       if (response.ok) {
-        // Direct timestamp update - let server generate correct local time
+        // Direct timestamp update with client timestamp
         try {
           const updateResponse = await fetch('/api/employees/update-timestamp', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, type: 'login' })
+            body: JSON.stringify({ username, type: 'login', clientTimestamp })
           });
           const updateData = await updateResponse.json();
           console.log('Direct timestamp update:', updateData);

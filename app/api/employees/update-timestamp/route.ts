@@ -14,20 +14,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing username' }, { status: 400 })
     }
     
-    // Generate correct local time instead of using clientTimestamp
-    const now = new Date();
-    const manilaTime = new Date(now.getTime() - (8 * 60 * 60 * 1000));
+    // Use client timestamp if provided, otherwise generate from current time
+    let localTime: string;
     
-    const month = manilaTime.getMonth() + 1;
-    const day = manilaTime.getDate();
-    const year = manilaTime.getFullYear();
-    let hours = manilaTime.getHours();
-    const minutes = manilaTime.getMinutes();
-    const seconds = manilaTime.getSeconds();
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    hours = hours % 12 || 12;
-    
-    const localTime = `${month}/${day}/${year} ${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')} ${ampm}`;
+    if (clientTimestamp) {
+      localTime = clientTimestamp;
+    } else {
+      // Generate from current time (fallback)
+      const now = new Date();
+      const month = now.getMonth() + 1;
+      const day = now.getDate();
+      const year = now.getFullYear();
+      let hours = now.getHours();
+      const minutes = now.getMinutes();
+      const seconds = now.getSeconds();
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12 || 12;
+      localTime = `${month}/${day}/${year} ${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')} ${ampm}`;
+    }
     
     // Update the appropriate field
     const field = type === 'logout' ? 'lastLogout' : 'lastLogin';

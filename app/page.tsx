@@ -25,12 +25,12 @@ export default function Home() {
       const ampm = hours >= 12 ? 'PM' : 'AM';
       const clientTimestamp = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${displayHours}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${ampm}`;
       
-      // Direct timestamp update - let server generate correct local time
+      // Direct timestamp update with client timestamp
       try {
         const updateResponse = await fetch('/api/employees/update-timestamp', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, type: 'logout' })
+          body: JSON.stringify({ username, type: 'logout', clientTimestamp })
         });
         const updateData = await updateResponse.json();
         console.log('Direct logout timestamp update:', updateData);

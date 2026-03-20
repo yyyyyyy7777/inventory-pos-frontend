@@ -63,19 +63,25 @@ export async function verifyEmployee(username: string, password: string) {
 
 export async function updateLastLogin(username: string, clientTimestamp?: string) {
   try {
-    // Use current local time directly (no timezone conversion needed)
-    const now = new Date();
+    // Use client timestamp if provided, otherwise use current local time
+    let localTime: string;
     
-    const month = now.getMonth() + 1;
-    const day = now.getDate();
-    const year = now.getFullYear();
-    let hours = now.getHours();
-    const minutes = now.getMinutes();
-    const seconds = now.getSeconds();
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    hours = hours % 12 || 12; // Convert 0 to 12
-    
-    const localTime = `${month}/${day}/${year} ${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')} ${ampm}`;
+    if (clientTimestamp) {
+      // Use the client timestamp directly (already in user's local time)
+      localTime = clientTimestamp;
+    } else {
+      // Fallback: use current local time
+      const now = new Date();
+      const month = now.getMonth() + 1;
+      const day = now.getDate();
+      const year = now.getFullYear();
+      let hours = now.getHours();
+      const minutes = now.getMinutes();
+      const seconds = now.getSeconds();
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12 || 12;
+      localTime = `${month}/${day}/${year} ${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')} ${ampm}`;
+    }
     
     console.log('updateLastLogin - Local time:', localTime, 'for user:', username);
     
@@ -93,19 +99,25 @@ export async function updateLastLogin(username: string, clientTimestamp?: string
 
 export async function updateLastLogout(username: string, clientTimestamp?: string) {
   try {
-    // Use current local time directly (no timezone conversion needed)
-    const now = new Date();
+    // Use client timestamp if provided, otherwise use current local time
+    let localTime: string;
     
-    const month = now.getMonth() + 1;
-    const day = now.getDate();
-    const year = now.getFullYear();
-    let hours = now.getHours();
-    const minutes = now.getMinutes();
-    const seconds = now.getSeconds();
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    hours = hours % 12 || 12; // Convert 0 to 12
-    
-    const localTime = `${month}/${day}/${year} ${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')} ${ampm}`;
+    if (clientTimestamp) {
+      // Use the client timestamp directly (already in user's local time)
+      localTime = clientTimestamp;
+    } else {
+      // Fallback: use current local time
+      const now = new Date();
+      const month = now.getMonth() + 1;
+      const day = now.getDate();
+      const year = now.getFullYear();
+      let hours = now.getHours();
+      const minutes = now.getMinutes();
+      const seconds = now.getSeconds();
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12 || 12;
+      localTime = `${month}/${day}/${year} ${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')} ${ampm}`;
+    }
     
     console.log('updateLastLogout - Local time:', localTime, 'for user:', username);
     
