@@ -70,9 +70,20 @@ export function formatToLocalTime(
     let date: Date;
     
     // Check if it's in Manila time format (e.g., "3/20/2026, 5:30:00 PM" or "3/20/2026 5:30:00 PM")
-    if (timestamp.match(/^\d{1,2}\/\d{1,2}\/\d{4}[, ]\d{1,2}:\d{2}:\d{2} (AM|PM)$/)) {
-      // Parse Manila time format - it's already in local time, so parse as is
-      date = new Date(timestamp);
+    if (timestamp.match(/^\d{1,2}\/\d{1,2}\/\d{4}(?:, | )\d{1,2}:\d{2}:\d{2} (AM|PM)$/)) {
+      // Parse Manila time format manually to avoid timezone issues
+      const match = timestamp.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})(?:, | )(\d{1,2}):(\d{2}):(\d{2}) (AM|PM)/);
+      if (match) {
+        const [, month, day, year, hours, minutes, seconds, ampm] = match;
+        let hour24 = parseInt(hours);
+        if (ampm === 'PM' && hour24 !== 12) hour24 += 12;
+        if (ampm === 'AM' && hour24 === 12) hour24 = 0;
+        
+        // Create date in local timezone (no timezone conversion)
+        date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day), hour24, parseInt(minutes), parseInt(seconds));
+      } else {
+        date = new Date(timestamp); // fallback
+      }
     } else {
       // Assume it's UTC ISO format
       date = new Date(timestamp);
