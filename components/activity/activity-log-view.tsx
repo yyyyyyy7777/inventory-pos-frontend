@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Search, Filter, Calendar, User, Activity, Package, DollarSign, Trash2, Edit2, Plus, ArrowUpDown, X, RefreshCw, Wrench, LayoutList, Users, Boxes, Settings, Building2, Home, Folder, FolderOpen, FileText } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useActivity } from "@/contexts/activity-context"
+import { formatToLocalTime } from "@/lib/datetime-utils"
 
 const activityCategories = [
   { value: "all", label: "All Activities", icon: LayoutList },
@@ -140,28 +141,8 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
   }
 
   const formatTimestamp = (timestamp: string) => {
-    // Simple Philippines time display (UTC+8)
-    try {
-      const date = new Date(timestamp);
-      if (isNaN(date.getTime())) return 'Invalid timestamp';
-      
-      // Get UTC time and add 8 hours for Philippines
-      const utcTime = date.getTime();
-      const phTime = new Date(utcTime + (8 * 60 * 60 * 1000));
-      
-      return phTime.toLocaleString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: true,
-        timeZone: 'UTC' // Use UTC since we already added 8 hours
-      });
-    } catch (error) {
-      return 'Invalid timestamp';
-    }
+    // Use the same formatToLocalTime function that handles timezone properly
+    return formatToLocalTime(timestamp, { includeSeconds: false });
   }
 
   return (
