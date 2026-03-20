@@ -67,8 +67,18 @@ export async function updateLastLogin(username: string, clientTimestamp?: string
     let localTime: string;
     
     if (clientTimestamp) {
-      // Use the client timestamp directly
-      localTime = clientTimestamp;
+      // Parse client timestamp and subtract 16 hours for login
+      const date = new Date(clientTimestamp);
+      const adjustedTime = new Date(date.getTime() - (16 * 60 * 60 * 1000));
+      const month = adjustedTime.getMonth() + 1;
+      const day = adjustedTime.getDate();
+      const year = adjustedTime.getFullYear();
+      let hours = adjustedTime.getHours();
+      const minutes = adjustedTime.getMinutes();
+      const seconds = adjustedTime.getSeconds();
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12 || 12;
+      localTime = `${month}/${day}/${year} ${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')} ${ampm}`;
     } else {
       // Fallback: use current local time
       const now = new Date();
@@ -103,8 +113,18 @@ export async function updateLastLogout(username: string, clientTimestamp?: strin
     let localTime: string;
     
     if (clientTimestamp) {
-      // Use the client timestamp directly
-      localTime = clientTimestamp;
+      // Parse client timestamp and subtract 8 hours for logout
+      const date = new Date(clientTimestamp);
+      const adjustedTime = new Date(date.getTime() - (8 * 60 * 60 * 1000));
+      const month = adjustedTime.getMonth() + 1;
+      const day = adjustedTime.getDate();
+      const year = adjustedTime.getFullYear();
+      let hours = adjustedTime.getHours();
+      const minutes = adjustedTime.getMinutes();
+      const seconds = adjustedTime.getSeconds();
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12 || 12;
+      localTime = `${month}/${day}/${year} ${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')} ${ampm}`;
     } else {
       // Fallback: use current local time
       const now = new Date();
