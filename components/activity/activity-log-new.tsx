@@ -43,13 +43,9 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Use relative time only for employee category, regular time for others
+  // Use absolute timestamp for all activities
   const formatPhilippinesTime = (timestamp: string, category: string) => {
-    if (category === 'employee') {
-      return formatRelativeTime(timestamp);
-    } else {
-      return formatToLocalTime(timestamp, { includeSeconds: true });
-    }
+    return formatToLocalTime(timestamp, { includeSeconds: true });
   }
 
   const filteredActivities = activities
