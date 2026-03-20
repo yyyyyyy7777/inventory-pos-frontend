@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { username, activity, details, category, cabinet } = body
+    const { username, activity, details, category, cabinet, clientTimestamp } = body
 
     if (!username || !activity || !details || !category) {
       return NextResponse.json(
@@ -46,9 +46,15 @@ export async function POST(request: NextRequest) {
 
     const id = Date.now().toString()
     
-    // Use simple local time format (no timezone conversion)
-    const now = new Date();
-    const timestamp = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${now.getHours() >= 12 ? 'PM' : 'AM'}`;
+    // Use client timestamp if provided, otherwise use current local time
+    let timestamp: string;
+    if (clientTimestamp) {
+      timestamp = clientTimestamp;
+    } else {
+      // Fallback: use current local time
+      const now = new Date();
+      timestamp = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${now.getHours() >= 12 ? 'PM' : 'AM'}`;
+    }
 
     await query(
       `INSERT INTO activities (id, timestamp, username, activity, details, category, cabinet) 
