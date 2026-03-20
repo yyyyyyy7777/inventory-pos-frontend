@@ -18,9 +18,9 @@ export default function Home() {
   // Log logout activity to database
   const logLogoutActivity = useCallback(async (username: string) => {
     try {
-      // Get current client timestamp with timezone (minus 9 hours adjustment)
+      // Get current client timestamp with timezone (minus 8 hours adjustment)
       const now = new Date();
-      const adjustedTime = new Date(now.getTime() - (9 * 60 * 60 * 1000));
+      const adjustedTime = new Date(now.getTime() - (8 * 60 * 60 * 1000));
       const hours = adjustedTime.getHours();
       const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
       const ampm = hours >= 12 ? 'PM' : 'AM';
