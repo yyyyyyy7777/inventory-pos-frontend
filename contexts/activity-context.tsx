@@ -88,16 +88,15 @@ export function ActivityProvider({ children }: ActivityProviderProps) {
   // Add activity to database
   const addActivity = async (activity: Omit<Activity, 'id' | 'timestamp' | 'created_at'>) => {
     try {
-      // Generate client timestamp with explicit local timezone (minus 8 hours adjustment)
+      // Generate client timestamp with explicit local timezone
       const now = new Date();
-      const adjustedTime = new Date(now.getTime() - (8 * 60 * 60 * 1000));
-      const hours = adjustedTime.getHours();
+      const hours = now.getHours();
       const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
       const ampm = hours >= 12 ? 'PM' : 'AM';
       // Add timezone offset to make it clear this is local time
       const tzOffset = -now.getTimezoneOffset() / 60; // Hours from UTC
       const tzSign = tzOffset >= 0 ? '+' : '-';
-      const clientTimestamp = `${adjustedTime.getMonth() + 1}/${adjustedTime.getDate()}/${adjustedTime.getFullYear()}, ${displayHours}:${adjustedTime.getMinutes().toString().padStart(2, '0')}:${adjustedTime.getSeconds().toString().padStart(2, '0')} ${ampm} (UTC${tzSign}${Math.abs(tzOffset)})`;
+      const clientTimestamp = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${displayHours}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${ampm} (UTC${tzSign}${Math.abs(tzOffset)})`;
       
       const response = await fetch('/api/activities-new', {
         method: 'POST',
