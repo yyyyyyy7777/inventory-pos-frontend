@@ -93,6 +93,7 @@ export function POSView({ cabinet, username }: POSViewProps) {
   const [discountConfirmDialog, setDiscountConfirmDialog] = useState(false)
   const [discountTimeouts, setDiscountTimeouts] = useState<Map<string, NodeJS.Timeout>>(new Map())
   const [onShelfStock, setOnShelfStock] = useState<Record<string, number>>({})
+  const [isProcessingSale, setIsProcessingSale] = useState(false)
 
   // Autosave cart state
   const { showRestorePrompt, acceptRestore, rejectRestore } = useFormAutosave(
@@ -591,118 +592,117 @@ export function POSView({ cabinet, username }: POSViewProps) {
   }
 
   const processSale = async () => {
-    console.log('Processing sale with payment method:', paymentMethod);
-    console.log('Cash amount:', cashAmount);
-    console.log('Reference number:', referenceNumber);
-    console.log('Cart items:', cart.length);
+    // Prevent double-clicking
+    if (isProcessingSale) return;
     
-    const finalTotal = Math.round(total * (1 + (taxEnabled ? taxRate / 100 : 0)));
-    const tax = Math.round(total * (taxEnabled ? taxRate / 100 : 0));
-    const cashReceived = parseFloat(cashAmount) || 0;
-    const calculatedChange = paymentMethod === 'cash' ? cashReceived - finalTotal : 0;
+    setIsProcessingSale(true);
     
-    console.log('Final total:', finalTotal);
-    console.log('Cash received:', cashReceived);
-    console.log('Calculated change:', calculatedChange);
-    
-    // Validate cash payment
-    if (paymentMethod === 'cash') {
-      if (!cashAmount || cashAmount.trim() === '') {
-        console.log('Cash payment failed: No cash amount entered');
-        addToast("Please enter the cash amount received", "error");
-        return;
-      }
-      if (cashReceived < finalTotal) {
-        console.log('Cash payment failed: Insufficient cash');
-        addToast("Insufficient cash amount. Please enter at least ₱" + finalTotal.toLocaleString(), "error");
-        return;
-      }
-    }
-    
-    // Validate QRPH payment
-    if (paymentMethod === 'qrph' && !referenceNumber.trim()) {
-      console.log('QRPH payment failed: No reference number');
-      addToast("Please enter the QRPH reference number", "error");
-      return;
-    }
-    
-    // Create sale data for receipt
-    const saleData: ReceiptData = {
-      cabinet,
-      date: currentTime.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
-      time: currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-      staff: username,
-      paymentMethod: paymentMethod === 'cash' ? 'Cash' : 'QRPH',
-      location: saleLocation === 'online' ? 'Online' : 'Physical',
-      referenceNumber: paymentMethod === 'qrph' ? referenceNumber : undefined,
-      items: cart.map((item: CartItem): ReceiptItem => {
-        const product = products.find(p => p.id === item.id);
-        return {
-          name: item.name,
-          quantity: item.quantity,
-          unitPrice: product?.price || 0,
-          totalPrice: (product?.price || 0) * item.quantity
-        };
-      }),
-      subtotal: total,
-      tax: tax,
-      total: finalTotal,
-      cashReceived: paymentMethod === 'cash' ? `₱${cashReceived.toLocaleString()}` : 'N/A',
-      change: paymentMethod === 'cash' ? `₱${calculatedChange.toLocaleString()}` : 'N/A'
-    };
-    
-    setCurrentSaleData(saleData);
-    setChange(calculatedChange);
-    setShowPaymentDialog(false);
-    setShowReceipt(true);
-    
-    // Prepare sale items with proper SaleItem type
-    const saleItems: SaleItem[] = cart.map((item): SaleItem => {
-      const product = products.find(p => p.id === item.id);
-      if (!product) {
-        throw new Error(`Product not found: ${item.id}`);
+    try {
+      console.log('Processing sale with payment method:', paymentMethod);
+      console.log('Cash amount:', cashAmount);
+      console.log('Reference number:', referenceNumber);
+      console.log('Cart items:', cart.length);
+      
+      const finalTotal = Math.round(total * (1 + (taxEnabled ? taxRate / 100 : 0)));
+      const tax = Math.round(total * (taxEnabled ? taxRate / 100 : 0));
+      const cashReceived = parseFloat(cashAmount) || 0;
+      const calculatedChange = paymentMethod === 'cash' ? cashReceived - finalTotal : 0;
+      
+      console.log('Final total:', finalTotal);
+      console.log('Cash received:', cashReceived);
+      console.log('Calculated change:', calculatedChange);
+      
+      // Validate cash payment
+      if (paymentMethod === 'cash') {
+        if (!cashAmount || cashAmount.trim() === '') {
+          console.log('Cash payment failed: No cash amount entered');
+          addToast("Please enter the cash amount received", "error");
+          setIsProcessingSale(false);
+          return;
+        }
+        if (cashReceived < finalTotal) {
+          console.log('Cash payment failed: Insufficient cash');
+          addToast("Insufficient cash amount. Please enter at least ₱" + finalTotal.toLocaleString(), "error");
+          setIsProcessingSale(false);
+          return;
+        }
       }
       
-      // Always compare against current inventory price for discount detection
-      const isDiscounted = item.price < product.price;
-      const saleItem: SaleItem = {
-        productName: item.name,
-        category: product.category || 'Unknown',
-        quantity: item.quantity,
-        price: item.price,
-        originalPrice: product.price, // Always use current inventory price
-        costPrice: item.costPrice || product.price * 0.7,
-        isDiscounted: isDiscounted,
-        profit: (item.price - (item.costPrice || product.price * 0.7)) * item.quantity
+      // Validate QRPH payment
+      if (paymentMethod === 'qrph' && !referenceNumber.trim()) {
+        console.log('QRPH payment failed: No reference number');
+        addToast("Please enter the QRPH reference number", "error");
+        setIsProcessingSale(false);
+        return;
+      }
+      
+      // Create sale data for receipt
+      const saleData: ReceiptData = {
+        cabinet,
+        date: currentTime.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+        time: currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+        staff: username,
+        paymentMethod: paymentMethod === 'cash' ? 'Cash' : 'QRPH',
+        location: saleLocation === 'online' ? 'Online' : 'Physical',
+        referenceNumber: paymentMethod === 'qrph' ? referenceNumber : undefined,
+        items: cart.map((item: CartItem): ReceiptItem => {
+          const product = products.find(p => p.id === item.id);
+          return {
+            name: item.name,
+            quantity: item.quantity,
+            unitPrice: product?.price || 0,
+            totalPrice: (product?.price || 0) * item.quantity
+          };
+        }),
+        subtotal: total,
+        tax: tax,
+        total: finalTotal,
+        cashReceived: paymentMethod === 'cash' ? `₱${cashReceived.toLocaleString()}` : 'N/A',
+        change: paymentMethod === 'cash' ? `₱${calculatedChange.toLocaleString()}` : 'N/A'
       };
       
-      console.log('Final sale item:', {
-        name: saleItem.productName,
-        cartPrice: item.price,
-        inventoryPrice: product.price,
-        isDiscounted: saleItem.isDiscounted,
-        totalSavings: saleItem.isDiscounted ? (product.price - item.price) * item.quantity : 0,
-        costPrice: saleItem.costPrice,
-        profit: saleItem.profit,
-        profitCalculation: `${item.price} - ${saleItem.costPrice || 0} = ${item.price - (saleItem.costPrice || 0)} × ${item.quantity} = ${saleItem.profit}`
+      setCurrentSaleData(saleData);
+      setChange(calculatedChange);
+      // Keep dialog open during processing - only close on success
+      
+      // Prepare sale items with proper SaleItem type
+      const saleItems: SaleItem[] = cart.map((item): SaleItem => {
+        const product = products.find(p => p.id === item.id);
+        if (!product) {
+          throw new Error(`Product not found: ${item.id}`);
+        }
+        
+        // Always compare against current inventory price for discount detection
+        const isDiscounted = item.price < product.price;
+        const saleItem: SaleItem = {
+          productName: item.name,
+          category: product.category || 'Unknown',
+          quantity: item.quantity,
+          price: item.price,
+          originalPrice: product.price,
+          costPrice: item.costPrice || product.price * 0.7,
+          isDiscounted: isDiscounted,
+          profit: (item.price - (item.costPrice || product.price * 0.7)) * item.quantity
+        };
+        
+        return saleItem;
       });
       
-      return saleItem;
-    });
-    
-    console.log('All sale items:', saleItems.map(item => ({
-      name: item.productName,
-      isDiscounted: item.isDiscounted,
-      priceVsOriginal: item.originalPrice ? `${item.price} < ${item.originalPrice} = ${item.price < item.originalPrice}` : 'No original price'
-    })));
-    
-    // Calculate total amount from items (use actual sale prices which may be negotiated)
-    const totalAmount = total; // Use the cart total which already includes negotiated prices
-    
-    // Add the sale to the database
-    try {
+      // Calculate total amount from items
+      const totalAmount = total;
+      
+      // Generate client timestamp with explicit local timezone (same format as activities)
+      const now = new Date();
+      const hours = now.getHours();
+      const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      const tzOffset = -now.getTimezoneOffset() / 60;
+      const tzSign = tzOffset >= 0 ? '+' : '-';
+      const saleTimestamp = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${displayHours}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${ampm} (UTC${tzSign}${Math.abs(tzOffset)})`;
+      
+      // Add the sale to the database
       const saleDataToSend: Omit<SalesRecord, 'id' | 'createdAt' | 'updatedAt'> = {
-        date: new Date().toISOString(),
+        date: saleTimestamp,
         items: saleItems,
         amount: totalAmount,
         paymentMethod: paymentMethod === 'cash' ? 'Cash' : 'QRPH',
@@ -716,51 +716,46 @@ export function POSView({ cabinet, username }: POSViewProps) {
       
       await addSale(saleDataToSend);
       
-      console.log('Sale added successfully, refreshing sales...');
+      console.log('Sale added successfully!');
       
-      // Show success message immediately for better UX
+      // ONLY NOW close the dialog and show receipt
+      setShowPaymentDialog(false);
+      setShowReceipt(true);
+      
+      // Show success message
       addToast("Sale completed successfully!", "success");
       
-      // Refresh sales in background (non-blocking)
+      // Refresh data in background
       refreshSales(cabinet).catch(err => console.error('Failed to refresh sales:', err));
-      
-      // Immediately refresh products to show updated stock
       refetch().catch(err => console.error('Failed to refresh products:', err));
-      console.log('Sales refresh initiated');
       
-      // Note: Stock deduction is already handled by createSale() in pg-direct.ts
-      // Do NOT call stock-deduction API here to avoid double deduction
-      
+      // Clear cart and reset states
       setCart([]);
-      setReceiptTime(null); // Reset receipt time after successful sale
-      setReferenceNumber(''); // Reset reference number after successful sale
-      setCashAmount(''); // Reset cash amount after successful sale
-      setChange(0); // Reset change after successful sale
-      
-      // Clear autosave data for this cart
+      setReceiptTime(null);
+      setReferenceNumber('');
+      setCashAmount('');
+      setChange(0);
       rejectRestore();
       
-      addToast("Sale completed successfully!", "success");
-      
-      // Log the sale activity with detailed information
-      const activityItemsList = cart.map(item => `${item.name} (${item.quantity}x @ ₱${item.price})`).join(', ');
+      // Log activity
+      const activityItemsList = saleItems.map(item => `${item.productName} (${item.quantity}x @ ₱${item.price})`).join(', ');
       const activityDetails = paymentMethod === 'qrph' && referenceNumber
-        ? `Sold ${cart.length} item(s) in ${cabinet} cabinet - Items: ${activityItemsList} - Total: ₱${total.toFixed(2)} - Payment: QRPH - Reference: ${referenceNumber} - Location: ${saleLocation}`
-        : `Sold ${cart.length} item(s) in ${cabinet} cabinet - Items: ${activityItemsList} - Total: ₱${total.toFixed(2)} - Payment: ${paymentMethod.toUpperCase()} - Location: ${saleLocation}`;
+        ? `Sold ${saleItems.length} item(s) in ${cabinet} cabinet - Items: ${activityItemsList} - Total: ₱${total.toFixed(2)} - Payment: QRPH - Reference: ${referenceNumber} - Location: ${saleLocation}`
+        : `Sold ${saleItems.length} item(s) in ${cabinet} cabinet - Items: ${activityItemsList} - Total: ₱${total.toFixed(2)} - Payment: ${paymentMethod.toUpperCase()} - Location: ${saleLocation}`;
       
-      addActivity({
+      await addActivity({
         username: username,
         activity: "Processed sale",
         details: activityDetails,
         category: "sale"
       });
       
-      // The products will be automatically refreshed by the context's auto-refresh
-      // No need to manually update local state
-      
     } catch (error) {
       console.error('Error processing sale:', error);
       addToast("Failed to process sale. Please try again.", "error");
+      // Keep dialog open on error so user can retry
+    } finally {
+      setIsProcessingSale(false);
     }
   }
 
@@ -1142,6 +1137,31 @@ export function POSView({ cabinet, username }: POSViewProps) {
 
       {/* Products Section */}
       <div className="xl:col-span-2 space-y-4">
+        {/* Live Time Display */}
+        <div className="flex items-center justify-between bg-muted/30 rounded-lg px-4 py-2">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Calendar size={16} />
+            <span className="font-medium">
+              {currentTime.toLocaleDateString('en-US', { 
+                weekday: 'short', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+              })}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-lg font-bold text-primary">
+            <span className="tabular-nums">
+              {currentTime.toLocaleTimeString('en-US', { 
+                hour: '2-digit', 
+                minute: '2-digit', 
+                second: '2-digit',
+                hour12: true 
+              })}
+            </span>
+          </div>
+        </div>
+
         {/* Search and Filters */}
         <div className="flex flex-col sm:flex-row gap-2">
           <div className="relative flex-1">
@@ -1279,8 +1299,20 @@ export function POSView({ cabinet, username }: POSViewProps) {
       </div>
 
       {/* Payment Method Selection Dialog */}
-      <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
+      <Dialog open={showPaymentDialog} onOpenChange={(open) => {
+        // Prevent closing while processing
+        if (!open && isProcessingSale) return;
+        setShowPaymentDialog(open);
+      }}>
         <DialogContent className="max-w-md mx-4 max-h-[90vh] overflow-y-auto">
+          {/* Loading Overlay */}
+          {isProcessingSale && (
+            <div className="absolute inset-0 bg-white/80 z-50 flex flex-col items-center justify-center rounded-lg">
+              <div className="animate-spin h-12 w-12 border-4 border-primary border-t-transparent rounded-full mb-4"></div>
+              <p className="text-lg font-semibold text-primary">Processing Sale...</p>
+              <p className="text-sm text-muted-foreground mt-2">Please wait</p>
+            </div>
+          )}
           <DialogHeader>
             <DialogTitle>Select Payment Method</DialogTitle>
             <DialogDescription>
@@ -1392,15 +1424,26 @@ export function POSView({ cabinet, username }: POSViewProps) {
                 setChange(0);
                 setReferenceNumber('');
               }}
+              disabled={isProcessingSale}
             >
               Cancel
             </Button>
             <Button
               onClick={processSale}
               className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground"
-              disabled={cart.length === 0}
+              disabled={cart.length === 0 || isProcessingSale}
             >
-              Process Payment
+              {isProcessingSale ? (
+                <span className="flex items-center gap-2">
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  Processing...
+                </span>
+              ) : (
+                "Process Payment"
+              )}
             </Button>
           </div>
         </DialogContent>

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Search, Filter, Calendar, User, Activity, RefreshCw, X, Package, DollarSign, Users, Boxes, Settings, LayoutList, ArrowUpDown } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useActivity } from "@/contexts/activity-context"
-import { formatToLocalTime, formatRelativeTime } from "@/lib/datetime-utils"
+import { formatToLocalTime } from "@/lib/datetime-utils"
 
 const activityCategories = [
   { value: "all", label: "All Activities", icon: LayoutList },
@@ -27,8 +27,14 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
   const [dateFilter, setDateFilter] = useState({ 
     year: "all", month: "all", day: "all", startDate: "", endDate: "" 
   })
+  const [mounted, setMounted] = useState(false)
 
   const activities = getActivities()
+
+  // Prevent SSR issues by only rendering on client
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   // Refresh activities on mount to show latest data - run only once
   useEffect(() => {
@@ -48,6 +54,28 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
     return formatToLocalTime(timestamp, { includeSeconds: true });
   }
 
+  // Parse timestamp for comparison without timezone issues
+  const parseTimestampForSort = (timestamp: string): number => {
+    // Try to match timezone-aware format first (e.g., "3/20/2026, 5:30:00 PM (UTC+8)")
+    let match = timestamp.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:, | )(\d{1,2}):(\d{2}):(\d{2}) (AM|PM) \(UTC([+-]\d+)\)$/);
+    
+    // Fall back to old format without timezone
+    if (!match) {
+      match = timestamp.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:, | )(\d{1,2}):(\d{2}):(\d{2}) (AM|PM)$/);
+    }
+    
+    if (match) {
+      const [, month, day, year, hours, minutes, seconds, ampm] = match;
+      let hour24 = parseInt(hours);
+      if (ampm === 'PM' && hour24 !== 12) hour24 += 12;
+      if (ampm === 'AM' && hour24 === 12) hour24 = 0;
+      // Create a sortable string: YYYYMMDDHHmmss
+      return parseInt(`${year}${month.padStart(2, '0')}${day.padStart(2, '0')}${hour24.toString().padStart(2, '0')}${minutes}${seconds}`);
+    }
+    // Fallback to Date parsing (for ISO format)
+    return new Date(timestamp).getTime();
+  }
+
   const filteredActivities = activities
     .filter(activity => {
       const searchLower = searchQuery.toLowerCase()
@@ -56,19 +84,20 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
              activity.details.toLowerCase().includes(searchLower)
       const matchesCategory = selectedCategory === "all" || activity.category === selectedCategory
       
-      // Date filter
+      // Date filter - skip during SSR to avoid timezone issues
       let matchesDate = true
-      if (dateFilter.startDate || dateFilter.endDate) {
-        const activityDate = new Date(activity.timestamp)
-        if (dateFilter.startDate) matchesDate = matchesDate && activityDate >= new Date(dateFilter.startDate)
-        if (dateFilter.endDate) matchesDate = matchesDate && activityDate <= new Date(dateFilter.endDate)
+      if (mounted && (dateFilter.startDate || dateFilter.endDate)) {
+        const activityTime = parseTimestampForSort(activity.timestamp)
+        const startTime = dateFilter.startDate ? parseInt(dateFilter.startDate.replace(/-/g, '')) * 1000000 : 0
+        const endTime = dateFilter.endDate ? parseInt(dateFilter.endDate.replace(/-/g, '')) * 1000000 : 999999999999
+        matchesDate = activityTime >= startTime && activityTime <= endTime
       }
       
       return matchesSearch && matchesCategory && matchesDate
     })
     .sort((a, b) => {
       switch (sortBy) {
-        case "timestamp": return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        case "timestamp": return parseTimestampForSort(b.timestamp) - parseTimestampForSort(a.timestamp)
         case "username": return a.username.localeCompare(b.username)
         case "activity": return a.activity.localeCompare(b.activity)
         default: return 0
@@ -119,7 +148,6 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
               </Select>
             </div>
 
-            {/* Sort By */}
             <div className="space-y-1">
               <label className="text-xs font-semibold text-gray-700 flex items-center gap-1">
                 <ArrowUpDown size={10} className="text-indigo-600" /> Sort By
@@ -215,7 +243,7 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
               <CardDescription>Latest activities</CardDescription>
             </CardHeader>
             <CardContent>
-              {loading ? (
+              {loading || !mounted ? (
                 <div className="text-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
                   <p>Loading activities...</p>

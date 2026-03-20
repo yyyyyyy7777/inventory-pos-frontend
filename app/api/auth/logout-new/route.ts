@@ -19,10 +19,16 @@ export async function POST(request: NextRequest) {
 
     // Log logout activity with client timestamp
     try {
-      const timestamp = clientTimestamp || (() => {
+      // Must use client timestamp - server time is UTC and will be wrong for users
+      let timestamp: string;
+      if (clientTimestamp) {
+        timestamp = clientTimestamp;
+      } else {
+        // Only fallback to server time if somehow clientTimestamp wasn't sent
         const now = new Date();
-        return `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${now.getHours() >= 12 ? 'PM' : 'AM'}`;
-      })();
+        timestamp = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${now.getHours() >= 12 ? 'PM' : 'AM'}`;
+        console.warn('WARNING: clientTimestamp not provided, using server time');
+      }
       
       await query(
         `INSERT INTO activities (id, timestamp, username, activity, details, category)

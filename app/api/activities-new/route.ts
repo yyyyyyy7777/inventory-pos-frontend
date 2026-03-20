@@ -37,6 +37,10 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { username, activity, details, category, cabinet, clientTimestamp } = body
 
+    console.log('=== API ACTIVITIES POST ===');
+    console.log('Received clientTimestamp:', clientTimestamp);
+    console.log('Server time:', new Date().toString());
+
     if (!username || !activity || !details || !category) {
       return NextResponse.json(
         { error: 'Missing required fields' },
@@ -50,10 +54,12 @@ export async function POST(request: NextRequest) {
     let timestamp: string;
     if (clientTimestamp) {
       timestamp = clientTimestamp;
+      console.log('Using client timestamp:', timestamp);
     } else {
       // Fallback: use current local time
       const now = new Date();
       timestamp = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${now.getHours() >= 12 ? 'PM' : 'AM'}`;
+      console.log('Using server timestamp (fallback):', timestamp);
     }
 
     await query(

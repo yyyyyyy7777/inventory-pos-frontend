@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
     await ensureActivitiesTable()
     
     const body = await request.json()
-    const { username, activity, details, category, cabinet } = body
+    const { username, activity, details, category, cabinet, clientTimestamp } = body
 
     if (!username || !activity || !details || !category) {
       return NextResponse.json(
@@ -97,11 +97,24 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    let timestamp: string;
+    if (clientTimestamp) {
+      // Parse the client timestamp format and convert to ISO
+      const match = clientTimestamp.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:, | )(\d{1,2}):(\d{2}):(\d{2}) (AM|PM)$/);
+      if (match) {
+        const [, month, day, year, hours, minutes, seconds, ampm] = match;
+        let hour24 = parseInt(hours);
+        if (ampm === 'PM' && hour24 !== 12) hour24 += 12;
+        if (ampm === 'AM' && hour24 === 12) hour24 = 0;
+        timestamp = new Date(parseInt(year), parseInt(month) - 1, parseInt(day), hour24, parseInt(minutes), parseInt(seconds)).toISOString();
+      } else {
+        timestamp = new Date().toISOString();
+      }
+    } else {
+      timestamp = new Date().toISOString();
+    }
+
     const id = Date.now().toString()
-    // Store timestamp as local time (consistent with other activity routes)
-    const now = new Date();
-    const timestamp = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${now.getHours() >= 12 ? 'PM' : 'AM'}`;
-    console.log('Activity timestamp (local):', timestamp);
 
     await query(
       `INSERT INTO activities (id, timestamp, username, activity, details, category, cabinet) 

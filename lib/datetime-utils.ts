@@ -54,7 +54,8 @@ export function debugTimezone(timestamp: string): void {
 }
 
 /**
- * Format a timestamp for display (handles both UTC ISO and Manila time formats)
+ * Format a timestamp for display (handles both UTC ISO and local time formats)
+ * Fixed for SSR: parses string directly without timezone-sensitive Date constructor
  */
 export function formatToLocalTime(
   timestamp: string | null | undefined,
@@ -66,37 +67,69 @@ export function formatToLocalTime(
 ): string {
   if (!timestamp) return 'Never';
   
+  console.log('=== formatToLocalTime ===');
+  console.log('Input timestamp:', timestamp);
+  
   try {
-    let date: Date;
-    
-    // Check if it's in Manila time format (e.g., "3/20/2026, 5:30:00 PM" or "3/20/2026 5:30:00 PM")
-    if (timestamp.match(/^\d{1,2}\/\d{1,2}\/\d{4}(?:, | )\d{1,2}:\d{2}:\d{2} (AM|PM)$/)) {
-      // Parse Manila time format manually to avoid timezone issues
-      const match = timestamp.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})(?:, | )(\d{1,2}):(\d{2}):(\d{2}) (AM|PM)/);
-      if (match) {
-        const [, month, day, year, hours, minutes, seconds, ampm] = match;
-        let hour24 = parseInt(hours);
-        if (ampm === 'PM' && hour24 !== 12) hour24 += 12;
-        if (ampm === 'AM' && hour24 === 12) hour24 = 0;
-        
-        // Create date in local timezone (no timezone conversion)
-        date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day), hour24, parseInt(minutes), parseInt(seconds));
-      } else {
-        date = new Date(timestamp); // fallback
-      }
-    } else {
-      // Assume it's UTC ISO format
-      date = new Date(timestamp);
-    }
-    
-    if (isNaN(date.getTime())) return 'Invalid date';
-    
+    // Default options
     const defaultOptions = {
       includeDate: true,
       includeTime: true,
       includeSeconds: false,
       ...options
     };
+    
+    // Check if it's in local time format with timezone (e.g., "3/20/2026, 5:30:00 PM (UTC+8)")
+    const tzMatch = timestamp.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:, | )(\d{1,2}):(\d{2}):(\d{2}) (AM|PM) \(UTC([+-]\d+)\)$/);
+    if (tzMatch) {
+      const [, month, day, year, hours, minutes, seconds, ampm] = tzMatch;
+      
+      // Format directly without creating Date object (avoids SSR timezone issues)
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const monthName = monthNames[parseInt(month) - 1];
+      
+      let result = '';
+      if (defaultOptions.includeDate) {
+        result += `${monthName} ${parseInt(day)}, ${year}`;
+      }
+      if (defaultOptions.includeTime) {
+        if (result) result += ', ';
+        result += `${hours}:${minutes}`;
+        if (defaultOptions.includeSeconds) {
+          result += `:${seconds}`;
+        }
+        result += ` ${ampm}`;
+      }
+      return result;
+    }
+    
+    // Check if it's in old local time format without timezone (e.g., "3/20/2026, 5:30:00 PM")
+    const localMatch = timestamp.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:, | )(\d{1,2}):(\d{2}):(\d{2}) (AM|PM)$/);
+    if (localMatch) {
+      const [, month, day, year, hours, minutes, seconds, ampm] = localMatch;
+      
+      // Format directly without creating Date object (avoids SSR timezone issues)
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const monthName = monthNames[parseInt(month) - 1];
+      
+      let result = '';
+      if (defaultOptions.includeDate) {
+        result += `${monthName} ${parseInt(day)}, ${year}`;
+      }
+      if (defaultOptions.includeTime) {
+        if (result) result += ', ';
+        result += `${hours}:${minutes}`;
+        if (defaultOptions.includeSeconds) {
+          result += `:${seconds}`;
+        }
+        result += ` ${ampm}`;
+      }
+      return result;
+    }
+    
+    // For ISO format or other formats, use Date object (client-side only rendering)
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return 'Invalid date';
     
     return date.toLocaleString('en-US', {
       year: defaultOptions.includeDate ? 'numeric' : undefined,
@@ -114,31 +147,29 @@ export function formatToLocalTime(
 
 /**
  * Format timestamp with relative time (e.g., "2 minutes ago", "Just now")
+ * Fixed for SSR: handles local timestamp format correctly
  */
-export function formatRelativeTime(utcTimestamp: string | null | undefined): string {
-  if (!utcTimestamp) return 'Never';
+export function formatRelativeTime(timestamp: string | null | undefined): string {
+  if (!timestamp) return 'Never';
   
   try {
     let date: Date;
     
-    // Check if it's in Manila time format (e.g., "3/20/2026, 5:30:00 PM" or "3/20/2026 5:30:00 PM")
-    if (utcTimestamp.match(/^\d{1,2}\/\d{1,2}\/\d{4}(?:, | )\d{1,2}:\d{2}:\d{2} (AM|PM)$/)) {
-      // Parse Manila time format manually to avoid timezone issues
-      const match = utcTimestamp.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})(?:, | )(\d{1,2}):(\d{2}):(\d{2}) (AM|PM)/);
-      if (match) {
-        const [, month, day, year, hours, minutes, seconds, ampm] = match;
-        let hour24 = parseInt(hours);
-        if (ampm === 'PM' && hour24 !== 12) hour24 += 12;
-        if (ampm === 'AM' && hour24 === 12) hour24 = 0;
-        
-        // Create date in local timezone (no timezone conversion)
-        date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day), hour24, parseInt(minutes), parseInt(seconds));
-      } else {
-        date = new Date(utcTimestamp); // fallback
-      }
+    // Check if it's in local time format (e.g., "3/20/2026, 5:30:00 PM")
+    const localMatch = timestamp.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:, | )(\d{1,2}):(\d{2}):(\d{2}) (AM|PM)$/);
+    if (localMatch) {
+      const [, month, day, year, hours, minutes, seconds, ampm] = localMatch;
+      let hour24 = parseInt(hours);
+      if (ampm === 'PM' && hour24 !== 12) hour24 += 12;
+      if (ampm === 'AM' && hour24 === 12) hour24 = 0;
+      
+      // Create a UTC date that represents the same wall-clock time
+      // This avoids SSR timezone shift issues
+      const utcDate = Date.UTC(parseInt(year), parseInt(month) - 1, parseInt(day), hour24, parseInt(minutes), parseInt(seconds));
+      date = new Date(utcDate);
     } else {
       // Assume it's UTC ISO format
-      date = new Date(utcTimestamp);
+      date = new Date(timestamp);
     }
     
     if (isNaN(date.getTime())) return 'Invalid date';

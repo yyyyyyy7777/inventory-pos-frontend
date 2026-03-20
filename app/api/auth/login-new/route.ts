@@ -48,8 +48,14 @@ export async function POST(request: NextRequest) {
       
       // If last activity was login without logout, log a logout first
       if (lastActivity.length > 0 && lastActivity[0].activity === 'User logged in') {
-        const now = new Date();
-        const timestamp = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${now.getHours() >= 12 ? 'PM' : 'AM'}`;
+        // Use client timestamp if provided, otherwise calculate from server time
+        let timestamp: string;
+        if (clientTimestamp) {
+          timestamp = clientTimestamp;
+        } else {
+          const now = new Date();
+          timestamp = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${now.getHours() >= 12 ? 'PM' : 'AM'}`;
+        }
         
         await query(
           `INSERT INTO activities (id, timestamp, username, activity, details, category)
@@ -64,10 +70,16 @@ export async function POST(request: NextRequest) {
     
     // Log login activity with client timestamp
     try {
-      const timestamp = clientTimestamp || (() => {
+      // Must use client timestamp - server time is UTC and will be wrong for users
+      let timestamp: string;
+      if (clientTimestamp) {
+        timestamp = clientTimestamp;
+      } else {
+        // Only fallback to server time if somehow clientTimestamp wasn't sent
         const now = new Date();
-        return `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${now.getHours() >= 12 ? 'PM' : 'AM'}`;
-      })();
+        timestamp = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${now.getHours() >= 12 ? 'PM' : 'AM'}`;
+        console.warn('WARNING: clientTimestamp not provided, using server time');
+      }
       
       await query(
         `INSERT INTO activities (id, timestamp, username, activity, details, category)

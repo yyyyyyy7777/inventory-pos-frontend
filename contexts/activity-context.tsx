@@ -44,11 +44,9 @@ export function ActivityProvider({ children }: ActivityProviderProps) {
   const fetchActivities = useCallback(async (showLoading = true) => {
     try {
       if (showLoading) setLoading(true)
-      console.log('Fetching activities from /api/activities-new...')
       const response = await fetch('/api/activities-new?limit=1000')
       if (response.ok) {
         const data = await response.json()
-        console.log('Activities fetched:', data.length, 'items')
         setActivities(data)
         setLastFetchTime(new Date())
       } else {
@@ -90,12 +88,15 @@ export function ActivityProvider({ children }: ActivityProviderProps) {
   // Add activity to database
   const addActivity = async (activity: Omit<Activity, 'id' | 'timestamp' | 'created_at'>) => {
     try {
-      // Generate client timestamp
+      // Generate client timestamp with explicit local timezone
       const now = new Date();
       const hours = now.getHours();
       const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
       const ampm = hours >= 12 ? 'PM' : 'AM';
-      const clientTimestamp = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${displayHours}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${ampm}`;
+      // Add timezone offset to make it clear this is local time
+      const tzOffset = -now.getTimezoneOffset() / 60; // Hours from UTC
+      const tzSign = tzOffset >= 0 ? '+' : '-';
+      const clientTimestamp = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${displayHours}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${ampm} (UTC${tzSign}${Math.abs(tzOffset)})`;
       
       const response = await fetch('/api/activities-new', {
         method: 'POST',
