@@ -714,22 +714,38 @@ export function POSView({ cabinet, username }: POSViewProps) {
       
       console.log('Sending sale data:', JSON.stringify(saleDataToSend, null, 2));
       
-      await addSale(saleDataToSend);
+      // Process sale and activity in parallel for speed
+      const [saleResult] = await Promise.allSettled([
+        addSale(saleDataToSend),
+        // Log activity in parallel
+        (async () => {
+          const activityItemsList = saleItems.map(item => `${item.productName} (${item.quantity}x @ ₱${item.price})`).join(', ');
+          const activityDetails = paymentMethod === 'qrph' && referenceNumber
+            ? `Sold ${saleItems.length} item(s) in ${cabinet} cabinet - Items: ${activityItemsList} - Total: ₱${total.toFixed(2)} - Payment: QRPH - Reference: ${referenceNumber} - Location: ${saleLocation}`
+            : `Sold ${saleItems.length} item(s) in ${cabinet} cabinet - Items: ${activityItemsList} - Total: ₱${total.toFixed(2)} - Payment: ${paymentMethod.toUpperCase()} - Location: ${saleLocation}`;
+          
+          return addActivity({
+            username: username,
+            activity: "Processed sale",
+            details: activityDetails,
+            category: "sale"
+          });
+        })()
+      ]);
+      
+      // Check if sale failed
+      if (saleResult.status === 'rejected') {
+        throw saleResult.reason;
+      }
       
       console.log('Sale added successfully!');
       
-      // ONLY NOW close the dialog and show receipt
+      // IMMEDIATELY close dialog and show receipt
       setShowPaymentDialog(false);
       setShowReceipt(true);
-      
-      // Show success message
       addToast("Sale completed successfully!", "success");
       
-      // Refresh data in background
-      refreshSales(cabinet).catch(err => console.error('Failed to refresh sales:', err));
-      refetch().catch(err => console.error('Failed to refresh products:', err));
-      
-      // Clear cart and reset states
+      // Clear cart and reset states immediately
       setCart([]);
       setReceiptTime(null);
       setReferenceNumber('');
@@ -737,18 +753,11 @@ export function POSView({ cabinet, username }: POSViewProps) {
       setChange(0);
       rejectRestore();
       
-      // Log activity
-      const activityItemsList = saleItems.map(item => `${item.productName} (${item.quantity}x @ ₱${item.price})`).join(', ');
-      const activityDetails = paymentMethod === 'qrph' && referenceNumber
-        ? `Sold ${saleItems.length} item(s) in ${cabinet} cabinet - Items: ${activityItemsList} - Total: ₱${total.toFixed(2)} - Payment: QRPH - Reference: ${referenceNumber} - Location: ${saleLocation}`
-        : `Sold ${saleItems.length} item(s) in ${cabinet} cabinet - Items: ${activityItemsList} - Total: ₱${total.toFixed(2)} - Payment: ${paymentMethod.toUpperCase()} - Location: ${saleLocation}`;
-      
-      await addActivity({
-        username: username,
-        activity: "Processed sale",
-        details: activityDetails,
-        category: "sale"
-      });
+      // Refresh data in background (non-blocking)
+      setTimeout(() => {
+        refreshSales(cabinet).catch(err => console.error('Failed to refresh sales:', err));
+        refetch().catch(err => console.error('Failed to refresh products:', err));
+      }, 100);
       
     } catch (error) {
       console.error('Error processing sale:', error);
