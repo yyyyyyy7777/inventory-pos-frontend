@@ -88,14 +88,15 @@ export function ActivityProvider({ children }: ActivityProviderProps) {
   // Add activity to database
   const addActivity = async (activity: Omit<Activity, 'id' | 'timestamp' | 'created_at'>) => {
     try {
-      // Use real device time - no timezone adjustments
+      // Use real device time minus 8 hours
       const now = new Date();
-      const month = now.getMonth() + 1;
-      const day = now.getDate();
-      const year = now.getFullYear();
-      let hours = now.getHours();
-      const minutes = now.getMinutes();
-      const seconds = now.getSeconds();
+      const adjustedTime = new Date(now.getTime() - (8 * 60 * 60 * 1000));
+      const month = adjustedTime.getMonth() + 1;
+      const day = adjustedTime.getDate();
+      const year = adjustedTime.getFullYear();
+      let hours = adjustedTime.getHours();
+      const minutes = adjustedTime.getMinutes();
+      const seconds = adjustedTime.getSeconds();
       const ampm = hours >= 12 ? 'PM' : 'AM';
       hours = hours % 12 || 12;
       const clientTimestamp = `${month}/${day}/${year}, ${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')} ${ampm}`;
