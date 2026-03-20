@@ -88,7 +88,7 @@ export function ActivityProvider({ children }: ActivityProviderProps) {
   // Add activity to database
   const addActivity = async (activity: Omit<Activity, 'id' | 'timestamp' | 'created_at'>) => {
     try {
-      // Generate client timestamp with explicit local timezone (subtract 8 hours)
+      // Generate client timestamp with explicit local timezone (minus 8 hours adjustment)
       const now = new Date();
       const adjustedTime = new Date(now.getTime() - (8 * 60 * 60 * 1000));
       const hours = adjustedTime.getHours();
