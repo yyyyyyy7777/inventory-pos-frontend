@@ -18,14 +18,15 @@ export default function Home() {
   // Log logout activity to database
   const logLogoutActivity = useCallback(async (username: string) => {
     try {
-      // Get current client timestamp with timezone
+      // Get current client timestamp with timezone (minus 9 hours adjustment)
       const now = new Date();
-      const hours = now.getHours();
+      const adjustedTime = new Date(now.getTime() - (9 * 60 * 60 * 1000));
+      const hours = adjustedTime.getHours();
       const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
       const ampm = hours >= 12 ? 'PM' : 'AM';
       const tzOffset = -now.getTimezoneOffset() / 60; // Hours from UTC
       const tzSign = tzOffset >= 0 ? '+' : '-';
-      const clientTimestamp = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${displayHours}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${ampm} (UTC${tzSign}${Math.abs(tzOffset)})`;
+      const clientTimestamp = `${adjustedTime.getMonth() + 1}/${adjustedTime.getDate()}/${adjustedTime.getFullYear()}, ${displayHours}:${adjustedTime.getMinutes().toString().padStart(2, '0')}:${adjustedTime.getSeconds().toString().padStart(2, '0')} ${ampm} (UTC${tzSign}${Math.abs(tzOffset)})`;
       
       // Direct timestamp update with client timestamp
       try {
