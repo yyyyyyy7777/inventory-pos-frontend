@@ -54,7 +54,7 @@ async function fixLogoutAndActivities() {
       
       if (lastLogout) {
         const date = new Date(lastLogout);
-        const adjustedTime = new Date(date.getTime() - (8 * 60 * 60 * 1000));
+        const adjustedTime = new Date(date.getTime() - (16 * 60 * 60 * 1000));
         const hours = adjustedTime.getUTCHours();
         const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
         const ampm = hours >= 12 ? 'PM' : 'AM';
