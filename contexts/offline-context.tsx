@@ -15,7 +15,7 @@ interface OfflineContextType {
 const OfflineContext = createContext<OfflineContextType | undefined>(undefined)
 
 export function OfflineProvider({ children }: { children: ReactNode }) {
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isOnline, setIsOnline] = useState(true); // Default to true for SSR
   const [pendingCount, setPendingCount] = useState({ sales: 0, inventory: 0, activities: 0 });
   const [syncStatus, setSyncStatus] = useState({
     sales: null as { lastSync: number; pending: number } | null,
@@ -24,8 +24,14 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
   });
 
   useEffect(() => {
+    // Only run on client-side
+    if (typeof window === 'undefined') return;
+
     // Initialize offline storage
     offlineStorage.init().catch(console.error);
+
+    // Set initial online status
+    setIsOnline(navigator.onLine);
 
     // Listen for online/offline events
     const handleOnline = () => {

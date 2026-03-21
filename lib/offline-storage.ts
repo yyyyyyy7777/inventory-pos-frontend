@@ -5,6 +5,12 @@ export class OfflineStorage {
   private readonly VERSION = 1;
 
   async init(): Promise<void> {
+    // Check if IndexedDB is available (client-side only)
+    if (typeof window === 'undefined' || !window.indexedDB) {
+      console.warn('IndexedDB not available, offline storage disabled');
+      return;
+    }
+
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(this.DB_NAME, this.VERSION);
 

@@ -2,13 +2,17 @@
 import { offlineStorage } from './offline-storage';
 
 export class SyncService {
-  private isOnline: boolean = navigator.onLine;
+  private isOnline: boolean = true; // Default to online for SSR
   private syncInProgress: boolean = false;
 
   constructor() {
-    // Listen for online/offline events
-    window.addEventListener('online', this.handleOnline.bind(this));
-    window.addEventListener('offline', this.handleOffline.bind(this));
+    // Only add event listeners on client-side
+    if (typeof window !== 'undefined') {
+      this.isOnline = navigator.onLine;
+      // Listen for online/offline events
+      window.addEventListener('online', this.handleOnline.bind(this));
+      window.addEventListener('offline', this.handleOffline.bind(this));
+    }
   }
 
   private handleOnline(): void {
