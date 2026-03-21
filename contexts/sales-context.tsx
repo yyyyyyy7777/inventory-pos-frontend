@@ -2,6 +2,8 @@
 
 import { createContext, useContext, ReactNode, useState, useEffect, useCallback } from 'react';
 import { useProducts } from './products-context';
+import { useOffline } from './offline-context';
+import { offlineStorage } from '@/lib/offline-storage';
 
 export interface SaleItem {
   id?: number;
@@ -135,30 +137,58 @@ export function SalesProvider({ children }: { children: ReactNode }) {
   }, [sales]);
 
   const addSale = async (sale: Omit<SalesRecord, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const { isOnline } = useOffline();
+    
     try {
       setLoading(true);
       setError(null);
       
-      const response = await fetch('/api/sales', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(sale),
-      });
+      if (isOnline) {
+        // Online: Try to save to server first
+        const response = await fetch('/api/sales', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(sale),
+        });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('API Error Response:', errorData);
-        throw new Error(errorData.error || 'Failed to add sale');
+        if (!response.ok) {
+          throw new Error('Failed to save sale');
+        }
+
+        const newSale = await response.json();
+        setSales(prev => [newSale, ...prev]);
+      } else {
+        // Offline: Save to IndexedDB for later sync
+        await offlineStorage.addPendingSale({ data: sale });
+        console.log('📱 Sale saved offline for later sync:', sale);
+        
+        // Add to local state with temporary ID
+        const tempSale: SalesRecord = {
+          ...sale,
+          id: `temp-${Date.now()}`,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        setSales(prev => [tempSale, ...prev]);
       }
-
-      const newSale = await response.json();
-      setSales(prev => [newSale, ...prev]);
-    } catch (err) {
-      console.error('Error adding sale:', err);
-      setError(err instanceof Error ? err.message : 'Failed to add sale');
-      // addToast("Failed to add sale", "error");
+    } catch (error) {
+      // If online request fails, save to offline storage
+      if (isOnline) {
+        console.log('❌ Server request failed, saving offline:', error);
+        await offlineStorage.addPendingSale({ data: sale });
+        
+        const tempSale: SalesRecord = {
+          ...sale,
+          id: `temp-${Date.now()}`,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        setSales(prev => [tempSale, ...prev]);
+      } else {
+        throw error;
+      }
     } finally {
       setLoading(false);
     }

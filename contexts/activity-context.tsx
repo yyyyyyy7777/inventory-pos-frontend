@@ -1,6 +1,8 @@
 "use client"
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { useOffline } from './offline-context'
+import { offlineStorage } from '@/lib/offline-storage'
 
 interface Activity {
   id: string
@@ -87,6 +89,8 @@ export function ActivityProvider({ children }: ActivityProviderProps) {
 
   // Add activity to database
   const addActivity = async (activity: Omit<Activity, 'id' | 'timestamp' | 'created_at'>) => {
+    const { isOnline } = useOffline();
+    
     try {
       // Use real device time minus 8 hours
       const now = new Date();
@@ -101,22 +105,55 @@ export function ActivityProvider({ children }: ActivityProviderProps) {
       hours = hours % 12 || 12;
       const clientTimestamp = `${month}/${day}/${year}, ${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')} ${ampm}`;
       
-      const response = await fetch('/api/activities-new', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ ...activity, clientTimestamp }),
-      })
+      const activityData = { ...activity, clientTimestamp };
+      
+      if (isOnline) {
+        // Online: Try to save to server first
+        const response = await fetch('/api/activities-new', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(activityData),
+        });
 
-      if (response.ok) {
-        const newActivity = await response.json()
-        setActivities(prev => [newActivity, ...prev])
+        if (response.ok) {
+          const newActivity = await response.json()
+          setActivities(prev => [newActivity, ...prev])
+        } else {
+          throw new Error('Failed to save activity');
+        }
       } else {
-        console.error('Failed to add activity to database')
+        // Offline: Save to IndexedDB for later sync
+        await offlineStorage.addPendingActivity({ data: activityData });
+        console.log('📱 Activity saved offline for later sync:', activityData);
+        
+        // Add to local state with temporary ID
+        const tempActivity: Activity = {
+          ...activityData,
+          id: `temp-${Date.now()}`,
+          timestamp: clientTimestamp,
+          created_at: new Date().toISOString(),
+        };
+        setActivities(prev => [tempActivity, ...prev]);
       }
     } catch (error) {
-      console.error('Error adding activity:', error)
+      // If online request fails, save to offline storage
+      if (isOnline) {
+        console.log('❌ Server request failed, saving activity offline:', error);
+        const activityData = { ...activity, clientTimestamp: `${new Date().toLocaleDateString()}` };
+        await offlineStorage.addPendingActivity({ data: activityData });
+        
+        const tempActivity: Activity = {
+          ...activityData,
+          id: `temp-${Date.now()}`,
+          timestamp: activityData.clientTimestamp,
+          created_at: new Date().toISOString(),
+        };
+        setActivities(prev => [tempActivity, ...prev]);
+      } else {
+        console.error('Error adding activity:', error);
+      }
     }
   }
 

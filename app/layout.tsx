@@ -8,6 +8,7 @@ import { EmployeesProvider } from "@/contexts/employees-context"
 import { RemittanceProvider } from "@/contexts/remittance-context"
 import { ActivityProvider } from "@/contexts/activity-context"
 import { ToastProvider } from "@/contexts/toast-context"
+import { OfflineProvider } from "@/contexts/offline-context"
 import { ToastContainer } from "@/components/ui/toast-container"
 import { ErrorBoundary } from "@/components/ui/error-boundary"
 import { HydrationFix } from "@/components/hydration-fix"
@@ -15,6 +16,7 @@ import { ServiceWorkerRegister } from "@/components/pwa-service-worker"
 import { BeforeUnloadWarning } from "@/components/before-unload-warning"
 import { AutosaveProvider } from "@/contexts/autosave-context"
 import { AutosaveRestoreDialog } from "@/components/autosave-restore-dialog"
+import { OfflineStatus } from "@/components/offline/offline-status"
 
 // <CHANGE> Removed unused @vercel/analytics/next import that was causing error
 
@@ -52,22 +54,25 @@ export default function RootLayout({
         <BeforeUnloadWarning />
         <ErrorBoundary>
           <ToastProvider>
-            <AutosaveProvider>
-              <ActivityProvider>
-                <ProductsProvider>
-                  <SalesProvider>
-                    <EmployeesProvider>
-                      <RemittanceProvider>
-                        {children}
-                        <ToastContainer />
-                        <ServiceWorkerRegister />
-                        <AutosaveRestoreDialog />
-                      </RemittanceProvider>
-                    </EmployeesProvider>
-                  </SalesProvider>
-                </ProductsProvider>
-              </ActivityProvider>
-            </AutosaveProvider>
+            <OfflineProvider>
+              <AutosaveProvider>
+                <ActivityProvider>
+                  <ProductsProvider>
+                    <SalesProvider>
+                      <EmployeesProvider>
+                        <RemittanceProvider>
+                          {children}
+                          <ToastContainer />
+                          <ServiceWorkerRegister />
+                          <AutosaveRestoreDialog />
+                          <OfflineStatus />
+                        </RemittanceProvider>
+                      </EmployeesProvider>
+                    </SalesProvider>
+                  </ProductsProvider>
+                </ActivityProvider>
+              </AutosaveProvider>
+            </OfflineProvider>
           </ToastProvider>
         </ErrorBoundary>
         {/* <CHANGE> Removed Analytics component */}
