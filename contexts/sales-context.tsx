@@ -51,6 +51,7 @@ export function SalesProvider({ children }: { children: ReactNode }) {
   const [sales, setSales] = useState<SalesRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const { isOnline } = useOffline(); // Move hook to top level
 
   const refreshSales = useCallback(async (cabinet: string) => {
     try {
@@ -137,8 +138,6 @@ export function SalesProvider({ children }: { children: ReactNode }) {
   }, [sales]);
 
   const addSale = async (sale: Omit<SalesRecord, 'id' | 'createdAt' | 'updatedAt'>) => {
-    const { isOnline } = useOffline();
-    
     try {
       setLoading(true);
       setError(null);

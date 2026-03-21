@@ -41,6 +41,7 @@ export function ActivityProvider({ children }: ActivityProviderProps) {
   const [activities, setActivities] = useState<Activity[]>([])
   const [loading, setLoading] = useState(true)
   const [lastFetchTime, setLastFetchTime] = useState<Date | null>(null)
+  const { isOnline } = useOffline(); // Move hook to top level
 
   // Fetch activities from database
   const fetchActivities = useCallback(async (showLoading = true) => {
@@ -89,8 +90,6 @@ export function ActivityProvider({ children }: ActivityProviderProps) {
 
   // Add activity to database
   const addActivity = async (activity: Omit<Activity, 'id' | 'timestamp' | 'created_at'>) => {
-    const { isOnline } = useOffline();
-    
     try {
       // Use real device time minus 8 hours
       const now = new Date();
