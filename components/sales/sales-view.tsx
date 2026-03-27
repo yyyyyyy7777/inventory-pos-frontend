@@ -690,10 +690,9 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
                     </SelectContent>
                   </Select>
                   <div className="text-right">
-                    <div className="text-sm font-medium text-gray-600">Total Sales</div>
-                    <div className="text-xl font-bold text-gray-900">₱{filteredSales.reduce((sum: number, sale: any) => sum + (parseFloat(sale.amount) || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    <div className="text-sm font-medium text-gray-600">Total Processed Sales</div>
                     <div className="text-xs text-gray-500">
-                      {timePeriod === "all" ? "All Time" : timePeriod === "today" ? "Daily" : timePeriod === "week" ? "Weekly" : timePeriod === "month" ? "Monthly" : timePeriod === "quarter" ? "Quarterly" : "Yearly"} • {filteredSales.length} sales
+                      {filteredSales.length} sales
                     </div>
                   </div>
                 </div>
