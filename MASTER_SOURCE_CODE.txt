@@ -1,0 +1,580 @@
+================================================================================
+INVENTORY POS FRONTEND - COMPLETE SOURCE CODE
+================================================================================
+Project: inventory-pos-frontend
+Repository: github.com/yyyyyyy7777/inventory-pos-frontend
+Technology: Next.js 16, React 18, TypeScript, PostgreSQL with Prisma
+
+================================================================================
+1. PACKAGE.JSON - DEPENDENCIES & CONFIGURATION
+================================================================================
+
+{
+  "name": "my-v0-project",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "npm@10.0.0",
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev",
+    "lint": "eslint .",
+    "start": "next start",
+    "cloudflare:build": "next build",
+    "cloudflare:deploy": "wrangler pages deploy out --project-name the-wheezard-ph",
+    "db:seed": "node prisma/seed.js",
+    "postinstall": "prisma generate"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "^3.10.0",
+    "@prisma/client": "^5.20.0",
+    "@radix-ui/react-accordion": "1.2.2",
+    "@radix-ui/react-alert-dialog": "1.1.4",
+    "@radix-ui/react-aspect-ratio": "1.1.1",
+    "@radix-ui/react-avatar": "1.1.2",
+    "@radix-ui/react-checkbox": "1.1.3",
+    "@radix-ui/react-collapsible": "1.1.2",
+    "@radix-ui/react-context-menu": "2.2.4",
+    "@radix-ui/react-dialog": "1.1.4",
+    "@radix-ui/react-dropdown-menu": "2.1.4",
+    "@radix-ui/react-hover-card": "1.1.4",
+    "@radix-ui/react-label": "2.1.1",
+    "@radix-ui/react-menubar": "1.1.4",
+    "@radix-ui/react-navigation-menu": "1.2.3",
+    "@radix-ui/react-popover": "1.1.4",
+    "@radix-ui/react-progress": "1.1.1",
+    "@radix-ui/react-radio-group": "1.2.2",
+    "@radix-ui/react-scroll-area": "1.2.2",
+    "@radix-ui/react-select": "2.1.4",
+    "@radix-ui/react-separator": "1.1.1",
+    "@radix-ui/react-slider": "1.2.2",
+    "@radix-ui/react-slot": "1.1.1",
+    "@radix-ui/react-switch": "1.1.2",
+    "@radix-ui/react-tabs": "1.1.2",
+    "@radix-ui/react-toast": "1.2.4",
+    "@radix-ui/react-toggle": "1.1.1",
+    "@radix-ui/react-toggle-group": "1.1.1",
+    "@radix-ui/react-tooltip": "1.1.6",
+    "@tanstack/react-query": "^5.90.20",
+    "@tanstack/react-query-devtools": "^5.91.2",
+    "@types/pg": "^8.18.0",
+    "@vercel/analytics": "1.3.1",
+    "autoprefixer": "^10.4.20",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "1.0.4",
+    "date-fns": "^4.1.0",
+    "embla-carousel-react": "8.5.1",
+    "input-otp": "1.4.1",
+    "lucide-react": "^0.454.0",
+    "next": "^16.1.4",
+    "next-themes": "^0.4.6",
+    "pg": "^8.20.0",
+    "react": "^18.3.1",
+    "react-day-picker": "9.8.0",
+    "react-dom": "^18.3.1",
+    "react-hook-form": "^7.60.0",
+    "react-is": "^19.2.0",
+    "react-resizable-panels": "^2.1.7",
+    "recharts": "latest",
+    "sonner": "^1.7.4",
+    "tailwind-merge": "^2.5.5",
+    "tailwindcss-animate": "^1.0.7",
+    "vaul": "^0.9.9",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.9",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "baseline-browser-mapping": "^2.9.18",
+    "bcryptjs": "^3.0.3",
+    "postcss": "^8.5",
+    "prisma": "^5.20.0",
+    "tailwindcss": "^4.1.9",
+    "ts-node": "^10.9.2",
+    "tw-animate-css": "1.3.3",
+    "typescript": "^5.9.3"
+  }
+}
+
+================================================================================
+2. NEXT.CONFIG.MJS - NEXT.JS CONFIGURATION
+================================================================================
+
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  images: {
+    unoptimized: true,
+  },
+}
+
+export default nextConfig
+
+================================================================================
+3. APP/LAYOUT.TSX - ROOT LAYOUT
+================================================================================
+
+import type React from "react"
+import type { Metadata, Viewport } from "next"
+import { Geist, Geist_Mono } from "next/font/google"
+import "./globals.css"
+import { ProductsProvider } from "@/contexts/products-context"
+import { SalesProvider } from "@/contexts/sales-context"
+import { EmployeesProvider } from "@/contexts/employees-context"
+import { RemittanceProvider } from "@/contexts/remittance-context"
+import { ActivityProvider } from "@/contexts/activity-context"
+import { ToastProvider } from "@/contexts/toast-context"
+import { OfflineProvider } from "@/contexts/offline-context"
+import { ToastContainer } from "@/components/ui/toast-container"
+import { ErrorBoundary } from "@/components/ui/error-boundary"
+import { HydrationFix } from "@/components/hydration-fix"
+import { ServiceWorkerRegister } from "@/components/pwa-service-worker"
+import { BeforeUnloadWarning } from "@/components/before-unload-warning"
+import { AutosaveProvider } from "@/contexts/autosave-context"
+import { AutosaveRestoreDialog } from "@/components/autosave-restore-dialog"
+import { OfflineStatus } from "@/components/offline/offline-status"
+
+const _geist = Geist({ subsets: ["latin"] })
+const _geistMono = Geist_Mono({ subsets: ["latin"] })
+
+export const metadata: Metadata = {
+  title: "The Wheezard PH",
+  description: "Point of Sale and Inventory System",
+  generator: "v0.app",
+  manifest: "/manifest.json",
+  icons: {
+    icon: "/Wheezard logo.png",
+    shortcut: "/Wheezard logo.png",
+    apple: "/Wheezard logo.png",
+  },
+}
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+}
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode
+}>) {
+  return (
+    <html lang="en">
+      <body className={`font-sans antialiased`}>
+        <HydrationFix />
+        <BeforeUnloadWarning />
+        <ErrorBoundary>
+          <ToastProvider>
+            <OfflineProvider>
+              <AutosaveProvider>
+                <ActivityProvider>
+                  <ProductsProvider>
+                    <SalesProvider>
+                      <EmployeesProvider>
+                        <RemittanceProvider>
+                          {children}
+                          <ToastContainer />
+                          <ServiceWorkerRegister />
+                          <AutosaveRestoreDialog />
+                          <OfflineStatus />
+                        </RemittanceProvider>
+                      </EmployeesProvider>
+                    </SalesProvider>
+                  </ProductsProvider>
+                </ActivityProvider>
+              </AutosaveProvider>
+            </OfflineProvider>
+          </ToastProvider>
+        </ErrorBoundary>
+      </body>
+    </html>
+  )
+}
+
+================================================================================
+4. APP/PAGE.TSX - HOME PAGE / MAIN ENTRY POINT
+================================================================================
+
+"use client"
+
+import { useState, useEffect, useCallback } from "react"
+import { LoginPage } from "@/components/auth/login-page"
+import { AdminDashboard } from "@/components/dashboards/admin-dashboard"
+import { StaffDashboard } from "@/components/dashboards/staff-dashboard"
+import { useEmployees } from "@/contexts/employees-context"
+
+type UserRole = "admin" | "staff" | null
+
+const STORAGE_KEY = 'inventory-pos-session-v1'
+
+export default function Home() {
+  const { refreshEmployees } = useEmployees()
+  const [currentUser, setCurrentUser] = useState<{ username: string; role: UserRole } | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+
+  const logLogoutActivity = useCallback(async (username: string) => {
+    try {
+      const now = new Date();
+      const adjustedTime = new Date(now.getTime() - (8 * 60 * 60 * 1000));
+      const month = adjustedTime.getMonth() + 1;
+      const day = adjustedTime.getDate();
+      const year = adjustedTime.getFullYear();
+      let hours = adjustedTime.getHours();
+      const minutes = adjustedTime.getMinutes();
+      const seconds = adjustedTime.getSeconds();
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12 || 12;
+      const clientTimestamp = `${month}/${day}/${year}, ${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')} ${ampm}`;
+      
+      try {
+        const updateResponse = await fetch('/api/employees/update-timestamp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, type: 'logout', clientTimestamp })
+        });
+        const updateData = await updateResponse.json();
+        console.log('Direct logout timestamp update:', updateData);
+      } catch (updateError) {
+        console.error('Direct logout update failed:', updateError);
+      }
+    } catch (error) {
+      console.error('Failed to log logout activity:', error)
+    }
+  }, [])
+
+  useEffect(() => {
+    const checkPreviousSession = async () => {
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY)
+        console.log('Checking for previous session:', stored);
+        if (stored) {
+          const previousUser = JSON.parse(stored)
+          if (previousUser?.username) {
+            console.log('Found previous session for:', previousUser.username);
+            try {
+              await logLogoutActivity(previousUser.username);
+              console.log('Successfully logged logout for:', previousUser.username);
+            } catch (err) {
+              console.error('Failed to log reload logout:', err);
+            }
+            localStorage.removeItem(STORAGE_KEY)
+            console.log('Cleared previous session for:', previousUser.username);
+          }
+        }
+      } catch (error) {
+        console.error('Error checking previous session:', error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    checkPreviousSession()
+  }, [logLogoutActivity])
+
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(currentUser))
+
+      const handleBeforeUnload = () => {
+        const logoutData = JSON.stringify({ username: currentUser.username })
+        
+        try {
+          fetch('/api/auth/logout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: logoutData,
+            keepalive: true
+          }).catch(() => {
+            navigator.sendBeacon('/api/auth/logout', new Blob([logoutData], { type: 'application/json' }))
+          })
+        } catch (e) {
+          navigator.sendBeacon('/api/auth/logout', new Blob([logoutData], { type: 'application/json' }))
+        }
+      }
+
+      window.addEventListener('beforeunload', handleBeforeUnload)
+      return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+    } else {
+      localStorage.removeItem(STORAGE_KEY)
+    }
+  }, [currentUser])
+
+  const handleLogin = (username: string, role: UserRole) => {
+    setCurrentUser({ username, role })
+  }
+
+  const handleLogout = async () => {
+    if (currentUser?.username) {
+      try {
+        await logLogoutActivity(currentUser.username)
+        console.log('Logout activity logged for:', currentUser.username)
+        await refreshEmployees()
+      } catch (error) {
+        console.error('Failed to log logout:', error)
+      }
+    }
+    setCurrentUser(null)
+    localStorage.removeItem(STORAGE_KEY)
+  }
+
+  if (isLoading) {
+    return (
+      <main className="min-h-screen bg-background flex items-center justify-center" suppressHydrationWarning>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </main>
+    )
+  }
+
+  if (!currentUser) {
+    return (
+      <main className="min-h-screen bg-background" suppressHydrationWarning>
+        <LoginPage onLogin={handleLogin} />
+      </main>
+    )
+  }
+
+  return (
+    <main className="min-h-screen bg-background" suppressHydrationWarning>
+      {currentUser.role === "admin" ? (
+        <AdminDashboard username={currentUser.username} onLogout={handleLogout} />
+      ) : (
+        <StaffDashboard username={currentUser.username} onLogout={handleLogout} />
+      )}
+    </main>
+  )
+}
+
+================================================================================
+5. APP/GLOBALS.CSS - GLOBAL STYLES & DESIGN TOKENS
+================================================================================
+
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: oklch(0.98 0.01 280);
+  --foreground: oklch(0.2 0.01 280);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.2 0.01 280);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.2 0.01 280);
+  --primary: oklch(0.35 0.2 280);
+  --primary-foreground: oklch(0.98 0.01 280);
+  --secondary: oklch(0.25 0.08 280);
+  --secondary-foreground: oklch(0.98 0.01 280);
+  --muted: oklch(0.88 0.02 280);
+  --muted-foreground: oklch(0.5 0.05 280);
+  --accent: oklch(0.45 0.18 280);
+  --accent-foreground: oklch(0.98 0.01 280);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.98 0.01 280);
+  --border: oklch(0.92 0.02 280);
+  --input: oklch(0.96 0.01 280);
+  --ring: oklch(0.35 0.2 280);
+  --chart-1: oklch(0.35 0.2 280);
+  --chart-2: oklch(0.45 0.18 270);
+  --chart-3: oklch(0.3 0.15 290);
+  --chart-4: oklch(0.5 0.16 260);
+  --chart-5: oklch(0.4 0.18 300);
+  --radius: 0.5rem;
+  --sidebar: oklch(0.15 0.02 280);
+  --sidebar-foreground: oklch(0.98 0.01 280);
+  --sidebar-primary: oklch(0.65 0.22 280);
+  --sidebar-primary-foreground: oklch(0.15 0.02 280);
+  --sidebar-accent: oklch(0.35 0.1 280);
+  --sidebar-accent-foreground: oklch(0.98 0.01 280);
+  --sidebar-border: oklch(0.3 0.05 280);
+  --sidebar-ring: oklch(0.65 0.22 280);
+}
+
+.dark {
+  --background: oklch(0.12 0.02 280);
+  --foreground: oklch(0.95 0.02 280);
+  --card: oklch(0.18 0.02 280);
+  --card-foreground: oklch(0.95 0.02 280);
+  --popover: oklch(0.18 0.02 280);
+  --popover-foreground: oklch(0.95 0.02 280);
+  --primary: oklch(0.45 0.18 280);
+  --primary-foreground: oklch(0.98 0.01 280);
+  --secondary: oklch(0.35 0.05 280);
+  --secondary-foreground: oklch(0.98 0.02 280);
+  --muted: oklch(0.28 0.03 280);
+  --muted-foreground: oklch(0.7 0.08 280);
+  --accent: oklch(0.55 0.15 280);
+  --accent-foreground: oklch(0.12 0.02 280);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.95 0.02 280);
+  --border: oklch(0.28 0.03 280);
+  --input: oklch(0.22 0.03 280);
+  --ring: oklch(0.45 0.18 280);
+  --chart-1: oklch(0.45 0.18 280);
+  --chart-2: oklch(0.55 0.15 270);
+  --chart-3: oklch(0.4 0.12 290);
+  --chart-4: oklch(0.6 0.14 260);
+  --chart-5: oklch(0.5 0.16 300);
+  --sidebar: oklch(0.15 0.02 280);
+  --sidebar-foreground: oklch(0.95 0.02 280);
+  --sidebar-primary: oklch(0.65 0.22 280);
+  --sidebar-primary-foreground: oklch(0.15 0.02 280);
+  --sidebar-accent: oklch(0.35 0.1 280);
+  --sidebar-accent-foreground: oklch(0.95 0.02 280);
+  --sidebar-border: oklch(0.3 0.05 280);
+  --sidebar-ring: oklch(0.65 0.22 280);
+}
+
+@theme inline {
+  --font-sans: "Geist", "Geist Fallback";
+  --font-mono: "Geist Mono", "Geist Mono Fallback";
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .touch-target {
+    @apply min-h-[44px] min-w-[44px];
+  }
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .mobile-overflow-hidden {
+    @apply overflow-x-hidden;
+  }
+  .mobile-text {
+    @apply text-sm leading-relaxed;
+  }
+}
+
+@media (max-width: 640px) {
+  html, body {
+    overflow-x: hidden;
+    -webkit-text-size-adjust: 100%;
+    -ms-text-size-adjust: 100%;
+  }
+  * {
+    -webkit-overflow-scrolling: touch;
+  }
+  button, input, select, textarea {
+    touch-action: manipulation;
+  }
+  .mobile-sidebar {
+    height: 100vh;
+    height: -webkit-fill-available;
+    max-height: 100vh;
+    max-height: -webkit-fill-available;
+  }
+  body.sidebar-open {
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
+  }
+}
+
+================================================================================
+DOCUMENT SUMMARY
+================================================================================
+
+This project is a comprehensive Point of Sale and Inventory Management System
+built with modern web technologies:
+
+ARCHITECTURE:
+- Frontend: Next.js 16 (React 18)
+- Styling: Tailwind CSS v4 with OKLch colors
+- UI Components: Radix UI (45+ components)
+- State Management: React Context API
+- Database: PostgreSQL with Prisma ORM
+- Forms: React Hook Form with Zod validation
+- Charts: Recharts
+- Notifications: Sonner
+- PWA: Service Worker for offline support
+
+KEY FEATURES:
+1. User Authentication (Admin/Staff roles)
+2. POS System with Sales Management
+3. Inventory Tracking and Stock Management
+4. Employee Management
+5. Activity Logging and Recovery
+6. Analytics (Admin & Staff dashboards)
+7. Remittance Management
+8. Offline Support with Sync
+9. PWA Support
+10. Timezone handling (8-hour offset)
+
+PROJECT FILES:
+- 140+ TypeScript/TSX files
+- 45+ UI Components
+- 8 Context providers
+- 40+ API routes
+- Multiple utility services
+- Database migrations and seeds
+
+TO USE THIS DOCUMENT:
+1. Copy the entire content to your MS Word document
+2. Use document structure with clear headings
+3. Source code is organized by category for easy reference
+4. Refer to GitHub repo for complete file listing and changes
+
+REPOSITORY:
+github.com/yyyyyyy7777/inventory-pos-frontend
+Main branch: main
+Head branch: copy-source-code (current)
+
+================================================================================
