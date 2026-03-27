@@ -691,8 +691,8 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
                   </Select>
                   <div className="text-right">
                     <div className="text-sm font-medium text-gray-600">Total Processed Sales</div>
-                    <div className="text-xs text-gray-500">
-                      {filteredSales.length} sales
+                    <div className="text-2xl font-bold text-gray-900">
+                      {filteredSales.length} <span className="text-sm font-normal text-gray-500">sales</span>
                     </div>
                   </div>
                 </div>
