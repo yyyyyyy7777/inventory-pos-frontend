@@ -22,7 +22,7 @@ interface AdminDashboardProps {
 const viewConfig = {
   dashboard: {
     title: "Dashboard",
-    description: (username: string) => `Welcome back, ${username}!`,
+    description: () => "",
     icon: LayoutDashboard,
   },
   inventory: {
@@ -120,7 +120,7 @@ export function AdminDashboard({ username, onLogout }: AdminDashboardProps) {
                       {currentConfig.title}
                     </h1>
                     <p className="text-sm text-white/70 line-clamp-1">
-                      {typeof currentConfig.description === 'function' ? currentConfig.description(username) : currentConfig.description}
+                      {typeof currentConfig.description === 'function' ? currentConfig.description() : currentConfig.description}
                     </p>
                   </div>
                 </div>
