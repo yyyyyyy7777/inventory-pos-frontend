@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory POS System - Data Flow Diagram</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            color: white;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        }
+
+        .subtitle {
+            text-align: center;
+            color: rgba(255, 255, 255, 0.9);
+            margin-bottom: 40px;
+            font-size: 1.1em;
+        }
+
+        .diagram-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+
+        .section {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .section:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .section-title {
+            font-size: 1.3em;
+            font-weight: 700;
+            color: #667eea;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #667eea;
+        }
+
+        .component {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 12px;
+            margin-bottom: 12px;
+            border-radius: 4px;
+            font-size: 0.95em;
+            transition: all 0.2s ease;
+        }
+
+        .component:hover {
+            background: #e8eaf6;
+            border-left-color: #764ba2;
+        }
+
+        .component-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 4px;
+        }
+
+        .component-desc {
+            color: #666;
+            font-size: 0.9em;
+            line-height: 1.4;
+        }
+
+        .flow-section {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            margin-bottom: 30px;
+        }
+
+        .flow-title {
+            font-size: 1.5em;
+            font-weight: 700;
+            color: #667eea;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 3px solid #667eea;
+        }
+
+        .flow-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 25px;
+            gap: 15px;
+        }
+
+        .flow-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            min-width: 150px;
+            text-align: center;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .flow-arrow {
+            flex: 1;
+            height: 2px;
+            background: linear-gradient(to right, #667eea, #764ba2);
+            position: relative;
+            min-width: 40px;
+        }
+
+        .flow-arrow::after {
+            content: '';
+            position: absolute;
+            right: -8px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 0;
+            height: 0;
+            border-left: 8px solid #764ba2;
+            border-top: 5px solid transparent;
+            border-bottom: 5px solid transparent;
+        }
+
+        .flow-description {
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            margin-left: 20px;
+            border-left: 4px solid #667eea;
+            flex: 1;
+            font-size: 0.95em;
+            color: #555;
+        }
+
+        .database-section {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            margin-bottom: 30px;
+        }
+
+        .db-title {
+            font-size: 1.5em;
+            font-weight: 700;
+            color: #667eea;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 3px solid #667eea;
+        }
+
+        .table-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+
+        .table-card {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 18px;
+            border: 2px solid #e0e0e0;
+            transition: all 0.2s ease;
+        }
+
+        .table-card:hover {
+            border-color: #667eea;
+            background: #e8eaf6;
+        }
+
+        .table-name {
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 12px;
+            font-size: 1.1em;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #667eea;
+        }
+
+        .table-fields {
+            font-size: 0.9em;
+        }
+
+        .field {
+            color: #555;
+            margin-bottom: 6px;
+            padding-left: 8px;
+            border-left: 2px solid #764ba2;
+        }
+
+        .field-name {
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .integration-section {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .integration-title {
+            font-size: 1.5em;
+            font-weight: 700;
+            color: #667eea;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 3px solid #667eea;
+        }
+
+        .integration-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+
+        .integration-card {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            border: 2px solid #e0e0e0;
+            text-align: center;
+        }
+
+        .integration-card:hover {
+            border-color: #667eea;
+            background: #e8eaf6;
+        }
+
+        .integration-icon {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .integration-name {
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 8px;
+        }
+
+        .integration-desc {
+            color: #666;
+            font-size: 0.9em;
+            line-height: 1.4;
+        }
+
+        .legend {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 40px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .legend-title {
+            font-weight: 700;
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.1em;
+        }
+
+        .legend-items {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .legend-box {
+            width: 30px;
+            height: 30px;
+            border-radius: 4px;
+            flex-shrink: 0;
+        }
+
+        .legend-box.frontend {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .legend-box.backend {
+            background: #e8eaf6;
+            border: 2px solid #667eea;
+        }
+
+        .legend-box.database {
+            background: #f8f9fa;
+            border: 2px solid #667eea;
+        }
+
+        .legend-text {
+            color: #555;
+        }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 1.8em;
+            }
+
+            .flow-row {
+                flex-direction: column;
+            }
+
+            .flow-arrow {
+                width: 2px;
+                height: 40px;
+                transform: rotate(90deg);
+            }
+
+            .flow-arrow::after {
+                right: 50%;
+                bottom: -8px;
+                transform: translateX(50%);
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 8px solid #764ba2;
+            }
+
+            .flow-description {
+                margin-left: 0;
+                margin-top: 15px;
+            }
+
+            .diagram-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏪 Inventory POS System</h1>
+        <p class="subtitle">Complete Data Flow Architecture Diagram</p>
+
+        <!-- Architecture Overview -->
+        <div class="flow-section">
+            <div class="flow-title">System Architecture Layers</div>
+            
+            <div class="flow-row">
+                <div class="flow-box">Frontend (React/Next.js)</div>
+                <div class="flow-arrow"></div>
+                <div class="flow-description">User Interface - Login, Dashboards (Admin/Staff), POS, Inventory, Sales, Remittance, Analytics</div>
+            </div>
+
+            <div class="flow-row">
+                <div class="flow-box">Context Providers</div>
+                <div class="flow-arrow"></div>
+                <div class="flow-description">State Management - Sales, Products, Employees, Remittance, Activities, Autosave, Offline</div>
+            </div>
+
+            <div class="flow-row">
+                <div class="flow-box">API Routes (Next.js)</div>
+                <div class="flow-arrow"></div>
+                <div class="flow-description">Business Logic - Auth, Products, Sales, Stock Batches, Employees, Analytics, Activities</div>
+            </div>
+
+            <div class="flow-row">
+                <div class="flow-box">Database Layer</div>
+                <div class="flow-arrow"></div>
+                <div class="flow-description">PostgreSQL - Prisma ORM - Data Persistence & Relationships</div>
+            </div>
+        </div>
+
+        <!-- Frontend Components -->
+        <div class="section" style="grid-column: 1;">
+            <div class="section-title">🎨 Frontend Layer</div>
+            
+            <div class="component">
+                <div class="component-name">Login Page</div>
+                <div class="component-desc">Authentication entry point for Admin and Staff users</div>
+            </div>
+            
+            <div class="component">
+                <div class="component-name">Admin Dashboard</div>
+                <div class="component-desc">Overview with analytics, inventory, employees, and system management</div>
+            </div>
+            
+            <div class="component">
+                <div class="component-name">Staff Dashboard</div>
+                <div class="component-desc">Limited view for sales, POS, and personal sales history</div>
+            </div>
+        </div>
+
+        <!-- POS & Transaction Components -->
+        <div class="section" style="grid-column: 2;">
+            <div class="section-title">🛍️ Transaction Layer</div>
+            
+            <div class="component">
+                <div class="component-name">POS View</div>
+                <div class="component-desc">Point of Sale interface for creating sales transactions</div>
+            </div>
+            
+            <div class="component">
+                <div class="component-name">Sales View</div>
+                <div class="component-desc">Sales history, filtering, archiving, and remittance tracking</div>
+            </div>
+            
+            <div class="component">
+                <div class="component-name">Remittance View</div>
+                <div class="component-desc">Staff payment tracking and reconciliation</div>
+            </div>
+        </div>
+
+        <!-- Inventory & Management -->
+        <div class="section" style="grid-column: 3;">
+            <div class="section-title">📦 Inventory Layer</div>
+            
+            <div class="component">
+                <div class="component-name">Inventory View</div>
+                <div class="component-desc">Product catalog with stock batches and cabinet management</div>
+            </div>
+            
+            <div class="component">
+                <div class="component-name">Employee Management</div>
+                <div class="component-desc">Staff profiles, roles, and activity logging</div>
+            </div>
+            
+            <div class="component">
+                <div class="component-name">Analytics</div>
+                <div class="component-desc">Sales trends, performance metrics for admin and staff</div>
+            </div>
+        </div>
+
+        <!-- State Management Layer -->
+        <div class="diagram-grid">
+            <div class="section">
+                <div class="section-title">⚡ State Management (Contexts)</div>
+                
+                <div class="component">
+                    <div class="component-name">SalesContext</div>
+                    <div class="component-desc">Sales state, adding/updating sales, sync with backend</div>
+                </div>
+                
+                <div class="component">
+                    <div class="component-name">ProductsContext</div>
+                    <div class="component-desc">Product inventory, stock batches, cabinet filtering</div>
+                </div>
+                
+                <div class="component">
+                    <div class="component-name">EmployeesContext</div>
+                    <div class="component-desc">Employee list, roles, activity timestamps</div>
+                </div>
+
+                <div class="component">
+                    <div class="component-name">RemittanceContext</div>
+                    <div class="component-desc">Staff remittance calculations and tracking</div>
+                </div>
+
+                <div class="component">
+                    <div class="component-name">ActivityContext</div>
+                    <div class="component-desc">User activity logs, login/logout events</div>
+                </div>
+
+                <div class="component">
+                    <div class="component-name">OfflineContext</div>
+                    <div class="component-desc">Offline status management and sync coordination</div>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">🔄 Sync & Storage</div>
+                
+                <div class="component">
+                    <div class="component-name">Autosave Context</div>
+                    <div class="component-desc">Automatic save with conflict resolution and backup</div>
+                </div>
+                
+                <div class="component">
+                    <div class="component-name">Offline Storage</div>
+                    <div class="component-desc">localStorage - Queue transactions when offline, sync when online</div>
+                </div>
+                
+                <div class="component">
+                    <div class="component-name">Sync Service</div>
+                    <div class="component-desc">Background sync service, retry logic, conflict handling</div>
+                </div>
+                
+                <div class="component">
+                    <div class="component-name">PWA Service Worker</div>
+                    <div class="component-desc">Progressive Web App features, offline capability, caching</div>
+                </div>
+
+                <div class="component">
+                    <div class="component-name">Toast Context</div>
+                    <div class="component-desc">User notifications and feedback messages</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- API Layer -->
+        <div class="flow-section">
+            <div class="flow-title">API Endpoints & Business Logic</div>
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
+                <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #667eea;">
+                    <div style="font-weight: 600; color: #667eea; margin-bottom: 8px;">🔐 Auth Endpoints</div>
+                    <div style="color: #555; font-size: 0.9em;">
+                        POST /api/auth/login - Employee authentication<br>
+                        POST /api/auth/logout - Session termination & logging
+                    </div>
+                </div>
+
+                <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #667eea;">
+                    <div style="font-weight: 600; color: #667eea; margin-bottom: 8px;">📦 Product Endpoints</div>
+                    <div style="color: #555; font-size: 0.9em;">
+                        GET /api/products - Fetch products by cabinet<br>
+                        POST /api/products - Create new product<br>
+                        PUT /api/products/[id] - Update product details
+                    </div>
+                </div>
+
+                <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #667eea;">
+                    <div style="font-weight: 600; color: #667eea; margin-bottom: 8px;">💰 Sales Endpoints</div>
+                    <div style="color: #555; font-size: 0.9em;">
+                        GET /api/sales - Fetch sales records<br>
+                        POST /api/sales - Create new sale<br>
+                        PUT /api/sales/[id] - Update sale status<br>
+                        POST /api/sales/archive - Archive sales
+                    </div>
+                </div>
+
+                <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #667eea;">
+                    <div style="font-weight: 600; color: #667eea; margin-bottom: 8px;">📊 Stock & Batch</div>
+                    <div style="color: #555; font-size: 0.9em;">
+                        GET /api/stock-batches - Fetch stock batches<br>
+                        POST /api/stock-batches - Create batch<br>
+                        PUT /api/stock-batches/[id] - Update batch status
+                    </div>
+                </div>
+
+                <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #667eea;">
+                    <div style="font-weight: 600; color: #667eea; margin-bottom: 8px;">👥 Employee Endpoints</div>
+                    <div style="color: #555; font-size: 0.9em;">
+                        GET /api/employees - Fetch employee list<br>
+                        POST /api/employees - Create employee<br>
+                        PUT /api/employees/[id] - Update employee
+                    </div>
+                </div>
+
+                <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #667eea;">
+                    <div style="font-weight: 600; color: #667eea; margin-bottom: 8px;">📈 Analytics & Activity</div>
+                    <div style="color: #555; font-size: 0.9em;">
+                        GET /api/analytics - Sales metrics & trends<br>
+                        GET /api/activities - Activity logs<br>
+                        POST /api/activities - Log user actions
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Database Schema -->
+        <div class="database-section">
+            <div class="db-title">🗄️ PostgreSQL Database Schema (Prisma)</div>
+            
+            <div class="table-grid">
+                <div class="table-card">
+                    <div class="table-name">Employee</div>
+                    <div class="table-fields">
+                        <div class="field"><span class="field-name">id</span> - Primary Key</div>
+                        <div class="field"><span class="field-name">username</span> - Unique login</div>
+                        <div class="field"><span class="field-name">password</span> - Hashed</div>
+                        <div class="field"><span class="field-name">role</span> - admin/staff</div>
+                        <div class="field"><span class="field-name">status</span> - active/inactive</div>
+                        <div class="field"><span class="field-name">timestamps</span> - Login/logout</div>
+                    </div>
+                </div>
+
+                <div class="table-card">
+                    <div class="table-name">Product</div>
+                    <div class="table-fields">
+                        <div class="field"><span class="field-name">id</span> - Primary Key</div>
+                        <div class="field"><span class="field-name">name, sku</span> - Identification</div>
+                        <div class="field"><span class="field-name">price</span> - Selling price</div>
+                        <div class="field"><span class="field-name">cabinet</span> - Location</div>
+                        <div class="field"><span class="field-name">category</span> - Foreign Key</div>
+                        <div class="field"><span class="field-name">stockBatches</span> - One-to-Many</div>
+                    </div>
+                </div>
+
+                <div class="table-card">
+                    <div class="table-name">StockBatch</div>
+                    <div class="table-fields">
+                        <div class="field"><span class="field-name">id</span> - Primary Key</div>
+                        <div class="field"><span class="field-name">productId</span> - Foreign Key</div>
+                        <div class="field"><span class="field-name">quantity</span> - Stock count</div>
+                        <div class="field"><span class="field-name">status</span> - on-shelf/sold/reserved</div>
+                        <div class="field"><span class="field-name">cabinet</span> - Batch location</div>
+                        <div class="field"><span class="field-name">batchDate, expiryDate</span> - Tracking</div>
+                    </div>
+                </div>
+
+                <div class="table-card">
+                    <div class="table-name">Sale</div>
+                    <div class="table-fields">
+                        <div class="field"><span class="field-name">id</span> - UUID</div>
+                        <div class="field"><span class="field-name">items</span> - One-to-Many</div>
+                        <div class="field"><span class="field-name">amount</span> - Total price</div>
+                        <div class="field"><span class="field-name">staffName</span> - Who sold</div>
+                        <div class="field"><span class="field-name">paymentMethod</span> - Payment type</div>
+                        <div class="field"><span class="field-name">archived</span> - Remittance status</div>
+                    </div>
+                </div>
+
+                <div class="table-card">
+                    <div class="table-name">SaleItem</div>
+                    <div class="table-fields">
+                        <div class="field"><span class="field-name">id</span> - Primary Key</div>
+                        <div class="field"><span class="field-name">saleId</span> - Foreign Key</div>
+                        <div class="field"><span class="field-name">productName</span> - Item name</div>
+                        <div class="field"><span class="field-name">quantity</span> - Units sold</div>
+                        <div class="field"><span class="field-name">price</span> - Unit price</div>
+                        <div class="field"><span class="field-name">category</span> - Product category</div>
+                    </div>
+                </div>
+
+                <div class="table-card">
+                    <div class="table-name">Category</div>
+                    <div class="table-fields">
+                        <div class="field"><span class="field-name">id</span> - Primary Key</div>
+                        <div class="field"><span class="field-name">name</span> - Unique category</div>
+                        <div class="field"><span class="field-name">products</span> - One-to-Many</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Flow Processes -->
+        <div class="flow-section">
+            <div class="flow-title">Key Data Flow Processes</div>
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #667eea;">
+                    <div style="font-weight: 600; color: #667eea; margin-bottom: 12px;">1️⃣ Sale Creation Flow</div>
+                    <div style="color: #555; font-size: 0.9em; line-height: 1.6;">
+                        • User selects products in POS<br>
+                        • Frontend adds items to cart<br>
+                        • POST /api/sales creates Sale + SaleItems<br>
+                        • Stock batches updated<br>
+                        • Activity logged<br>
+                        • Offline sync if needed
+                    </div>
+                </div>
+
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #667eea;">
+                    <div style="font-weight: 600; color: #667eea; margin-bottom: 12px;">2️⃣ Inventory Update Flow</div>
+                    <div style="color: #555; font-size: 0.9em; line-height: 1.6;">
+                        • Admin adds new products<br>
+                        • POST /api/products creates Product<br>
+                        • POST /api/stock-batches creates batch<br>
+                        • Cabinet inventory updated<br>
+                        • StockBatch status tracked<br>
+                        • ProductsContext notified
+                    </div>
+                </div>
+
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #667eea;">
+                    <div style="font-weight: 600; color: #667eea; margin-bottom: 12px;">3️⃣ Remittance Flow</div>
+                    <div style="color: #555; font-size: 0.9em; line-height: 1.6;">
+                        • Staff views unarchived sales<br>
+                        • System calculates remittance<br>
+                        • POST /api/sales/archive marks paid<br>
+                        • Sale.archived = true<br>
+                        • RemittanceContext updated<br>
+                        • Activity logged for compliance
+                    </div>
+                </div>
+
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #667eea;">
+                    <div style="font-weight: 600; color: #667eea; margin-bottom: 12px;">4️⃣ Activity Logging</div>
+                    <div style="color: #555; font-size: 0.9em; line-height: 1.6;">
+                        • Login event → Activity record<br>
+                        • Logout event → Activity record<br>
+                        • Sales transaction → Log entry<br>
+                        • POST /api/activities/[id]<br>
+                        • Timestamp synced (±8 hours)<br>
+                        • Staff analytics updated
+                    </div>
+                </div>
+
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #667eea;">
+                    <div style="font-weight: 600; color: #667eea; margin-bottom: 12px;">5️⃣ Offline Sync Flow</div>
+                    <div style="color: #555; font-size: 0.9em; line-height: 1.6;">
+                        • Detect offline status<br>
+                        • Queue API requests<br>
+                        • Store locally (offlineStorage)<br>
+                        • Display optimistic UI<br>
+                        • Reconnect → Sync service<br>
+                        • Batch API calls, retry logic
+                    </div>
+                </div>
+
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #667eea;">
+                    <div style="font-weight: 600; color: #667eea; margin-bottom: 12px;">6️⃣ Analytics Flow</div>
+                    <div style="color: #555; font-size: 0.9em; line-height: 1.6;">
+                        • GET /api/analytics retrieves data<br>
+                        • Aggregates Sales + SaleItems<br>
+                        • Calculates trends & metrics<br>
+                        • Filters by date/cabinet/staff<br>
+                        • Admin/Staff dashboards display<br>
+                        • Real-time updates via context
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Integrations -->
+        <div class="integration-section">
+            <div class="integration-title">🔌 External Integrations & Libraries</div>
+            
+            <div class="integration-grid">
+                <div class="integration-card">
+                    <div class="integration-icon">🔐</div>
+                    <div class="integration-name">bcryptjs</div>
+                    <div class="integration-desc">Password hashing for employee authentication and security</div>
+                </div>
+
+                <div class="integration-card">
+                    <div class="integration-icon">🗄️</div>
+                    <div class="integration-name">Prisma ORM</div>
+                    <div class="integration-desc">Type-safe database client, migrations, and query builder</div>
+                </div>
+
+                <div class="integration-card">
+                    <div class="integration-icon">📦</div>
+                    <div class="integration-name">PostgreSQL</div>
+                    <div class="integration-desc">Primary relational database with ACID compliance</div>
+                </div>
+
+                <div class="integration-card">
+                    <div class="integration-icon">🎨</div>
+                    <div class="integration-name">Tailwind CSS</div>
+                    <div class="integration-desc">Utility-first CSS framework for responsive UI</div>
+                </div>
+
+                <div class="integration-card">
+                    <div class="integration-icon">📊</div>
+                    <div class="integration-name">Recharts</div>
+                    <div class="integration-desc">React charting library for analytics visualization</div>
+                </div>
+
+                <div class="integration-card">
+                    <div class="integration-icon">🎯</div>
+                    <div class="integration-name">React Hook Form</div>
+                    <div class="integration-desc">Form management with validation and error handling</div>
+                </div>
+
+                <div class="integration-card">
+                    <div class="integration-icon">⏰</div>
+                    <div class="integration-name">date-fns</div>
+                    <div class="integration-desc">Date manipulation and formatting utilities</div>
+                </div>
+
+                <div class="integration-card">
+                    <div class="integration-icon">🔔</div>
+                    <div class="integration-name">Sonner Toast</div>
+                    <div class="integration-desc">Toast notifications for user feedback</div>
+                </div>
+
+                <div class="integration-card">
+                    <div class="integration-icon">🌙</div>
+                    <div class="integration-name">next-themes</div>
+                    <div class="integration-desc">Theme provider for dark/light mode support</div>
+                </div>
+
+                <div class="integration-card">
+                    <div class="integration-icon">🎭</div>
+                    <div class="integration-name">Radix UI</div>
+                    <div class="integration-desc">Unstyled, accessible component primitives</div>
+                </div>
+
+                <div class="integration-card">
+                    <div class="integration-icon">✨</div>
+                    <div class="integration-name">Lucide React</div>
+                    <div class="integration-desc">Icon library for UI elements</div>
+                </div>
+
+                <div class="integration-card">
+                    <div class="integration-icon">📱</div>
+                    <div class="integration-name">PWA Features</div>
+                    <div class="integration-desc">Service Worker for offline support and caching</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Legend -->
+        <div class="legend">
+            <div class="legend-title">Legend & Color Coding</div>
+            <div class="legend-items">
+                <div class="legend-item">
+                    <div class="legend-box frontend"></div>
+                    <div class="legend-text">Frontend/UI Components & State</div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-box backend"></div>
+                    <div class="legend-text">API Routes & Business Logic</div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-box database"></div>
+                    <div class="legend-text">Database Models & Tables</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
