@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Search, Download, Filter, Calendar, DollarSign, Package, ArrowUpDown, ArrowUp, ArrowDown, X, RefreshCw, Wrench, LayoutList, Users, Boxes, Settings, Building2, Home, Folder, FolderOpen, FileText, Globe, Banknote, Smartphone, CreditCard, Tag, FileSpreadsheet, BarChart3, Check, Printer, Archive, Store, Zap } from "lucide-react"
+import { Search, Download, Filter, Calendar, DollarSign, Package, ArrowUpDown, ArrowUp, ArrowDown, X, RefreshCw, Wrench, LayoutList, Users, Boxes, Settings, Building2, Home, Folder, FolderOpen, FileText, Globe, Banknote, Smartphone, CreditCard, Tag, FileSpreadsheet, BarChart3, Check, Printer, Archive, Store, Zap, Plus } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -751,62 +751,100 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
               </div>
             </CardHeader>
             <CardContent>
-              {filteredSales.length === 0 ? (
-                <EmptyState icon={<DollarSign size={48} className="text-gray-400" />} title="No sales found" description={searchQuery ? "Try adjusting your search criteria" : "Start by making your first sale"} action={{ label: "New Sale", onClick: () => onNewSale?.() }} />
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[800px]">
-                    <thead className="border-b border-border bg-muted/50">
-                      <tr>
-                        <th className="py-4 px-5 text-left font-semibold text-foreground">Date</th>
-                        <th className="py-4 px-5 text-left font-semibold text-foreground">Sale ID</th>
-                        <th className="py-4 px-5 text-left font-semibold text-foreground">Products</th>
-                        <th className="py-4 px-5 text-left font-semibold text-foreground">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm" className="h-8 px-2 -ml-2 font-semibold hover:bg-muted/80">
-                                Category
-                                <ArrowUpDown size={14} className="ml-1 text-muted-foreground" />
-                                {selectedCategory !== "all" && (
-                                  <span className="ml-1 w-2 h-2 bg-violet-500 rounded-full"></span>
-                                )}
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="start" className="w-56">
-                              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                                Filter Category
-                              </div>
-                              <div className="max-h-48 overflow-y-auto">
-                                <DropdownMenuItem onClick={() => setSelectedCategory("all")} className={selectedCategory === "all" ? "bg-accent" : ""}>
-                                  <Globe size={14} className="mr-2" />
-                                  All Categories
-                                  {selectedCategory === "all" && <Check size={12} className="ml-auto text-violet-600" />}
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[800px]">
+                  <thead className="border-b border-border bg-muted/50">
+                    <tr>
+                      <th className="py-4 px-5 text-left font-semibold text-foreground">Date</th>
+                      <th className="py-4 px-5 text-left font-semibold text-foreground">Sale ID</th>
+                      <th className="py-4 px-5 text-left font-semibold text-foreground">Products</th>
+                      <th className="py-4 px-5 text-left font-semibold text-foreground">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-8 px-2 -ml-2 font-semibold hover:bg-muted/80">
+                              Category
+                              <ArrowUpDown size={14} className="ml-1 text-muted-foreground" />
+                              {selectedCategory !== "all" && (
+                                <span className="ml-1 w-2 h-2 bg-violet-500 rounded-full"></span>
+                              )}
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" className="w-56">
+                            <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                              Filter Category
+                            </div>
+                            <div className="max-h-48 overflow-y-auto">
+                              <DropdownMenuItem onClick={() => setSelectedCategory("all")} className={selectedCategory === "all" ? "bg-accent" : ""}>
+                                <Globe size={14} className="mr-2" />
+                                All Categories
+                                {selectedCategory === "all" && <Check size={12} className="ml-auto text-violet-600" />}
+                              </DropdownMenuItem>
+                              {categories.map((category) => (
+                                <DropdownMenuItem 
+                                  key={category} 
+                                  onClick={() => setSelectedCategory(category)}
+                                  className={selectedCategory === category ? "bg-accent" : ""}
+                                >
+                                  <Folder size={14} className="mr-2" />
+                                  {category}
+                                  {selectedCategory === category && <Check size={12} className="ml-auto text-violet-600" />}
                                 </DropdownMenuItem>
-                                {categories.map((category) => (
-                                  <DropdownMenuItem 
-                                    key={category} 
-                                    onClick={() => setSelectedCategory(category)}
-                                    className={selectedCategory === category ? "bg-accent" : ""}
-                                  >
-                                    <Folder size={14} className="mr-2" />
-                                    {category}
-                                    {selectedCategory === category && <Check size={12} className="ml-auto text-violet-600" />}
-                                  </DropdownMenuItem>
-                                ))}
-                              </div>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </th>
-                        <th className="py-4 px-5 text-left font-semibold text-foreground">Staff</th>
-                        <th className="py-4 px-5 text-center font-semibold text-foreground">Payment Method</th>
-                        <th className="py-4 px-5 text-right font-semibold text-foreground">Amount</th>
-                        <th className="py-4 px-5 text-center font-semibold text-foreground">Location</th>
-                        <th className="py-4 px-5 text-center font-semibold text-foreground">Discount</th>
-                        <th className="py-4 px-5 text-center font-semibold text-foreground">Actions</th>
+                              ))}
+                            </div>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </th>
+                      <th className="py-4 px-5 text-left font-semibold text-foreground">Staff</th>
+                      <th className="py-4 px-5 text-center font-semibold text-foreground">Payment Method</th>
+                      <th className="py-4 px-5 text-right font-semibold text-foreground">Amount</th>
+                      <th className="py-4 px-5 text-center font-semibold text-foreground">Location</th>
+                      <th className="py-4 px-5 text-center font-semibold text-foreground">Discount</th>
+                      <th className="py-4 px-5 text-center font-semibold text-foreground">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {filteredSales.length === 0 ? (
+                      <tr>
+                        <td colSpan={10} className="py-12 text-center">
+                          <div className="flex flex-col items-center">
+                            <DollarSign size={48} className="text-gray-400 mb-4" />
+                            <h3 className="text-lg font-semibold text-gray-900 mb-2">No sales found</h3>
+                            <p className="text-sm text-gray-500 mb-6">
+                              {searchQuery || selectedCategory !== "all" || amountFilter !== "all" || soldAtFilter !== "all" || paymentMethodFilter !== "all" || negotiationFilter !== "all" || timePeriod !== "all" || dateFilter.startDate || dateFilter.endDate 
+                                ? "No sales match your current filters. Try adjusting or clearing them." 
+                                : "Start by making your first sale"}
+                            </p>
+                            <div className="flex gap-3">
+                              <Button onClick={() => onNewSale?.()}>
+                                <Plus size={16} className="mr-2" />
+                                New Sale
+                              </Button>
+                              {(searchQuery || selectedCategory !== "all" || amountFilter !== "all" || soldAtFilter !== "all" || paymentMethodFilter !== "all" || negotiationFilter !== "all" || timePeriod !== "all" || dateFilter.startDate || dateFilter.endDate) && (
+                                <Button 
+                                  variant="outline" 
+                                  onClick={() => { 
+                                    setSelectedCategory("all"); 
+                                    setDateFilter({ year: "all", month: "all", day: "all", startDate: "", endDate: "" }); 
+                                    setAmountFilter("all"); 
+                                    setSoldAtFilter("all"); 
+                                    setPaymentMethodFilter("all"); 
+                                    setNegotiationFilter("all"); 
+                                    setSortBy("date"); 
+                                    setSortDirection("desc"); 
+                                    setTimePeriod("all"); 
+                                    setSearchQuery(""); 
+                                    addToast("All filters cleared", "success"); 
+                                  }}
+                                >
+                                  Clear Filters
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {filteredSales.map((sale: any) => (
+                    ) : (
+                      filteredSales.map((sale: any) => (
                         <tr key={sale.id} className="hover:bg-muted/50 transition-colors">
                           <td className="py-4 px-5 text-muted-foreground text-sm">{new Date(sale.date).toLocaleDateString()}</td>
                           <td className="py-4 px-5 text-foreground font-medium">{createShortSaleId(sale.id)}</td>
@@ -854,7 +892,7 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
                           <td className="py-4 px-5 text-muted-foreground text-sm">
                             <div className="flex flex-wrap gap-1">
                               {(Array.from(new Set(sale.items.map((item: any) => item.category))) as string[]).slice(0, 2).map((cat, idx) => (
-                                <span key={idx} className="px-2 py-0.5 bg-violet-100 text-violet-700 rounded text-xs">
+                                <span key={idx} className="px-2 py-0.5 bg-[#3B18DA]/10 text-[#3B18DA] rounded text-xs">
                                   {cat}
                                 </span>
                               ))}
@@ -890,11 +928,11 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
                             </Button>
                           </td>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </CardContent>
           </Card>
         </div>

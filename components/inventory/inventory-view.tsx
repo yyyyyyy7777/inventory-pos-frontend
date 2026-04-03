@@ -1188,148 +1188,140 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                 </div>
               </CardHeader>
               <CardContent>
-                {filteredInventory.length === 0 ? (
-                  <EmptyState
-                    icon={<Package size={48} className="text-gray-400" />}
-                    title="No products found"
-                    description={searchQuery ? "Try adjusting your search criteria" : "Start by adding your first product"}
-                    action={{ label: "Add Product", onClick: () => setShowAddForm(true) }}
-                  />
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[700px]">
-                      <thead className="border-b border-border bg-muted/50">
-                        <tr>
-                          <th className="py-3 px-4 text-left font-semibold text-foreground">SKU</th>
-                          <th className="py-3 px-4 text-left font-semibold text-foreground">Product Name</th>
-                          <th className="py-3 px-4 text-left font-semibold text-foreground">Description</th>
-                          <th className="py-3 px-4 text-left font-semibold text-foreground">Last Restock</th>
-                          <th className="py-3 px-4 text-left font-semibold text-foreground">Stock</th>
-                          <th className="py-3 px-4 text-left font-semibold text-foreground">Price</th>
-                          <th className="py-3 px-4 text-left font-semibold text-foreground">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm" className="h-8 px-2 -ml-2 font-semibold hover:bg-muted/80">
-                                Category
-                                <ArrowUpDown size={14} className="ml-1 text-muted-foreground" />
-                                {selectedCategory !== "all" && (
-                                  <span className="ml-1 w-2 h-2 bg-blue-500 rounded-full"></span>
-                                )}
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="start" className="w-56">
-                              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                                Sort By
-                              </div>
-                              <DropdownMenuItem 
-                                onClick={() => {
-                                  if (sortBy === "category") {
-                                    setSortDirection(sortDirection === "asc" ? "desc" : "asc")
-                                  } else {
-                                    setSortBy("category")
-                                    setSortDirection("asc")
-                                  }
-                                }} 
-                                className={sortBy === "category" ? "bg-accent" : ""}
-                              >
-                                {sortBy === "category" && sortDirection === "asc" ? <ArrowUp size={14} className="mr-2" /> : 
-                                 sortBy === "category" && sortDirection === "desc" ? <ArrowDown size={14} className="mr-2" /> : 
-                                 <ArrowUpDown size={14} className="mr-2" />}
-                                Category Name {sortBy === "category" ? (sortDirection === "asc" ? "(A-Z)" : "(Z-A)") : ""}
-                                {sortBy === "category" && <Check size={12} className="ml-auto text-blue-600" />}
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[700px]">
+                    <thead className="border-b border-border bg-muted/50">
+                      <tr>
+                        <th className="py-3 px-4 text-left font-semibold text-foreground">SKU</th>
+                        <th className="py-3 px-4 text-left font-semibold text-foreground">Product Name</th>
+                        <th className="py-3 px-4 text-left font-semibold text-foreground">Description</th>
+                        <th className="py-3 px-4 text-left font-semibold text-foreground">Last Restock</th>
+                        <th className="py-3 px-4 text-left font-semibold text-foreground">Stock</th>
+                        <th className="py-3 px-4 text-left font-semibold text-foreground">Price</th>
+                        <th className="py-3 px-4 text-left font-semibold text-foreground">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-8 px-2 -ml-2 font-semibold hover:bg-muted/80">
+                              Category
+                              <ArrowUpDown size={14} className="ml-1 text-muted-foreground" />
+                              {selectedCategory !== "all" && (
+                                <span className="ml-1 w-2 h-2 bg-blue-500 rounded-full"></span>
+                              )}
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" className="w-56">
+                            <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                              Sort By
+                            </div>
+                            <DropdownMenuItem 
+                              onClick={() => {
+                                if (sortBy === "category") {
+                                  setSortDirection(sortDirection === "asc" ? "desc" : "asc")
+                                } else {
+                                  setSortBy("category")
+                                  setSortDirection("asc")
+                                }
+                              }} 
+                              className={sortBy === "category" ? "bg-accent" : ""}
+                            >
+                              {sortBy === "category" && sortDirection === "asc" ? <ArrowUp size={14} className="mr-2" /> : 
+                               sortBy === "category" && sortDirection === "desc" ? <ArrowDown size={14} className="mr-2" /> : 
+                               <ArrowUpDown size={14} className="mr-2" />}
+                              Category Name {sortBy === "category" ? (sortDirection === "asc" ? "(A-Z)" : "(Z-A)") : ""}
+                              {sortBy === "category" && <Check size={12} className="ml-auto text-blue-600" />}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem 
+                              onClick={() => {
+                                if (sortBy === "name") {
+                                  setSortDirection(sortDirection === "asc" ? "desc" : "asc")
+                                } else {
+                                  setSortBy("name")
+                                  setSortDirection("asc")
+                                }
+                              }} 
+                              className={sortBy === "name" ? "bg-accent" : ""}
+                            >
+                              {sortBy === "name" && sortDirection === "asc" ? <ArrowUp size={14} className="mr-2" /> : 
+                               sortBy === "name" && sortDirection === "desc" ? <ArrowDown size={14} className="mr-2" /> : 
+                               <FileText size={14} className="mr-2" />}
+                              Product Name {sortBy === "name" ? (sortDirection === "asc" ? "(A-Z)" : "(Z-A)") : ""}
+                              {sortBy === "name" && <Check size={12} className="ml-auto text-blue-600" />}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem 
+                              onClick={() => {
+                                if (sortBy === "stock") {
+                                  setSortDirection(sortDirection === "asc" ? "desc" : "asc")
+                                } else {
+                                  setSortBy("stock")
+                                  setSortDirection("desc")
+                                }
+                              }} 
+                              className={sortBy === "stock" ? "bg-accent" : ""}
+                            >
+                              {sortBy === "stock" && sortDirection === "desc" ? <ArrowDown size={14} className="mr-2" /> : 
+                               sortBy === "stock" && sortDirection === "asc" ? <ArrowUp size={14} className="mr-2" /> : 
+                               <BarChart3 size={14} className="mr-2" />}
+                              Stock Level {sortBy === "stock" ? (sortDirection === "desc" ? "(High-Low)" : "(Low-High)") : ""}
+                              {sortBy === "stock" && <Check size={12} className="ml-auto text-blue-600" />}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem 
+                              onClick={() => {
+                                if (sortBy === "price") {
+                                  setSortDirection(sortDirection === "asc" ? "desc" : "asc")
+                                } else {
+                                  setSortBy("price")
+                                  setSortDirection("asc")
+                                }
+                              }} 
+                              className={sortBy === "price" ? "bg-accent" : ""}
+                            >
+                              {sortBy === "price" && sortDirection === "asc" ? <ArrowUp size={14} className="mr-2" /> : 
+                               sortBy === "price" && sortDirection === "desc" ? <ArrowDown size={14} className="mr-2" /> : 
+                               <DollarSign size={14} className="mr-2" />}
+                              Price {sortBy === "price" ? (sortDirection === "asc" ? "(Low-High)" : "(High-Low)") : ""}
+                              {sortBy === "price" && <Check size={12} className="ml-auto text-blue-600" />}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem 
+                              onClick={() => {
+                                if (sortBy === "lastRestock") {
+                                  setSortDirection(sortDirection === "asc" ? "desc" : "asc")
+                                } else {
+                                  setSortBy("lastRestock")
+                                  setSortDirection("desc")
+                                }
+                              }} 
+                              className={sortBy === "lastRestock" ? "bg-accent" : ""}
+                            >
+                              {sortBy === "lastRestock" && sortDirection === "desc" ? <ArrowDown size={14} className="mr-2" /> : 
+                               sortBy === "lastRestock" && sortDirection === "asc" ? <ArrowUp size={14} className="mr-2" /> : 
+                               <Calendar size={14} className="mr-2" />}
+                              Last Restock {sortBy === "lastRestock" ? (sortDirection === "desc" ? "(Newest)" : "(Oldest)") : ""}
+                              {sortBy === "lastRestock" && <Check size={12} className="ml-auto text-blue-600" />}
+                            </DropdownMenuItem>
+                            <div className="border-t my-1"></div>
+                            <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                              Filter Category
+                            </div>
+                            <div className="max-h-48 overflow-y-auto">
+                              <DropdownMenuItem onClick={() => setSelectedCategory("all")} className={selectedCategory === "all" ? "bg-accent" : ""}>
+                                <Globe size={14} className="mr-2" />
+                                All Categories
+                                {selectedCategory === "all" && <Check size={12} className="ml-auto text-blue-600" />}
                               </DropdownMenuItem>
-                              <DropdownMenuItem 
-                                onClick={() => {
-                                  if (sortBy === "name") {
-                                    setSortDirection(sortDirection === "asc" ? "desc" : "asc")
-                                  } else {
-                                    setSortBy("name")
-                                    setSortDirection("asc")
-                                  }
-                                }} 
-                                className={sortBy === "name" ? "bg-accent" : ""}
-                              >
-                                {sortBy === "name" && sortDirection === "asc" ? <ArrowUp size={14} className="mr-2" /> : 
-                                 sortBy === "name" && sortDirection === "desc" ? <ArrowDown size={14} className="mr-2" /> : 
-                                 <FileText size={14} className="mr-2" />}
-                                Product Name {sortBy === "name" ? (sortDirection === "asc" ? "(A-Z)" : "(Z-A)") : ""}
-                                {sortBy === "name" && <Check size={12} className="ml-auto text-blue-600" />}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem 
-                                onClick={() => {
-                                  if (sortBy === "stock") {
-                                    setSortDirection(sortDirection === "asc" ? "desc" : "asc")
-                                  } else {
-                                    setSortBy("stock")
-                                    setSortDirection("desc")
-                                  }
-                                }} 
-                                className={sortBy === "stock" ? "bg-accent" : ""}
-                              >
-                                {sortBy === "stock" && sortDirection === "desc" ? <ArrowDown size={14} className="mr-2" /> : 
-                                 sortBy === "stock" && sortDirection === "asc" ? <ArrowUp size={14} className="mr-2" /> : 
-                                 <BarChart3 size={14} className="mr-2" />}
-                                Stock Level {sortBy === "stock" ? (sortDirection === "desc" ? "(High-Low)" : "(Low-High)") : ""}
-                                {sortBy === "stock" && <Check size={12} className="ml-auto text-blue-600" />}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem 
-                                onClick={() => {
-                                  if (sortBy === "price") {
-                                    setSortDirection(sortDirection === "asc" ? "desc" : "asc")
-                                  } else {
-                                    setSortBy("price")
-                                    setSortDirection("asc")
-                                  }
-                                }} 
-                                className={sortBy === "price" ? "bg-accent" : ""}
-                              >
-                                {sortBy === "price" && sortDirection === "asc" ? <ArrowUp size={14} className="mr-2" /> : 
-                                 sortBy === "price" && sortDirection === "desc" ? <ArrowDown size={14} className="mr-2" /> : 
-                                 <DollarSign size={14} className="mr-2" />}
-                                Price {sortBy === "price" ? (sortDirection === "asc" ? "(Low-High)" : "(High-Low)") : ""}
-                                {sortBy === "price" && <Check size={12} className="ml-auto text-blue-600" />}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem 
-                                onClick={() => {
-                                  if (sortBy === "lastRestock") {
-                                    setSortDirection(sortDirection === "asc" ? "desc" : "asc")
-                                  } else {
-                                    setSortBy("lastRestock")
-                                    setSortDirection("desc")
-                                  }
-                                }} 
-                                className={sortBy === "lastRestock" ? "bg-accent" : ""}
-                              >
-                                {sortBy === "lastRestock" && sortDirection === "desc" ? <ArrowDown size={14} className="mr-2" /> : 
-                                 sortBy === "lastRestock" && sortDirection === "asc" ? <ArrowUp size={14} className="mr-2" /> : 
-                                 <Calendar size={14} className="mr-2" />}
-                                Last Restock {sortBy === "lastRestock" ? (sortDirection === "desc" ? "(Newest)" : "(Oldest)") : ""}
-                                {sortBy === "lastRestock" && <Check size={12} className="ml-auto text-blue-600" />}
-                              </DropdownMenuItem>
-                              <div className="border-t my-1"></div>
-                              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                                Filter Category
-                              </div>
-                              <div className="max-h-48 overflow-y-auto">
-                                <DropdownMenuItem onClick={() => setSelectedCategory("all")} className={selectedCategory === "all" ? "bg-accent" : ""}>
-                                  <Globe size={14} className="mr-2" />
-                                  All Categories
-                                  {selectedCategory === "all" && <Check size={12} className="ml-auto text-blue-600" />}
+                              {categories.map((category) => (
+                                <DropdownMenuItem 
+                                  key={category} 
+                                  onClick={() => setSelectedCategory(selectedCategory === category ? "all" : category)}
+                                  className={selectedCategory === category ? "bg-accent" : ""}
+                                >
+                                  <Folder size={14} className="mr-2" />
+                                  {category}
+                                  {selectedCategory === category && <Check size={12} className="ml-auto text-blue-600" />}
                                 </DropdownMenuItem>
-                                {categories.map((category) => (
-                                  <DropdownMenuItem 
-                                    key={category} 
-                                    onClick={() => setSelectedCategory(category)}
-                                    className={selectedCategory === category ? "bg-accent" : ""}
-                                  >
-                                    <Folder size={14} className="mr-2" />
-                                    {category}
-                                    {selectedCategory === category && <Check size={12} className="ml-auto text-blue-600" />}
-                                  </DropdownMenuItem>
-                                ))}
-                              </div>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                              ))}
+                            </div>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                         </th>
                           <th className="py-3 px-4 text-center font-semibold text-foreground">Edit</th>
                           <th className="py-3 px-4 text-center font-semibold text-foreground">Batches</th>
@@ -1337,70 +1329,99 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border">
-                        {filteredInventory.map((item) => (
-                          <tr key={item.id} className="hover:bg-muted/50 transition-colors">
-                            <td className="py-3 px-4 text-muted-foreground text-sm">{item.sku}</td>
-                            <td className="py-3 px-4 text-foreground font-medium">{item.name}</td>
-                            <td className="py-3 px-4 text-muted-foreground text-sm max-w-xs truncate" title={item.description || ''}>
-                              {item.description || '-'}
-                            </td>
-                            <td className="py-3 px-4 text-muted-foreground text-sm">
-                              {item.lastRestockDate || 'No restocks'}
-                            </td>
-                            <td className="py-3 px-4">
-                              <span
-                                className={`px-3 py-1 rounded-full text-sm font-medium ${
-                                  item.stock === 0 
-                                    ? "bg-red-100 text-red-700" 
-                                    : item.stock < 20 
-                                    ? "bg-yellow-100 text-yellow-700" 
-                                    : "bg-primary/20 text-primary"
-                                }`}
-                              >
-                                {item.stock}
-                              </span>
-                            </td>
-                            <td className="py-3 px-4 text-muted-foreground text-sm font-medium">₱{item.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                            <td className="py-3 px-4 text-muted-foreground text-sm">{item.category}</td>
-                            <td className="py-3 px-4 text-center">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-primary hover:bg-primary/10"
-                                onClick={() => handleEditProduct(item)}
-                                title="Edit Product"
-                              >
-                                <Edit2 size={16} />
-                              </Button>
-                            </td>
-                            <td className="py-3 px-4 text-center">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-blue-600 hover:bg-blue-10"
-                                onClick={() => openStockDialog(item)}
-                                title="View Stock Tracking"
-                              >
-                                <Clock size={16} />
-                              </Button>
-                            </td>
-                            <td className="py-3 px-4 text-center">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-destructive hover:bg-destructive/10"
-                                onClick={() => handleDelete(item.id)}
-                                title="Delete Product"
-                              >
-                                <Trash2 size={16} />
-                              </Button>
+                        {filteredInventory.length === 0 ? (
+                          <tr>
+                            <td colSpan={10} className="py-12 text-center">
+                              <div className="flex flex-col items-center">
+                                <Package size={48} className="text-gray-400 mb-4" />
+                                <h3 className="text-lg font-semibold text-gray-900 mb-2">No products found</h3>
+                                <p className="text-sm text-gray-500 mb-6">
+                                  {searchQuery || selectedCategory !== "all" || stockFilter !== "all" || priceFilter !== "all" || dateFilter.startDate || dateFilter.endDate 
+                                    ? "No products match your current filters. Try adjusting or clearing them." 
+                                    : "Start by adding your first product"}
+                                </p>
+                                <div className="flex gap-3">
+                                  <Button onClick={() => setShowAddForm(true)}>
+                                    <Plus size={16} className="mr-2" />
+                                    Add Product
+                                  </Button>
+                                  {(searchQuery || selectedCategory !== "all" || stockFilter !== "all" || priceFilter !== "all" || dateFilter.startDate || dateFilter.endDate) && (
+                                    <Button 
+                                      variant="outline" 
+                                      onClick={() => setClearConfirm(true)}
+                                    >
+                                      Clear Filters
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
                             </td>
                           </tr>
-                        ))}
+                        ) : (
+                          filteredInventory.map((item) => (
+                            <tr key={item.id} className="hover:bg-muted/50 transition-colors">
+                              <td className="py-3 px-4 text-muted-foreground text-sm">{item.sku}</td>
+                              <td className="py-3 px-4 text-foreground font-medium">{item.name}</td>
+                              <td className="py-3 px-4 text-muted-foreground text-sm max-w-xs truncate" title={item.description || ''}>
+                                {item.description || '-'}
+                              </td>
+                              <td className="py-3 px-4 text-muted-foreground text-sm">
+                                {item.lastRestockDate || 'No restocks'}
+                              </td>
+                              <td className="py-3 px-4">
+                                <span
+                                  className={`px-3 py-1 rounded-full text-sm font-medium ${
+                                    item.stock === 0 
+                                      ? "bg-red-100 text-red-700" 
+                                      : item.stock < 20 
+                                      ? "bg-yellow-100 text-yellow-700" 
+                                      : "bg-primary/20 text-primary"
+                                  }`}
+                                >
+                                  {item.stock}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 text-muted-foreground text-sm font-medium">₱{item.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                              <td className="py-3 px-4 text-muted-foreground text-sm">{item.category}</td>
+                              <td className="py-3 px-4 text-center">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-primary hover:bg-primary/10"
+                                  onClick={() => handleEditProduct(item)}
+                                  title="Edit Product"
+                                >
+                                  <Edit2 size={16} />
+                                </Button>
+                              </td>
+                              <td className="py-3 px-4 text-center">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-blue-600 hover:bg-blue-10"
+                                  onClick={() => openStockDialog(item)}
+                                  title="View Stock Tracking"
+                                >
+                                  <Clock size={16} />
+                                </Button>
+                              </td>
+                              <td className="py-3 px-4 text-center">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-destructive hover:bg-destructive/10"
+                                  onClick={() => handleDelete(item.id)}
+                                  title="Delete Product"
+                                >
+                                  <Trash2 size={16} />
+                                </Button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
                       </tbody>
                     </table>
                   </div>
-                )}
               </CardContent>
             </Card>
           </>
@@ -1408,146 +1429,79 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
       </div>
     </div>
 
-      {/* Confirmation Dialog */}
-      <ConfirmDialog
-        open={clearConfirm}
-        title="Clear All Filters"
-        description="Are you sure you want to clear all active filters? This will show all items in the inventory."
-        confirmText="Clear Filters"
-        cancelText="Cancel"
-        onConfirm={confirmClearFilters}
-        onCancel={() => setClearConfirm(false)}
-      />
+    {/* Confirmation Dialog */}
+    <ConfirmDialog
+      open={clearConfirm}
+      title="Clear All Filters"
+      description="Are you sure you want to clear all active filters? This will show all items in the inventory."
+      confirmText="Clear Filters"
+      cancelText="Cancel"
+      onConfirm={confirmClearFilters}
+      onCancel={() => setClearConfirm(false)}
+    />
 
-      <Dialog open={showAddForm} onOpenChange={setShowAddForm}>
-        <DialogContent className="max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Plus className="w-5 h-5 text-blue-600" />
-              Add New Product
-            </DialogTitle>
-            <DialogDescription>
-              Enter product details to add to inventory. Stock can be added later using the clock icon.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="border rounded-lg p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
-              <h3 className="font-semibold mb-3 text-blue-800">Product Information</h3>
-              <div className="space-y-3">
+    <Dialog open={showAddForm} onOpenChange={setShowAddForm}>
+      <DialogContent className="max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Plus className="w-5 h-5 text-blue-600" />
+            Add New Product
+          </DialogTitle>
+          <DialogDescription>
+            Enter product details to add to inventory. Stock can be added later using the clock icon.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="border rounded-lg p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+            <h3 className="font-semibold mb-3 text-blue-800">Product Information</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm font-medium text-blue-700 mb-1 block">Product Name</label>
+                <Input
+                  placeholder="Enter product name"
+                  value={newProduct.name}
+                  onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
+                  className="border-blue-300 focus:border-blue-500"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-sm font-medium text-blue-700 mb-1 block">Product Name</label>
+                  <label className="text-sm font-medium text-blue-700 mb-1 block">SKU</label>
                   <Input
-                    placeholder="Enter product name"
-                    value={newProduct.name}
-                    onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
+                    placeholder="Product SKU"
+                    value={newProduct.sku}
+                    onChange={(e) => setNewProduct({ ...newProduct, sku: e.target.value })}
                     className="border-blue-300 focus:border-blue-500"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-sm font-medium text-blue-700 mb-1 block">SKU</label>
-                    <Input
-                      placeholder="Product SKU"
-                      value={newProduct.sku}
-                      onChange={(e) => setNewProduct({ ...newProduct, sku: e.target.value })}
-                      className="border-blue-300 focus:border-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-blue-700 mb-1 block">Unit Price (₱)</label>
-                    <Input
-                      type="number"
-                      placeholder="0.00"
-                      value={newProduct.price}
-                      onChange={(e) => setNewProduct({ ...newProduct, price: parseFloat(e.target.value) || 0 })}
-                      className="border-blue-300 focus:border-blue-500"
-                      step="0.01"
-                      min="0"
-                    />
-                  </div>
-                </div>
                 <div>
-                  <label className="text-sm font-medium text-blue-700 mb-1 block">Initial Quantity</label>
+                  <label className="text-sm font-medium text-blue-700 mb-1 block">Unit Price (₱)</label>
                   <Input
                     type="number"
-                    placeholder="1"
-                    value={initialStock.quantity}
-                    onChange={(e) => setInitialStock({ ...initialStock, quantity: parseInt(e.target.value) || 1 })}
+                    placeholder="0.00"
+                    value={newProduct.price}
+                    onChange={(e) => setNewProduct({ ...newProduct, price: parseFloat(e.target.value) || 0 })}
                     className="border-blue-300 focus:border-blue-500"
-                    min="1"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-blue-700 mb-1 block">Category</label>
-                  <Select value={newProduct.category} onValueChange={(value) => setNewProduct({ ...newProduct, category: value })}>
-                    <SelectTrigger className="border-blue-300 focus:border-blue-500">
-                      <SelectValue placeholder="Select category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {categories.map((category) => (
-                        <SelectItem key={category} value={category}>
-                          {category}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-blue-700 mb-1 block">Description</label>
-                  <textarea
-                    value={newProduct.description}
-                    onChange={(e) => setNewProduct({ ...newProduct, description: e.target.value })}
-                    placeholder="Product description (optional)..."
-                    className="w-full p-2 border rounded-md resize-none h-20 border-blue-300 focus:border-blue-500"
+                    step="0.01"
+                    min="0"
                   />
                 </div>
               </div>
-            </div>
-            
-            <div className="flex justify-end gap-2">
-              <Button onClick={() => setShowAddForm(false)} variant="outline">
-                Cancel
-              </Button>
-              <Button onClick={handleAddProduct} className="bg-blue-600 hover:bg-blue-700">
-                <Plus size={16} className="mr-2" />
-                Add Product
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={editingId !== null} onOpenChange={() => setEditingId(null)}>
-        <DialogContent className="mx-4 max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit Product</DialogTitle>
-            <DialogDescription>Update product details</DialogDescription>
-          </DialogHeader>
-          {editingProduct && (
-            <div className="space-y-4">
               <div>
-                <label className="text-sm font-medium text-foreground mb-2 block">SKU</label>
+                <label className="text-sm font-medium text-blue-700 mb-1 block">Initial Quantity</label>
                 <Input
-                  value={editingProduct?.sku || ''}
-                  onChange={(e) => setEditingProduct(editingProduct ? { ...editingProduct, sku: e.target.value } : null)}
+                  type="number"
+                  placeholder="1"
+                  value={initialStock.quantity}
+                  onChange={(e) => setInitialStock({ ...initialStock, quantity: parseInt(e.target.value) || 1 })}
+                  className="border-blue-300 focus:border-blue-500"
+                  min="1"
                 />
               </div>
               <div>
-                <label className="text-sm font-medium text-foreground mb-1 block">Description</label>
-                <textarea
-                  value={editingProduct?.description || ""}
-                  onChange={(e) => setEditingProduct(editingProduct ? { ...editingProduct, description: e.target.value } : null)}
-                  placeholder="Product description..."
-                  className="w-full p-2 border rounded-md resize-none h-20"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-foreground mb-1 block">Category</label>
-                <Select
-                  value={editingProduct?.category || ""}
-                  onValueChange={(value) => setEditingProduct(editingProduct ? { ...editingProduct, category: value } : null)}
-                >
-                  <SelectTrigger>
+                <label className="text-sm font-medium text-blue-700 mb-1 block">Category</label>
+                <Select value={newProduct.category} onValueChange={(value) => setNewProduct({ ...newProduct, category: value })}>
+                  <SelectTrigger className="border-blue-300 focus:border-blue-500">
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1559,303 +1513,370 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex gap-2">
-                <Button onClick={handleSaveEdit} className="bg-primary hover:bg-primary/90 text-primary-foreground">
-                  Save Changes
-                </Button>
-                <Button onClick={() => setEditingId(null)} variant="outline">
-                  Cancel
-                </Button>
+              <div>
+                <label className="text-sm font-medium text-blue-700 mb-1 block">Description</label>
+                <textarea
+                  value={newProduct.description}
+                  onChange={(e) => setNewProduct({ ...newProduct, description: e.target.value })}
+                  placeholder="Product description (optional)..."
+                  className="w-full p-2 border rounded-md resize-none h-20 border-blue-300 focus:border-blue-500"
+                />
               </div>
             </div>
-          )}
-        </DialogContent>
-      </Dialog>
+          </div>
+          
+          <div className="flex justify-end gap-2">
+            <Button onClick={() => setShowAddForm(false)} variant="outline">
+              Cancel
+            </Button>
+            <Button onClick={handleAddProduct} className="bg-blue-600 hover:bg-blue-700">
+              <Plus size={16} className="mr-2" />
+              Add Product
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
 
-      <ConfirmDialog
-        open={deleteConfirm.open}
-        title="Delete Product"
-        description="Are you sure you want to delete this product? This action cannot be undone."
-        confirmText="Delete"
-        cancelText="Cancel"
-        isDangerous={true}
-        onConfirm={confirmDelete}
-        onCancel={() => setDeleteConfirm({ open: false, id: null })}
-      />
+    <Dialog open={editingId !== null} onOpenChange={() => setEditingId(null)}>
+      <DialogContent className="mx-4 max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Edit Product</DialogTitle>
+          <DialogDescription>Update product details</DialogDescription>
+        </DialogHeader>
+        {editingProduct && (
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium text-foreground mb-2 block">SKU</label>
+              <Input
+                value={editingProduct?.sku || ''}
+                onChange={(e) => setEditingProduct(editingProduct ? { ...editingProduct, sku: e.target.value } : null)}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground mb-1 block">Description</label>
+              <textarea
+                value={editingProduct?.description || ""}
+                onChange={(e) => setEditingProduct(editingProduct ? { ...editingProduct, description: e.target.value } : null)}
+                placeholder="Product description..."
+                className="w-full p-2 border rounded-md resize-none h-20"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground mb-1 block">Category</label>
+              <Select
+                value={editingProduct?.category || ""}
+                onValueChange={(value) => setEditingProduct(editingProduct ? { ...editingProduct, category: value } : null)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((category) => (
+                    <SelectItem key={category} value={category}>
+                      {category}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={handleSaveEdit} className="bg-primary hover:bg-primary/90 text-primary-foreground">
+                Save Changes
+              </Button>
+              <Button onClick={() => setEditingId(null)} variant="outline">
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
 
-      {/* Stock Tracking Dialog */}
-      <Dialog open={showStockDialog} onOpenChange={setShowStockDialog}>
-        <DialogContent className="max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Stock Tracking - {selectedProductForStock?.name}</DialogTitle>
-            <DialogDescription>Manage stock batches and track inventory by purchase date</DialogDescription>
-          </DialogHeader>
-          {selectedProductForStock && (
-            <div className="space-y-4">
-              {/* Add New Stock Form */}
-              <div className="border rounded-lg p-4 bg-gradient-to-r from-green-50 to-emerald-50 border-green-200">
-                <h3 className="font-semibold mb-3 text-green-800">Add New Stock</h3>
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-sm font-medium text-green-700 mb-1 block">Quantity</label>
-                      <Input
-                        type="number"
-                        value={newStock.quantity}
-                        onChange={(e) => setNewStock({ ...newStock, quantity: parseInt(e.target.value) || 1 })}
-                        min="1"
-                        placeholder="How many units?"
-                        className="border-green-300 focus:border-green-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium text-green-700 mb-1 block">Cost per Unit (₱) *</label>
-                      <Input
-                        type="number"
-                        value={newStock.costPerUnit}
-                        onChange={(e) => setNewStock({ ...newStock, costPerUnit: parseFloat(e.target.value) || 0 })}
-                        min="0.01"
-                        step="0.01"
-                        placeholder="Enter cost per unit (required)"
-                        className="border-green-300 focus:border-green-500"
-                        required
-                      />
-                      <p className="text-xs text-gray-500 mt-1">Enter the actual cost price per unit (cannot be 0)</p>
-                    </div>
-                  </div>
+    <ConfirmDialog
+      open={deleteConfirm.open}
+      title="Delete Product"
+      description="Are you sure you want to delete this product? This action cannot be undone."
+      confirmText="Delete"
+      cancelText="Cancel"
+      isDangerous={true}
+      onConfirm={confirmDelete}
+      onCancel={() => setDeleteConfirm({ open: false, id: null })}
+    />
+
+    {/* Stock Tracking Dialog */}
+    <Dialog open={showStockDialog} onOpenChange={setShowStockDialog}>
+      <DialogContent className="max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Stock Tracking - {selectedProductForStock?.name}</DialogTitle>
+          <DialogDescription>Manage stock batches and track inventory by purchase date</DialogDescription>
+        </DialogHeader>
+        {selectedProductForStock && (
+          <div className="space-y-4">
+            {/* Add New Stock Form */}
+            <div className="border rounded-lg p-4 bg-gradient-to-r from-green-50 to-emerald-50 border-green-200">
+              <h3 className="font-semibold mb-3 text-green-800">Add New Stock</h3>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-sm font-medium text-green-700 mb-1 block">Notes</label>
+                    <label className="text-sm font-medium text-green-700 mb-1 block">Quantity</label>
                     <Input
-                      value={newStock.notes}
-                      onChange={(e) => setNewStock({ ...newStock, notes: e.target.value })}
-                      placeholder="e.g., New shipment, Restock"
+                      type="number"
+                      value={newStock.quantity}
+                      onChange={(e) => setNewStock({ ...newStock, quantity: parseInt(e.target.value) || 1 })}
+                      min="1"
+                      placeholder="How many units?"
                       className="border-green-300 focus:border-green-500"
                     />
                   </div>
-                  <div className="flex justify-end">
-                    <Button onClick={() => setShowRestockConfirm(true)} className="bg-green-600 hover:bg-green-700" disabled={isAddingStock}>
-                      {isAddingStock ? (
-                        <>
-                          <Spinner className="mr-2" />
-                          Adding...
-                        </>
-                      ) : (
-                        <>
-                          <Plus size={16} className="mr-2" />
-                          Restock
-                        </>
-                      )}
-                    </Button>
+                  <div>
+                    <label className="text-sm font-medium text-green-700 mb-1 block">Cost per Unit (₱) *</label>
+                    <Input
+                      type="number"
+                      value={newStock.costPerUnit}
+                      onChange={(e) => setNewStock({ ...newStock, costPerUnit: parseFloat(e.target.value) || 0 })}
+                      min="0.01"
+                      step="0.01"
+                      placeholder="Enter cost per unit (required)"
+                      className="border-green-300 focus:border-green-500"
+                      required
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Enter the actual cost price per unit (cannot be 0)</p>
                   </div>
                 </div>
+                <div>
+                  <label className="text-sm font-medium text-green-700 mb-1 block">Notes</label>
+                  <Input
+                    value={newStock.notes}
+                    onChange={(e) => setNewStock({ ...newStock, notes: e.target.value })}
+                    placeholder="e.g., New shipment, Restock"
+                    className="border-green-300 focus:border-green-500"
+                  />
+                </div>
+                <div className="flex justify-end">
+                  <Button onClick={() => setShowRestockConfirm(true)} className="bg-green-600 hover:bg-green-700" disabled={isAddingStock}>
+                    {isAddingStock ? (
+                      <>
+                        <Spinner className="mr-2" />
+                        Adding...
+                      </>
+                    ) : (
+                      <>
+                        <Plus size={16} className="mr-2" />
+                        Restock
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
+            </div>
 
-              {/* Stock History Display */}
-              <div>
-                <h3 className="font-semibold mb-3">Stock History</h3>
-                {isLoadingStock ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Spinner className="mr-2" />
-                    <span className="text-muted-foreground">Loading stock data...</span>
-                  </div>
-                ) : stockAdditions.length === 0 ? (
-                  <div className="text-center py-6 border-2 border-dashed border-muted rounded-lg">
-                    <Clock className="mx-auto h-12 w-12 text-muted-foreground mb-3" />
-                    <p className="text-muted-foreground mb-1">No stock history yet</p>
-                    <p className="text-sm text-muted-foreground">
-                      Add your first stock batch below
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {stockAdditions.map((addition, index) => {
-                      const age = getStockAge(addition.addedDate);
-                      const ageColor = getStockAgeColor(addition.addedDate);
-                      const isGreen = age < 30;
-                      const isYellow = age >= 30 && age <= 90;
-                      const isRed = age > 90;
-                      
-                      const addedDate = new Date(addition.addedDate);
-                      const formattedDate = addedDate.toLocaleDateString('en-US', { 
-                        month: 'short', 
-                        day: 'numeric', 
-                        year: 'numeric' 
-                      });
-                      const formattedTime = addedDate.toLocaleTimeString('en-US', {
-                        hour: 'numeric',
-                        minute: '2-digit',
-                        hour12: true
-                      });
-                      
-                      return (
-                      <div key={addition.id} className={`bg-white border rounded-lg p-5 shadow-sm space-y-3 ${
-                        index === 0 ? 'border-blue-500 border-2' : 'border-gray-200'
-                      }`}>
-                        {/* Top row - Main info */}
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            {/* Quantity */}
-                            <span className="font-semibold text-lg">{addition.quantity} units</span>
-                            
-                            {/* Price */}
-                            {addition.costPerUnit && addition.costPerUnit > 0 && (
-                              <span className="text-sm text-green-600">
-                                ₱{addition.costPerUnit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </span>
-                            )}
-                            
-                            {/* Current batch indicator */}
-                            {index === 0 && (
-                              <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
-                                Current Batch
-                              </span>
-                            )}
-                          </div>
+            {/* Stock History Display */}
+            <div>
+              <h3 className="font-semibold mb-3">Stock History</h3>
+              {isLoadingStock ? (
+                <div className="flex items-center justify-center py-8">
+                  <Spinner className="mr-2" />
+                  <span className="text-muted-foreground">Loading stock data...</span>
+                </div>
+              ) : stockAdditions.length === 0 ? (
+                <div className="text-center py-6 border-2 border-dashed border-muted rounded-lg">
+                  <Clock className="mx-auto h-12 w-12 text-muted-foreground mb-3" />
+                  <p className="text-muted-foreground mb-1">No stock history yet</p>
+                  <p className="text-sm text-muted-foreground">
+                    Add your first stock batch below
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {stockAdditions.map((addition, index) => {
+                    const age = getStockAge(addition.addedDate);
+                    const ageColor = getStockAgeColor(addition.addedDate);
+                    const isGreen = age < 30;
+                    const isYellow = age >= 30 && age <= 90;
+                    const isRed = age > 90;
+                    
+                    const addedDate = new Date(addition.addedDate);
+                    const formattedDate = addedDate.toLocaleDateString('en-US', { 
+                      month: 'short', 
+                      day: 'numeric', 
+                      year: 'numeric' 
+                    });
+                    const formattedTime = addedDate.toLocaleTimeString('en-US', {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true
+                    });
+                    
+                    return (
+                    <div key={addition.id} className={`bg-white border rounded-lg p-5 shadow-sm space-y-3 ${
+                      index === 0 ? 'border-blue-500 border-2' : 'border-gray-200'
+                    }`}>
+                      {/* Top row - Main info */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          {/* Quantity */}
+                          <span className="font-semibold text-lg">{addition.quantity} units</span>
                           
-                          {/* Delete button */}
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setBatchToDelete(addition)
-                              setShowDeleteBatchConfirm(true)
-                            }}
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                            title="Remove this batch"
-                            disabled={isDeletingBatch && batchToDelete?.id === addition.id}
-                          >
-                            {isDeletingBatch && batchToDelete?.id === addition.id ? (
-                              <Spinner className="size-3.5" />
-                            ) : (
-                              <Trash2 size={14} />
-                            )}
-                          </Button>
-                        </div>
-
-                        {/* Bottom row - Status and Date */}
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-4">
-                            {/* Status */}
-                            <div className="flex items-center gap-2">
-                              <div className={`w-2 h-2 rounded-full ${
-                                Number(addition.quantity) === 0 
-                                  ? 'bg-red-500' 
-                                  : addition.status === 'on-shelf' 
-                                    ? 'bg-green-500' 
-                                    : 'bg-blue-500'
-                              }`} />
-                              {isUpdatingStatus === addition.id ? (
-                                <div className="flex items-center gap-2">
-                                  <Spinner className="size-3" />
-                                  <span className="text-sm text-gray-500">Updating...</span>
-                                </div>
-                              ) : Number(addition.quantity) === 0 ? (
-                                <span className="text-sm text-red-400 italic">Unavailable</span>
-                              ) : (
-                                <select
-                                  value={addition.status || 'in-storage'}
-                                  onChange={(e) => handleUpdateBatchStatus(addition.id, e.target.value)}
-                                  className="text-sm text-gray-600 bg-transparent border-0 focus:outline-none focus:ring-0 cursor-pointer"
-                                >
-                                  <option value="on-shelf">On Shelf</option>
-                                  <option value="in-storage">In Storage</option>
-                                </select>
-                              )}
-                            </div>
-                            
-                            {/* Age */}
-                            <span className="text-sm text-gray-500">
-                              {age} {age === 1 ? 'day' : 'days'} ago
+                          {/* Price */}
+                          {addition.costPerUnit && addition.costPerUnit > 0 && (
+                            <span className="text-sm text-green-600">
+                              ₱{addition.costPerUnit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </span>
+                          )}
+                          
+                          {/* Current batch indicator */}
+                          {index === 0 && (
+                            <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
+                              Current Batch
+                            </span>
+                          )}
+                        </div>
+                        
+                        {/* Delete button */}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setBatchToDelete(addition)
+                            setShowDeleteBatchConfirm(true)
+                          }}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          title="Remove this batch"
+                          disabled={isDeletingBatch && batchToDelete?.id === addition.id}
+                        >
+                          {isDeletingBatch && batchToDelete?.id === addition.id ? (
+                            <Spinner className="size-3.5" />
+                          ) : (
+                            <Trash2 size={14} />
+                          )}
+                        </Button>
+                      </div>
+
+                      {/* Bottom row - Status and Date */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          {/* Status */}
+                          <div className="flex items-center gap-2">
+                            <div className={`w-2 h-2 rounded-full ${
+                              Number(addition.quantity) === 0 
+                                ? 'bg-red-500' 
+                                : addition.status === 'on-shelf' 
+                                  ? 'bg-green-500' 
+                                  : 'bg-blue-500'
+                            }`} />
+                            {isUpdatingStatus === addition.id ? (
+                              <div className="flex items-center gap-2">
+                                <Spinner className="size-3" />
+                                <span className="text-sm text-gray-500">Updating...</span>
+                              </div>
+                            ) : Number(addition.quantity) === 0 ? (
+                              <span className="text-sm text-red-400 italic">Unavailable</span>
+                            ) : (
+                              <select
+                                value={addition.status || 'in-storage'}
+                                onChange={(e) => handleUpdateBatchStatus(addition.id, e.target.value)}
+                                className="text-sm text-gray-600 bg-transparent border-0 focus:outline-none focus:ring-0 cursor-pointer"
+                              >
+                                <option value="on-shelf">On Shelf</option>
+                                <option value="in-storage">In Storage</option>
+                              </select>
+                            )}
                           </div>
                           
-                          {/* Date */}
+                          {/* Age */}
                           <span className="text-sm text-gray-500">
-                            {formattedDate}
+                            {age} {age === 1 ? 'day' : 'days'} ago
                           </span>
                         </div>
                         
-                        {/* Notes (only if present) */}
-                        {addition.notes && (
-                          <p className="text-sm text-gray-500 italic pt-2 border-t border-gray-100">
-                            "{addition.notes}"
-                          </p>
-                        )}
-                      </div>
-                      )
-                    })}
-                    
-                    {/* Summary Card */}
-                    <div className="bg-gradient-to-r from-[oklch(0.2_0.02_280)] to-[oklch(0.15_0.02_280)] border border-[oklch(0.3_0.05_280)] rounded-lg p-4">
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <p className="text-sm text-[oklch(0.85_0.05_280)] font-medium">Total Stock</p>
-                          <p className="text-xs text-[oklch(0.7_0.03_280)]">All batches combined</p>
-                        </div>
-                        <span className="text-2xl font-bold text-white">
-                          {Number(selectedProductForStock?.stock || 0)} units
+                        {/* Date */}
+                        <span className="text-sm text-gray-500">
+                          {formattedDate}
                         </span>
                       </div>
+                      
+                      {/* Notes (only if present) */}
+                      {addition.notes && (
+                        <p className="text-sm text-gray-500 italic pt-2 border-t border-gray-100">
+                          "{addition.notes}"
+                        </p>
+                      )}
+                    </div>
+                    )
+                  })}
+                  
+                  {/* Summary Card */}
+                  <div className="bg-gradient-to-r from-[oklch(0.2_0.02_280)] to-[oklch(0.15_0.02_280)] border border-[oklch(0.3_0.05_280)] rounded-lg p-4">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="text-sm text-[oklch(0.85_0.05_280)] font-medium">Total Stock</p>
+                        <p className="text-xs text-[oklch(0.7_0.03_280)]">All batches combined</p>
+                      </div>
+                      <span className="text-2xl font-bold text-white">
+                        {Number(selectedProductForStock?.stock || 0)} units
+                      </span>
                     </div>
                   </div>
-                )}
-              </div>
-
-              <div className="flex justify-end gap-2">
-                <Button onClick={() => setShowStockDialog(false)} variant="outline">
-                  Close
-                </Button>
-              </div>
+                </div>
+              )}
             </div>
-          )}
-        </DialogContent>
-      </Dialog>
 
-      {/* Restock Confirmation Dialog */}
-      <ConfirmDialog
-        open={showRestockConfirm}
-        title="Confirm Restock"
-        description={`Are you sure you want to add ${newStock.quantity} units to ${selectedProductForStock?.name}?${newStock.costPerUnit > 0 ? ` Cost per unit: ₱${newStock.costPerUnit.toLocaleString()}` : ''}`}
-        confirmText="Restock"
-        cancelText="Cancel"
-        onConfirm={() => {
-          setShowRestockConfirm(false)
-          handleAddStock()
-        }}
-        onCancel={() => setShowRestockConfirm(false)}
-      />
+            <div className="flex justify-end gap-2">
+              <Button onClick={() => setShowStockDialog(false)} variant="outline">
+                Close
+              </Button>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
 
-      {/* Delete Batch Confirmation Dialog */}
-      <ConfirmDialog
-        open={showDeleteBatchConfirm}
-        title="Remove Batch"
-        description={`Are you sure you want to remove this batch of ${batchToDelete?.quantity} units from ${selectedProductForStock?.name}? This will reduce the total stock from ${(selectedProductForStock?.stock || 0)} to ${Math.max(0, (selectedProductForStock?.stock || 0) - (batchToDelete?.quantity || 0))} units.`}
-        confirmText="Remove"
-        cancelText="Cancel"
-        onConfirm={() => {
-          console.log('Confirm dialog onConfirm called');
-          console.log('batchToDelete at confirm:', batchToDelete);
-          if (batchToDelete && batchToDelete.id) {
-            const batchId = String(batchToDelete.id); // Ensure it's a string
-            console.log('Calling handleDeleteBatch with:', batchId);
-            handleDeleteBatch(batchId)
+    {/* Restock Confirmation Dialog */}
+    <ConfirmDialog
+      open={showRestockConfirm}
+      title="Confirm Restock"
+      description={`Are you sure you want to add ${newStock.quantity} units to ${selectedProductForStock?.name}?${newStock.costPerUnit > 0 ? ` Cost per unit: ₱${newStock.costPerUnit.toLocaleString()}` : ''}`}
+      confirmText="Restock"
+      cancelText="Cancel"
+      onConfirm={() => {
+        setShowRestockConfirm(false)
+        handleAddStock()
+      }}
+      onCancel={() => setShowRestockConfirm(false)}
+    />
+
+    {/* Delete Batch Confirmation Dialog */}
+    <ConfirmDialog
+      open={showDeleteBatchConfirm}
+      title="Remove Batch"
+      description={`Are you sure you want to remove this batch of ${batchToDelete?.quantity} units from ${selectedProductForStock?.name}? This will reduce the total stock from ${(selectedProductForStock?.stock || 0)} to ${Math.max(0, (selectedProductForStock?.stock || 0) - (batchToDelete?.quantity || 0))} units.`}
+      confirmText="Remove"
+      cancelText="Cancel"
+      onConfirm={() => {
+        console.log('Confirm dialog onConfirm called');
+        console.log('batchToDelete at confirm:', batchToDelete);
+        if (batchToDelete && batchToDelete.id) {
+          const batchId = String(batchToDelete.id); // Ensure it's a string
+          console.log('Calling handleDeleteBatch with:', batchId);
+          handleDeleteBatch(batchId)
+        } else {
+          console.log('batchToDelete is null/undefined or has no id');
+          // Fallback: try to get the ID from the first batch if available
+          if (stockAdditions.length > 0) {
+            const fallbackBatchId = String(stockAdditions[0].id);
+            console.log('Using fallback batch ID:', fallbackBatchId);
+            handleDeleteBatch(fallbackBatchId);
           } else {
-            console.log('batchToDelete is null/undefined or has no id');
-            // Fallback: try to get the ID from the first batch if available
-            if (stockAdditions.length > 0) {
-              const fallbackBatchId = String(stockAdditions[0].id);
-              console.log('Using fallback batch ID:', fallbackBatchId);
-              handleDeleteBatch(fallbackBatchId);
-            } else {
-              addToast('No batch available to delete', 'error');
-            }
+            addToast('No batch available to delete', 'error');
           }
-        }}
-        onCancel={() => {
-          setShowDeleteBatchConfirm(false)
-          setBatchToDelete(null)
-        }}
-      />
-    </>
+        }
+      }}
+      onCancel={() => {
+        setShowDeleteBatchConfirm(false)
+        setBatchToDelete(null)
+      }}
+    />
+  </>
   )
 }
