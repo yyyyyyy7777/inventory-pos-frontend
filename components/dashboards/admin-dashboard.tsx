@@ -135,7 +135,7 @@ export function AdminDashboard({ username, onLogout }: AdminDashboardProps) {
 
           {currentView === "dashboard" && <EnhancedAnalytics cabinet={selectedCabinet} username={username} />}
           {currentView === "inventory" && <InventoryView isAdmin={true} cabinet={selectedCabinet} username={username} />}
-          {currentView === "sales" && <SalesView isAdmin={true} cabinet={selectedCabinet} />}
+          {currentView === "sales" && <SalesView isAdmin={true} cabinet={selectedCabinet} onNewSale={() => handleViewChange("pos")} />}
           {currentView === "pos" && <POSView cabinet={selectedCabinet} username={username} />}
           {currentView === "employees" && <EmployeeManagement username={username} cabinet={selectedCabinet} />}
           {currentView === "activity" && <ActivityLogView isAdmin={true} />}

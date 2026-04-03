@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Plus, Search, Package, Clock, Trash2, Edit2, Filter, X, Calendar, DollarSign, ArrowUpDown, Zap, Check, AlertTriangle, XCircle, Printer, Download, RefreshCw, Globe, FileText, BarChart3, Folder } from "lucide-react"
+import { ArrowUp, ArrowDown, Plus, Search, Package, Clock, Trash2, Edit2, Filter, X, Calendar, DollarSign, ArrowUpDown, Zap, Check, AlertTriangle, XCircle, Printer, Download, RefreshCw, Globe, FileText, BarChart3, Folder } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useProducts, type Product, type ProductLocation } from "@/contexts/products-context"
 import { useToast } from "@/contexts/toast-context"
@@ -77,6 +77,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
   })
   const [priceFilter, setPriceFilter] = useState("all")
   const [sortBy, setSortBy] = useState("name")
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc")
   const [timePeriod, setTimePeriod] = useState("all")
   
   // Handle date filter confirmation with validation
@@ -154,6 +155,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
     })
     setPriceFilter("all")
     setSortBy("name")
+    setSortDirection("asc")
     setSearchQuery("")
     setClearConfirm(false)
     addToast("All filters cleared", "success")
@@ -398,17 +400,20 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
       return matchesSearch && matchesCategory && matchesStock && matchesPrice && matchesDate;
     })
     .sort((a, b) => {
+      let comparison = 0;
       switch (sortBy) {
-        case "name": return a.name.localeCompare(b.name);
-        case "stock": return b.stock - a.stock;
-        case "price": return a.price - b.price;
-        case "category": return a.category.localeCompare(b.category);
+        case "name": comparison = a.name.localeCompare(b.name); break;
+        case "stock": comparison = b.stock - a.stock; break;
+        case "price": comparison = a.price - b.price; break;
+        case "category": comparison = a.category.localeCompare(b.category); break;
         case "lastRestock":
           const aDate = new Date(a.lastRestockDate || "1970-01-01");
           const bDate = new Date(b.lastRestockDate || "1970-01-01");
-          return bDate.getTime() - aDate.getTime();
+          comparison = bDate.getTime() - aDate.getTime();
+          break;
         default: return 0;
       }
+      return sortDirection === "asc" ? comparison : -comparison;
     });
 
   // Check if filters are applied and show toast if results are empty
@@ -895,9 +900,9 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
           {/* Header */}
           <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-200">
             <div className="flex items-center gap-2">
-              <Filter size={14} className="text-blue-600" />
+              <Filter size={14} className="text-[#3B18DA]" />
               <h3 className="font-semibold text-gray-800 text-sm">Filters</h3>
-              <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full text-xs">
+              <span className="bg-[#3B18DA]/10 text-[#3B18DA] px-1.5 py-0.5 rounded-full text-xs">
                 {[selectedCategory !== "all" ? 1 : 0, stockFilter !== "all" ? 1 : 0, (dateFilter.startDate || dateFilter.endDate) ? 1 : 0, priceFilter !== "all" ? 1 : 0, searchQuery !== "" ? 1 : 0].reduce((a, b) => a + b, 0)}
               </span>
             </div>
@@ -1126,14 +1131,14 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                 <Button
                   variant="outline"
                   onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-                  className="h-8 px-3 rounded-md border-2 border-blue-300 hover:bg-blue-50 text-blue-700 text-xs font-medium"
+                  className="h-8 px-3 rounded-md border-2 border-[#3B18DA] hover:bg-[#3B18DA]/10 text-[#3B18DA] text-xs font-medium"
                   title="Toggle filters panel"
                 >
                   <div className="flex items-center gap-1">
-                    <Filter size={12} />
+                    <Filter size={12} className="text-[#3B18DA]" />
                     Filters
                     {(selectedCategory !== "all" || stockFilter !== "all" || (dateFilter.startDate || dateFilter.endDate) || dateFilter.year !== "all" || priceFilter !== "all") && (
-                      <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
+                      <span className="w-2 h-2 bg-[#3B18DA] rounded-full animate-pulse"></span>
                     )}
                   </div>
                 </Button>
@@ -1201,7 +1206,131 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                           <th className="py-3 px-4 text-left font-semibold text-foreground">Last Restock</th>
                           <th className="py-3 px-4 text-left font-semibold text-foreground">Stock</th>
                           <th className="py-3 px-4 text-left font-semibold text-foreground">Price</th>
-                          <th className="py-3 px-4 text-left font-semibold text-foreground">Category</th>
+                          <th className="py-3 px-4 text-left font-semibold text-foreground">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8 px-2 -ml-2 font-semibold hover:bg-muted/80">
+                                Category
+                                <ArrowUpDown size={14} className="ml-1 text-muted-foreground" />
+                                {selectedCategory !== "all" && (
+                                  <span className="ml-1 w-2 h-2 bg-blue-500 rounded-full"></span>
+                                )}
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="w-56">
+                              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                Sort By
+                              </div>
+                              <DropdownMenuItem 
+                                onClick={() => {
+                                  if (sortBy === "category") {
+                                    setSortDirection(sortDirection === "asc" ? "desc" : "asc")
+                                  } else {
+                                    setSortBy("category")
+                                    setSortDirection("asc")
+                                  }
+                                }} 
+                                className={sortBy === "category" ? "bg-accent" : ""}
+                              >
+                                {sortBy === "category" && sortDirection === "asc" ? <ArrowUp size={14} className="mr-2" /> : 
+                                 sortBy === "category" && sortDirection === "desc" ? <ArrowDown size={14} className="mr-2" /> : 
+                                 <ArrowUpDown size={14} className="mr-2" />}
+                                Category Name {sortBy === "category" ? (sortDirection === "asc" ? "(A-Z)" : "(Z-A)") : ""}
+                                {sortBy === "category" && <Check size={12} className="ml-auto text-blue-600" />}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                onClick={() => {
+                                  if (sortBy === "name") {
+                                    setSortDirection(sortDirection === "asc" ? "desc" : "asc")
+                                  } else {
+                                    setSortBy("name")
+                                    setSortDirection("asc")
+                                  }
+                                }} 
+                                className={sortBy === "name" ? "bg-accent" : ""}
+                              >
+                                {sortBy === "name" && sortDirection === "asc" ? <ArrowUp size={14} className="mr-2" /> : 
+                                 sortBy === "name" && sortDirection === "desc" ? <ArrowDown size={14} className="mr-2" /> : 
+                                 <FileText size={14} className="mr-2" />}
+                                Product Name {sortBy === "name" ? (sortDirection === "asc" ? "(A-Z)" : "(Z-A)") : ""}
+                                {sortBy === "name" && <Check size={12} className="ml-auto text-blue-600" />}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                onClick={() => {
+                                  if (sortBy === "stock") {
+                                    setSortDirection(sortDirection === "asc" ? "desc" : "asc")
+                                  } else {
+                                    setSortBy("stock")
+                                    setSortDirection("desc")
+                                  }
+                                }} 
+                                className={sortBy === "stock" ? "bg-accent" : ""}
+                              >
+                                {sortBy === "stock" && sortDirection === "desc" ? <ArrowDown size={14} className="mr-2" /> : 
+                                 sortBy === "stock" && sortDirection === "asc" ? <ArrowUp size={14} className="mr-2" /> : 
+                                 <BarChart3 size={14} className="mr-2" />}
+                                Stock Level {sortBy === "stock" ? (sortDirection === "desc" ? "(High-Low)" : "(Low-High)") : ""}
+                                {sortBy === "stock" && <Check size={12} className="ml-auto text-blue-600" />}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                onClick={() => {
+                                  if (sortBy === "price") {
+                                    setSortDirection(sortDirection === "asc" ? "desc" : "asc")
+                                  } else {
+                                    setSortBy("price")
+                                    setSortDirection("asc")
+                                  }
+                                }} 
+                                className={sortBy === "price" ? "bg-accent" : ""}
+                              >
+                                {sortBy === "price" && sortDirection === "asc" ? <ArrowUp size={14} className="mr-2" /> : 
+                                 sortBy === "price" && sortDirection === "desc" ? <ArrowDown size={14} className="mr-2" /> : 
+                                 <DollarSign size={14} className="mr-2" />}
+                                Price {sortBy === "price" ? (sortDirection === "asc" ? "(Low-High)" : "(High-Low)") : ""}
+                                {sortBy === "price" && <Check size={12} className="ml-auto text-blue-600" />}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                onClick={() => {
+                                  if (sortBy === "lastRestock") {
+                                    setSortDirection(sortDirection === "asc" ? "desc" : "asc")
+                                  } else {
+                                    setSortBy("lastRestock")
+                                    setSortDirection("desc")
+                                  }
+                                }} 
+                                className={sortBy === "lastRestock" ? "bg-accent" : ""}
+                              >
+                                {sortBy === "lastRestock" && sortDirection === "desc" ? <ArrowDown size={14} className="mr-2" /> : 
+                                 sortBy === "lastRestock" && sortDirection === "asc" ? <ArrowUp size={14} className="mr-2" /> : 
+                                 <Calendar size={14} className="mr-2" />}
+                                Last Restock {sortBy === "lastRestock" ? (sortDirection === "desc" ? "(Newest)" : "(Oldest)") : ""}
+                                {sortBy === "lastRestock" && <Check size={12} className="ml-auto text-blue-600" />}
+                              </DropdownMenuItem>
+                              <div className="border-t my-1"></div>
+                              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                Filter Category
+                              </div>
+                              <div className="max-h-48 overflow-y-auto">
+                                <DropdownMenuItem onClick={() => setSelectedCategory("all")} className={selectedCategory === "all" ? "bg-accent" : ""}>
+                                  <Globe size={14} className="mr-2" />
+                                  All Categories
+                                  {selectedCategory === "all" && <Check size={12} className="ml-auto text-blue-600" />}
+                                </DropdownMenuItem>
+                                {categories.map((category) => (
+                                  <DropdownMenuItem 
+                                    key={category} 
+                                    onClick={() => setSelectedCategory(category)}
+                                    className={selectedCategory === category ? "bg-accent" : ""}
+                                  >
+                                    <Folder size={14} className="mr-2" />
+                                    {category}
+                                    {selectedCategory === category && <Check size={12} className="ml-auto text-blue-600" />}
+                                  </DropdownMenuItem>
+                                ))}
+                              </div>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </th>
                           <th className="py-3 px-4 text-center font-semibold text-foreground">Edit</th>
                           <th className="py-3 px-4 text-center font-semibold text-foreground">Batches</th>
                           <th className="py-3 px-4 text-center font-semibold text-foreground">Delete</th>

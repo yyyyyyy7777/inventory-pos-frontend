@@ -35,7 +35,9 @@ export function EmployeeManagement({ username, cabinet }: EmployeeManagementProp
   const [searchQuery, setSearchQuery] = useState("")
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
-  const [newEmployee, setNewEmployee] = useState({ name: "", username: "", password: "" })
+  const [newEmployee, setNewEmployee] = useState({ name: "", username: "", password: "", confirmPassword: "" })
+  const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({})
+  const [touchedFields, setTouchedFields] = useState<{ [key: string]: boolean }>({})
   const [editingEmployee, setEditingEmployee] = useState<any | null>(null)
   const [showCredentialsDialog, setShowCredentialsDialog] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<any | null>(null)
@@ -53,7 +55,69 @@ export function EmployeeManagement({ username, cabinet }: EmployeeManagementProp
       emp.username.toLowerCase().includes(searchQuery.toLowerCase()),
   )
 
+  // Password validation: min 8 chars, 1 uppercase, 1 lowercase, 1 number
+  const validatePassword = (password: string): string | null => {
+    if (password.length < 8) {
+      return "Password must be at least 8 characters long"
+    }
+    if (!/[a-z]/.test(password)) {
+      return "Password must contain at least one lowercase letter"
+    }
+    if (!/[A-Z]/.test(password)) {
+      return "Password must contain at least one uppercase letter"
+    }
+    if (!/\d/.test(password)) {
+      return "Password must contain at least one number"
+    }
+    return null
+  }
+
   const handleAddEmployee = async () => {
+    // Validate all required fields
+    const errors: { [key: string]: string } = {}
+    
+    if (!newEmployee.name.trim()) {
+      errors.name = "Full name is required"
+    }
+    if (!newEmployee.username.trim()) {
+      errors.username = "Username is required"
+    }
+    if (!newEmployee.password) {
+      errors.password = "Password is required"
+    }
+    if (!newEmployee.confirmPassword) {
+      errors.confirmPassword = "Please confirm the password"
+    }
+
+    // Mark all fields as touched
+    setTouchedFields({
+      name: true,
+      username: true,
+      password: true,
+      confirmPassword: true
+    })
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors)
+      addToast("Please fill in all required fields", "error")
+      return
+    }
+
+    // Validate password
+    const passwordError = validatePassword(newEmployee.password)
+    if (passwordError) {
+      setFormErrors({ password: passwordError })
+      addToast(passwordError, "error")
+      return
+    }
+
+    // Check if passwords match
+    if (newEmployee.password !== newEmployee.confirmPassword) {
+      setFormErrors({ confirmPassword: "Passwords do not match" })
+      addToast("Passwords do not match", "error")
+      return
+    }
+
     if (newEmployee.name && newEmployee.username && newEmployee.password) {
       try {
         await addEmployee({
@@ -73,7 +137,9 @@ export function EmployeeManagement({ username, cabinet }: EmployeeManagementProp
           cabinet: cabinet || "main"
         })
         
-        setNewEmployee({ name: "", username: "", password: "" })
+        setNewEmployee({ name: "", username: "", password: "", confirmPassword: "" })
+        setFormErrors({})
+        setTouchedFields({})
         setShowAddForm(false)
       } catch (error: any) {
         // Show specific error messages
@@ -81,8 +147,6 @@ export function EmployeeManagement({ username, cabinet }: EmployeeManagementProp
           addToast("Staff with this name already exists", "error")
         } else if (error.message.includes('Username already exists')) {
           addToast("Username already exists", "error")
-        } else if (error.message.includes('Password must be at least 6 characters')) {
-          addToast("Password must be at least 6 characters long", "error")
         } else {
           addToast("Failed to add employee", "error")
         }
@@ -222,7 +286,7 @@ export function EmployeeManagement({ username, cabinet }: EmployeeManagementProp
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
           <Input
-            placeholder="Search by name, username, or email..."
+            placeholder="Search by name or username..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-10"
@@ -245,29 +309,115 @@ export function EmployeeManagement({ username, cabinet }: EmployeeManagementProp
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <label className="text-sm font-medium text-foreground mb-2 block">Full Name</label>
+              <label className="text-sm font-medium text-foreground mb-2 block">
+                Full Name <span className="text-destructive">*</span>
+              </label>
               <Input
                 placeholder="Employee name"
                 value={newEmployee.name}
-                onChange={(e) => setNewEmployee({ ...newEmployee, name: e.target.value })}
+                onChange={(e) => {
+                  setNewEmployee({ ...newEmployee, name: e.target.value })
+                  if (touchedFields.name) {
+                    setFormErrors({ ...formErrors, name: e.target.value.trim() ? "" : "Full name is required" })
+                  }
+                }}
+                onBlur={() => {
+                  setTouchedFields({ ...touchedFields, name: true })
+                  if (!newEmployee.name.trim()) {
+                    setFormErrors({ ...formErrors, name: "Full name is required" })
+                  }
+                }}
+                className={formErrors.name && touchedFields.name ? "border-destructive focus:border-destructive" : ""}
               />
+              {formErrors.name && touchedFields.name && (
+                <p className="text-xs text-destructive mt-1">{formErrors.name}</p>
+              )}
             </div>
             <div>
-              <label className="text-sm font-medium text-foreground mb-2 block">Username</label>
+              <label className="text-sm font-medium text-foreground mb-2 block">
+                Username <span className="text-destructive">*</span>
+              </label>
               <Input
                 placeholder="Username for login"
                 value={newEmployee.username}
-                onChange={(e) => setNewEmployee({ ...newEmployee, username: e.target.value })}
+                onChange={(e) => {
+                  setNewEmployee({ ...newEmployee, username: e.target.value })
+                  if (touchedFields.username) {
+                    setFormErrors({ ...formErrors, username: e.target.value.trim() ? "" : "Username is required" })
+                  }
+                }}
+                onBlur={() => {
+                  setTouchedFields({ ...touchedFields, username: true })
+                  if (!newEmployee.username.trim()) {
+                    setFormErrors({ ...formErrors, username: "Username is required" })
+                  }
+                }}
+                className={formErrors.username && touchedFields.username ? "border-destructive focus:border-destructive" : ""}
               />
+              {formErrors.username && touchedFields.username && (
+                <p className="text-xs text-destructive mt-1">{formErrors.username}</p>
+              )}
             </div>
             <div>
-              <label className="text-sm font-medium text-foreground mb-2 block">Password</label>
+              <label className="text-sm font-medium text-foreground mb-2 block">
+                Password <span className="text-destructive">*</span>
+              </label>
               <Input
                 type="password"
                 placeholder="Initial password"
                 value={newEmployee.password}
-                onChange={(e) => setNewEmployee({ ...newEmployee, password: e.target.value })}
+                onChange={(e) => {
+                  setNewEmployee({ ...newEmployee, password: e.target.value })
+                  if (touchedFields.password) {
+                    const error = e.target.value ? validatePassword(e.target.value) : "Password is required"
+                    setFormErrors({ ...formErrors, password: error || "" })
+                  }
+                }}
+                onBlur={() => {
+                  setTouchedFields({ ...touchedFields, password: true })
+                  if (!newEmployee.password) {
+                    setFormErrors({ ...formErrors, password: "Password is required" })
+                  }
+                }}
+                className={formErrors.password && touchedFields.password ? "border-destructive focus:border-destructive" : ""}
               />
+              {formErrors.password && touchedFields.password ? (
+                <p className="text-xs text-destructive mt-1">{formErrors.password}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Min 8 chars: 1 uppercase, 1 lowercase, 1 number (e.g., Staff2024)
+                </p>
+              )}
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground mb-2 block">
+                Confirm Password <span className="text-destructive">*</span>
+              </label>
+              <Input
+                type="password"
+                placeholder="Re-enter password"
+                value={newEmployee.confirmPassword}
+                onChange={(e) => {
+                  setNewEmployee({ ...newEmployee, confirmPassword: e.target.value })
+                  if (touchedFields.confirmPassword) {
+                    const error = !e.target.value ? "Please confirm the password" : 
+                      e.target.value !== newEmployee.password ? "Passwords do not match" : ""
+                    setFormErrors({ ...formErrors, confirmPassword: error })
+                  }
+                }}
+                onBlur={() => {
+                  setTouchedFields({ ...touchedFields, confirmPassword: true })
+                  if (!newEmployee.confirmPassword) {
+                    setFormErrors({ ...formErrors, confirmPassword: "Please confirm the password" })
+                  } else if (newEmployee.confirmPassword !== newEmployee.password) {
+                    setFormErrors({ ...formErrors, confirmPassword: "Passwords do not match" })
+                  }
+                }}
+                className={formErrors.confirmPassword && touchedFields.confirmPassword ? "border-destructive focus:border-destructive" : ""}
+              />
+              {formErrors.confirmPassword && touchedFields.confirmPassword && (
+                <p className="text-xs text-destructive mt-1">{formErrors.confirmPassword}</p>
+              )}
             </div>
             <div className="flex gap-2">
               <Button onClick={handleAddEmployee} className="bg-primary hover:bg-primary/90 text-primary-foreground">

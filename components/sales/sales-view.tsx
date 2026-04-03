@@ -4,8 +4,9 @@ import React, { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Search, Download, Filter, Calendar, DollarSign, Package, ArrowUpDown, X, RefreshCw, Wrench, LayoutList, Users, Boxes, Settings, Building2, Home, Folder, FolderOpen, FileText, Globe, Banknote, Smartphone, CreditCard, Tag, FileSpreadsheet, BarChart3, Check, Printer, Archive, Store, Zap } from "lucide-react"
+import { Search, Download, Filter, Calendar, DollarSign, Package, ArrowUpDown, ArrowUp, ArrowDown, X, RefreshCw, Wrench, LayoutList, Users, Boxes, Settings, Building2, Home, Folder, FolderOpen, FileText, Globe, Banknote, Smartphone, CreditCard, Tag, FileSpreadsheet, BarChart3, Check, Printer, Archive, Store, Zap } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useSales } from "@/contexts/sales-context"
 import { useToast } from "@/contexts/toast-context"
@@ -22,6 +23,7 @@ const createShortSaleId = (fullId: string): string => {
 interface SalesViewProps {
   isAdmin: boolean
   cabinet: string
+  onNewSale?: () => void
 }
 
 const categories = [
@@ -34,7 +36,7 @@ const categories = [
   "Shirts", "Sleeves", "Sorcery Box", "Stickers", "Stuffed Toys", "Toploaders", "ZD Toys"
 ]
 
-export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
+export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
   const { getSalesByCabinet, refreshSales, addUnarchivedSales, archiveSalesInState } = useSales()
   const { addToast } = useToast()
   const [searchQuery, setSearchQuery] = useState("")
@@ -52,11 +54,14 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
   const [paymentMethodFilter, setPaymentMethodFilter] = useState("all")
   const [negotiationFilter, setNegotiationFilter] = useState("all")
   const [sortBy, setSortBy] = useState("date")
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
   const [timePeriod, setTimePeriod] = useState("all")
   const [showManageArchives, setShowManageArchives] = useState(false)
   const [manageArchiveMonth, setManageArchiveMonth] = useState("")
   const [expandedSales, setExpandedSales] = useState<Set<string>>(new Set())
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string | null }>({ open: false, id: null })
+  const [selectedSale, setSelectedSale] = useState<any | null>(null)
+  const [showSaleDetails, setShowSaleDetails] = useState(false)
 
   const sales = getSalesByCabinet(cabinet)
   
@@ -96,14 +101,11 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
     return () => { console.error = originalConsoleError; };
   }, []);
 
-  // Print sales list
+  // View sale details in modal
   const handleViewSaleDetails = (sale: any) => {
-    const items = sale.items.map((item: any) => 
-      `${item.isDiscounted ? '[DISCOUNTED] ' : ''}${item.productName} (${item.quantity}x) - ₱${item.price.toLocaleString()}${item.isDiscounted ? ` (was ₱${item.originalPrice?.toLocaleString()})` : ''}`
-    ).join('\n');
-    
-    alert(`Sale Details:\n\nID: ${createShortSaleId(sale.id)}\nDate: ${new Date(sale.date).toLocaleDateString()}\nStaff: ${sale.staffName}\nPayment: ${sale.paymentMethod}\nTotal: ₱${sale.amount.toLocaleString()}\n\nItems:\n${items}`);
-  };
+    setSelectedSale(sale)
+    setShowSaleDetails(true)
+  }
 
   const handlePrint = () => {
     const printContent = `
@@ -278,12 +280,14 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
       return matchesSearch && matchesCategory && matchesAmount && matchesSoldAt && matchesPaymentMethod && matchesNegotiation && matchesDate;
     })
     .sort((a: any, b: any) => {
+      let comparison = 0;
       switch (sortBy) {
-        case "date": return new Date(b.date).getTime() - new Date(a.date).getTime();
-        case "amount": return b.amount - a.amount;
-        case "staff": return a.staffName.localeCompare(b.staffName);
+        case "date": comparison = new Date(b.date).getTime() - new Date(a.date).getTime(); break;
+        case "amount": comparison = b.amount - a.amount; break;
+        case "staff": comparison = a.staffName.localeCompare(b.staffName); break;
         default: return 0;
       }
+      return sortDirection === "asc" ? -comparison : comparison;
     });
 
   const handleExportReport = async () => {
@@ -414,9 +418,9 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
           <div className="w-full lg:w-80 bg-white border rounded-lg shadow-sm p-3 h-fit lg:sticky lg:top-3 order-1 lg:order-1 mb-4 lg:mb-0">
             <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-200">
               <div className="flex items-center gap-2">
-                <Filter size={14} className="text-violet-600" />
+                <Filter size={14} className="text-[#3B18DA]" />
                 <h3 className="font-semibold text-gray-800 text-sm">Sales Filters</h3>
-                <span className="bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full text-xs">
+                <span className="bg-[#3B18DA]/10 text-[#3B18DA] px-1.5 py-0.5 rounded-full text-xs">
                   {[selectedCategory !== "all" ? 1 : 0, (dateFilter.startDate || dateFilter.endDate) ? 1 : 0, dateFilter.year !== "all" ? 1 : 0, amountFilter !== "all" ? 1 : 0, soldAtFilter !== "all" ? 1 : 0, paymentMethodFilter !== "all" ? 1 : 0, negotiationFilter !== "all" ? 1 : 0, searchQuery !== "" ? 1 : 0].reduce((a, b) => a + b, 0)}
                 </span>
               </div>
@@ -424,7 +428,6 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
                 <X size={12} />
               </Button>
             </div>
-
             <div className="space-y-3">
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-gray-700 flex items-center gap-1">
@@ -520,16 +523,65 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
                 <label className="text-xs font-semibold text-gray-700 flex items-center gap-1">
                   <ArrowUpDown size={10} className="text-indigo-600" /> Sort By
                 </label>
-                <Select value={sortBy} onValueChange={setSortBy}>
-                  <SelectTrigger className="h-7 border-2 focus:border-indigo-500 text-xs">
-                    <SelectValue placeholder="Sort" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="date"><span className="flex items-center gap-2"><Calendar size={14} /> Date</span></SelectItem>
-                    <SelectItem value="amount"><span className="flex items-center gap-2"><DollarSign size={14} /> Amount</span></SelectItem>
-                    <SelectItem value="staff"><span className="flex items-center gap-2"><Users size={14} /> Staff</span></SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="space-y-1">
+                  <Button
+                    variant={sortBy === "date" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      if (sortBy === "date") {
+                        setSortDirection(sortDirection === "asc" ? "desc" : "asc")
+                      } else {
+                        setSortBy("date")
+                        setSortDirection("desc")
+                      }
+                    }}
+                    className="w-full justify-between h-7 text-xs"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Calendar size={12} />
+                      Date
+                    </span>
+                    {sortBy === "date" && (sortDirection === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}
+                  </Button>
+                  <Button
+                    variant={sortBy === "amount" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      if (sortBy === "amount") {
+                        setSortDirection(sortDirection === "asc" ? "desc" : "asc")
+                      } else {
+                        setSortBy("amount")
+                        setSortDirection("desc")
+                      }
+                    }}
+                    className="w-full justify-between h-7 text-xs"
+                  >
+                    <span className="flex items-center gap-2">
+                      <DollarSign size={12} />
+                      Amount
+                    </span>
+                    {sortBy === "amount" && (sortDirection === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}
+                  </Button>
+                  <Button
+                    variant={sortBy === "staff" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      if (sortBy === "staff") {
+                        setSortDirection(sortDirection === "asc" ? "desc" : "asc")
+                      } else {
+                        setSortBy("staff")
+                        setSortDirection("asc")
+                      }
+                    }}
+                    className="w-full justify-between h-7 text-xs"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Users size={12} />
+                      Staff
+                    </span>
+                    {sortBy === "staff" && (sortDirection === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}
+                  </Button>
+                </div>
               </div>
 
               <div className="space-y-1">
@@ -579,7 +631,7 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
                 </div>
               </div>
 
-              <Button variant="outline" onClick={() => { setSelectedCategory("all"); setDateFilter({ year: "all", month: "all", day: "all", startDate: "", endDate: "" }); setAmountFilter("all"); setSoldAtFilter("all"); setPaymentMethodFilter("all"); setNegotiationFilter("all"); setSortBy("date"); setTimePeriod("all"); setSearchQuery(""); addToast("All filters cleared", "success"); }} className="w-full h-7 text-gray-500 hover:text-gray-700 text-xs">
+              <Button variant="outline" onClick={() => { setSelectedCategory("all"); setDateFilter({ year: "all", month: "all", day: "all", startDate: "", endDate: "" }); setAmountFilter("all"); setSoldAtFilter("all"); setPaymentMethodFilter("all"); setNegotiationFilter("all"); setSortBy("date"); setSortDirection("desc"); setTimePeriod("all"); setSearchQuery(""); addToast("All filters cleared", "success"); }} className="w-full h-7 text-gray-500 hover:text-gray-700 text-xs">
                 Clear All Filters
               </Button>
             </div>
@@ -597,14 +649,14 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
               <Button
                 variant="outline"
                 onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-                className="h-8 px-3 rounded-md border-2 border-violet-300 hover:bg-violet-50 text-violet-700 text-xs font-medium"
+                className="h-8 px-3 rounded-md border-2 border-[#3B18DA] hover:bg-[#3B18DA]/10 text-[#3B18DA] text-xs font-medium"
                 title="Toggle filters panel"
               >
                 <div className="flex items-center gap-1">
-                  <Filter size={12} />
+                  <Filter size={12} className="text-[#3B18DA]" />
                   Filters
                   {(selectedCategory !== "all" || (dateFilter.startDate || dateFilter.endDate) || dateFilter.year !== "all" || amountFilter !== "all" || soldAtFilter !== "all" || paymentMethodFilter !== "all" || negotiationFilter !== "all" || timePeriod !== "all") && (
-                    <span className="w-2 h-2 bg-violet-500 rounded-full animate-pulse"></span>
+                    <span className="w-2 h-2 bg-[#3B18DA] rounded-full animate-pulse"></span>
                   )}
                 </div>
               </Button>
@@ -700,7 +752,7 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
             </CardHeader>
             <CardContent>
               {filteredSales.length === 0 ? (
-                <EmptyState icon={<DollarSign size={48} className="text-gray-400" />} title="No sales found" description={searchQuery ? "Try adjusting your search criteria" : "Start by making your first sale"} action={{ label: "New Sale", onClick: () => {} }} />
+                <EmptyState icon={<DollarSign size={48} className="text-gray-400" />} title="No sales found" description={searchQuery ? "Try adjusting your search criteria" : "Start by making your first sale"} action={{ label: "New Sale", onClick: () => onNewSale?.() }} />
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[800px]">
@@ -709,6 +761,42 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
                         <th className="py-4 px-5 text-left font-semibold text-foreground">Date</th>
                         <th className="py-4 px-5 text-left font-semibold text-foreground">Sale ID</th>
                         <th className="py-4 px-5 text-left font-semibold text-foreground">Products</th>
+                        <th className="py-4 px-5 text-left font-semibold text-foreground">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8 px-2 -ml-2 font-semibold hover:bg-muted/80">
+                                Category
+                                <ArrowUpDown size={14} className="ml-1 text-muted-foreground" />
+                                {selectedCategory !== "all" && (
+                                  <span className="ml-1 w-2 h-2 bg-violet-500 rounded-full"></span>
+                                )}
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="w-56">
+                              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                Filter Category
+                              </div>
+                              <div className="max-h-48 overflow-y-auto">
+                                <DropdownMenuItem onClick={() => setSelectedCategory("all")} className={selectedCategory === "all" ? "bg-accent" : ""}>
+                                  <Globe size={14} className="mr-2" />
+                                  All Categories
+                                  {selectedCategory === "all" && <Check size={12} className="ml-auto text-violet-600" />}
+                                </DropdownMenuItem>
+                                {categories.map((category) => (
+                                  <DropdownMenuItem 
+                                    key={category} 
+                                    onClick={() => setSelectedCategory(category)}
+                                    className={selectedCategory === category ? "bg-accent" : ""}
+                                  >
+                                    <Folder size={14} className="mr-2" />
+                                    {category}
+                                    {selectedCategory === category && <Check size={12} className="ml-auto text-violet-600" />}
+                                  </DropdownMenuItem>
+                                ))}
+                              </div>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </th>
                         <th className="py-4 px-5 text-left font-semibold text-foreground">Staff</th>
                         <th className="py-4 px-5 text-center font-semibold text-foreground">Payment Method</th>
                         <th className="py-4 px-5 text-right font-semibold text-foreground">Amount</th>
@@ -763,6 +851,20 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
                               )}
                             </div>
                           </td>
+                          <td className="py-4 px-5 text-muted-foreground text-sm">
+                            <div className="flex flex-wrap gap-1">
+                              {(Array.from(new Set(sale.items.map((item: any) => item.category))) as string[]).slice(0, 2).map((cat, idx) => (
+                                <span key={idx} className="px-2 py-0.5 bg-violet-100 text-violet-700 rounded text-xs">
+                                  {cat}
+                                </span>
+                              ))}
+                              {sale.items.length > 2 && (
+                                <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">
+                                  +{sale.items.length - 2}
+                                </span>
+                              )}
+                            </div>
+                          </td>
                           <td className="py-4 px-5 text-muted-foreground text-sm">{sale.staffName}</td>
                           <td className="py-4 px-5 text-muted-foreground text-sm text-center">{sale.paymentMethod}</td>
                           <td className="py-4 px-5 text-right font-medium text-foreground">₱{sale.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
@@ -783,8 +885,8 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
                             )}
                           </td>
                           <td className="py-4 px-5 text-center">
-                            <Button variant="ghost" size="sm" className="text-violet-600 hover:bg-violet-10 p-2" onClick={() => handleViewSaleDetails(sale)} title="View Sale Details">
-                              <Store size={16} />
+                            <Button variant="ghost" size="sm" className="text-[#3B18DA] hover:bg-[#3B18DA]/10 p-2" onClick={() => handleViewSaleDetails(sale)} title="View Sale Details">
+                              <Store size={16} className="text-[#3B18DA]" />
                             </Button>
                           </td>
                         </tr>
@@ -849,6 +951,95 @@ export function SalesView({ isAdmin, cabinet }: SalesViewProps) {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Sale Details Dialog */}
+      <Dialog open={showSaleDetails} onOpenChange={setShowSaleDetails}>
+        <DialogContent className="max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-[#3B18DA]">
+              <Store size={20} className="text-[#3B18DA]" />
+              Sale Details
+            </DialogTitle>
+            <DialogDescription>
+              Transaction information for {selectedSale && createShortSaleId(selectedSale.id)}
+            </DialogDescription>
+          </DialogHeader>
+          {selectedSale && (
+            <div className="space-y-4">
+              {/* Sale Info */}
+              <div className="bg-[#3B18DA]/10 rounded-lg p-4 space-y-2 border border-[#3B18DA]/20">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Date:</span>
+                  <span className="font-medium">{new Date(selectedSale.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Staff:</span>
+                  <span className="font-medium">{selectedSale.staffName}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Payment:</span>
+                  <span className="font-medium flex items-center gap-1">
+                    {selectedSale.paymentMethod === 'Cash' ? <Banknote size={14} className="text-[#3B18DA]" /> : <Smartphone size={14} className="text-[#3B18DA]" />}
+                    {selectedSale.paymentMethod}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Location:</span>
+                  <span className={`px-2 py-0.5 rounded text-xs ${selectedSale.soldAt === 'physical' ? 'bg-[#3B18DA]/10 text-[#3B18DA]' : 'bg-[#3B18DA]/10 text-[#3B18DA]'}`}>
+                    {selectedSale.soldAt === 'physical' ? 'Physical Store' : 'Online'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Items List */}
+              <div>
+                <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
+                  <Package size={16} className="text-gray-500" />
+                  Items ({selectedSale.items.length})
+                </h4>
+                <div className="space-y-2 max-h-48 overflow-y-auto border rounded-lg p-3">
+                  {selectedSale.items.map((item: any, index: number) => (
+                    <div key={index} className="flex justify-between items-start py-2 border-b border-gray-100 last:border-0">
+                      <div>
+                        <div className="font-medium text-sm">{item.productName}</div>
+                        <div className="text-xs text-gray-500">
+                          {item.quantity} × ₱{item.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {item.isDiscounted && (
+                            <span className="ml-2 text-orange-600 bg-orange-100 px-1.5 py-0.5 rounded text-xs">DISCOUNTED</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="font-semibold text-sm">
+                        ₱{(item.price * item.quantity).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Totals */}
+              <div className="border-t pt-3 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Subtotal:</span>
+                  <span>₱{selectedSale.items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex justify-between text-lg font-bold">
+                  <span>Total:</span>
+                  <span className="text-[#3B18DA]">₱{selectedSale.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+              </div>
+
+              {/* Close Button */}
+              <Button 
+                onClick={() => setShowSaleDetails(false)} 
+                className="w-full bg-[#3B18DA] hover:bg-[#2A1199] text-white"
+              >
+                Close
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <ConfirmDialog open={deleteConfirm.open} title="Delete Sale" description="Are you sure you want to delete this sale? This action cannot be undone." confirmText="Delete" cancelText="Cancel" isDangerous={true} onConfirm={confirmDelete} onCancel={() => setDeleteConfirm({ open: false, id: null })} />

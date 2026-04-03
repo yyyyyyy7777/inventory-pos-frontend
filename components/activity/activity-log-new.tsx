@@ -111,9 +111,9 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
         <div className="w-full lg:w-80 bg-white border rounded-lg shadow-sm p-3 h-fit lg:sticky lg:top-3 order-1 lg:order-1 mb-4 lg:mb-0">
           <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-200">
             <div className="flex items-center gap-2">
-              <Filter size={14} className="text-primary" />
+              <Filter size={14} className="text-[#3B18DA]" />
               <h3 className="font-semibold text-gray-800 text-sm">Activity Filters</h3>
-              <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded-full text-xs">
+              <span className="bg-[#3B18DA]/10 text-[#3B18DA] px-1.5 py-0.5 rounded-full text-xs">
                 {[selectedCategory !== "all" ? 1 : 0, (dateFilter.startDate || dateFilter.endDate) ? 1 : 0, searchQuery !== "" ? 1 : 0].reduce((a, b) => a + b, 0)}
               </span>
             </div>
@@ -220,13 +220,13 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
               <Button
                 variant="outline"
                 onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-                className="h-8 px-3 rounded-md border-2 border-primary/30 hover:bg-primary/10 text-primary text-xs font-medium"
+                className="h-8 px-3 rounded-md border-2 border-[#3B18DA] hover:bg-[#3B18DA]/10 text-[#3B18DA] text-xs font-medium"
               >
                 <div className="flex items-center gap-1">
-                  <Filter size={12} />
+                  <Filter size={12} className="text-[#3B18DA]" />
                   Filters
                   {(selectedCategory !== "all" || (dateFilter.startDate || dateFilter.endDate) || searchQuery !== "") && (
-                    <span className="w-2 h-2 bg-primary rounded-full animate-pulse"></span>
+                    <span className="w-2 h-2 bg-[#3B18DA] rounded-full animate-pulse"></span>
                   )}
                 </div>
               </Button>

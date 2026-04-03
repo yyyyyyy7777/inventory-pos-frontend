@@ -51,68 +51,72 @@ export default function Home() {
     }
   }, [])
 
-  // Check for previous session on mount (handles reloads and closes)
+  // Check for existing session on mount and restore it
   useEffect(() => {
-    const checkPreviousSession = async () => {
+    const checkExistingSession = async () => {
       try {
-        // Use localStorage instead of sessionStorage - it persists through reloads
         const stored = localStorage.getItem(STORAGE_KEY)
-        console.log('Checking for previous session:', stored);
+        console.log('Checking for existing session:', stored);
         if (stored) {
-          const previousUser = JSON.parse(stored)
-          if (previousUser?.username) {
-            console.log('Found previous session for:', previousUser.username);
-            // Log the logout activity for the interrupted session
-            try {
-              await logLogoutActivity(previousUser.username);
-              console.log('Successfully logged logout for:', previousUser.username);
-            } catch (err) {
-              console.error('Failed to log reload logout:', err);
-            }
-            // Clear the old session after logging
+          const sessionData = JSON.parse(stored)
+          if (sessionData?.username && sessionData?.role) {
+            console.log('Restoring session for:', sessionData.username);
+            // Restore the user session
+            setCurrentUser({ username: sessionData.username, role: sessionData.role })
+          } else {
+            // Invalid session data, clear it
             localStorage.removeItem(STORAGE_KEY)
-            console.log('Cleared previous session for:', previousUser.username);
           }
         }
       } catch (error) {
-        console.error('Error checking previous session:', error)
+        console.error('Error checking session:', error)
+        localStorage.removeItem(STORAGE_KEY)
       } finally {
         setIsLoading(false)
       }
     }
 
-    checkPreviousSession()
-  }, [logLogoutActivity])
+    checkExistingSession()
+  }, [])
 
-  // Store current user in localStorage and handle page unload
+  // Store current user in localStorage when it changes
   useEffect(() => {
     if (currentUser) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(currentUser))
-
-      // Handle page unload (reload/close) - DON'T clear localStorage here, let checkPreviousSession handle it
-      const handleBeforeUnload = () => {
-        // Try to log logout, but localStorage will persist for checkPreviousSession to find
-        const logoutData = JSON.stringify({ username: currentUser.username })
-        
-        try {
-          fetch('/api/auth/logout', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: logoutData,
-            keepalive: true
-          }).catch(() => {
-            navigator.sendBeacon('/api/auth/logout', new Blob([logoutData], { type: 'application/json' }))
-          })
-        } catch (e) {
-          navigator.sendBeacon('/api/auth/logout', new Blob([logoutData], { type: 'application/json' }))
-        }
-      }
-
-      window.addEventListener('beforeunload', handleBeforeUnload)
-      return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+      console.log('Session saved for:', currentUser.username);
     } else {
-      localStorage.removeItem(STORAGE_KEY)
+      // Only remove if explicitly logged out (not on page refresh)
+      // The beforeunload handler will manage refresh scenarios
     }
+  }, [currentUser])
+
+  // Handle page unload for logout logging (but don't clear session on refresh)
+  useEffect(() => {
+    if (!currentUser) return
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Only log logout if this is a real page close, not a refresh
+      // We can't reliably detect refresh vs close, so we'll log it but keep session
+      // The next page load will restore the session
+      
+      const logoutData = JSON.stringify({ username: currentUser.username })
+      
+      try {
+        fetch('/api/auth/logout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: logoutData,
+          keepalive: true
+        }).catch(() => {
+          navigator.sendBeacon('/api/auth/logout', new Blob([logoutData], { type: 'application/json' }))
+        })
+      } catch (e) {
+        navigator.sendBeacon('/api/auth/logout', new Blob([logoutData], { type: 'application/json' }))
+      }
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [currentUser])
 
   const handleLogin = (username: string, role: UserRole) => {
@@ -130,8 +134,10 @@ export default function Home() {
         console.error('Failed to log logout:', error)
       }
     }
+    // Clear user state and storage
     setCurrentUser(null)
     localStorage.removeItem(STORAGE_KEY)
+    console.log('Session cleared - user logged out');
   }
 
   if (isLoading) {

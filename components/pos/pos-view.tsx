@@ -997,16 +997,16 @@ export function POSView({ cabinet, username }: POSViewProps) {
                                       {item.quantity} × 
                                       {item.isDiscounted ? (
                                         <span>
-                                          <span className="line-through text-gray-400">₱{item.originalPrice?.toLocaleString()}</span>
-                                          <span className="text-orange-600 font-medium ml-1">₱{item.unitPrice.toLocaleString()}</span>
+                                          <span className="line-through text-gray-400">₱{item.originalPrice?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                          <span className="text-orange-600 font-medium ml-1">₱{item.unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                         </span>
                                       ) : (
-                                        <span>₱{item.unitPrice.toLocaleString()}</span>
+                                        <span>₱{item.unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                       )}
                                     </div>
                                   </div>
                                   <div className="text-right font-semibold text-xs sm:text-sm text-gray-900 min-w-16 sm:min-w-20">
-                                    ₱{item.totalPrice.toLocaleString()}
+                                    ₱{item.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                   </div>
                                 </div>
                               ))
@@ -1028,17 +1028,17 @@ export function POSView({ cabinet, username }: POSViewProps) {
                                         {item.quantity} × 
                                         {item.isDiscounted ? (
                                           <span>
-                                            <span className="line-through text-gray-400">₱{item.originalPrice.toLocaleString()}</span>
-                                            <span className="text-orange-600 font-medium ml-1">₱{item.price.toLocaleString()}</span>
-                                            <span className="text-green-600 ml-1">(Save ₱{((item.originalPrice - item.price) * item.quantity).toLocaleString()})</span>
+                                            <span className="line-through text-gray-400">₱{item.originalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                            <span className="text-orange-600 font-medium ml-1">₱{item.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                            <span className="text-green-600 ml-1">(Save ₱{((item.originalPrice - item.price) * item.quantity).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</span>
                                           </span>
                                         ) : (
-                                          <span>₱{item.price.toLocaleString()}</span>
+                                          <span>₱{item.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                         )}
                                       </div>
                                     </div>
                                     <div className="text-right font-semibold text-xs sm:text-sm text-gray-900 min-w-16 sm:min-w-20">
-                                      ₱{itemTotal.toLocaleString()}
+                                      ₱{itemTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </div>
                                   </div>
                                 );
@@ -1054,21 +1054,21 @@ export function POSView({ cabinet, username }: POSViewProps) {
                           <div className="flex justify-between text-xs sm:text-sm">
                             <span className="text-gray-700">Subtotal:</span>
                             <span className="text-gray-900">
-                              ₱{(showReceipt && currentSaleData ? currentSaleData.subtotal : total).toLocaleString()}
+                              ₱{(showReceipt && currentSaleData ? currentSaleData.subtotal : total).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </span>
                           </div>
                           {(taxEnabled || (showReceipt && currentSaleData && currentSaleData.tax > 0)) && (
                             <div className="flex justify-between text-xs sm:text-sm">
                               <span className="text-gray-700">Tax ({showReceipt && currentSaleData ? (currentSaleData.tax / currentSaleData.subtotal * 100).toFixed(1) : taxRate}%):</span>
                               <span className="text-gray-900">
-                                ₱{(showReceipt && currentSaleData ? currentSaleData.tax : Math.round(total * taxRate / 100)).toLocaleString()}
+                                ₱{(showReceipt && currentSaleData ? currentSaleData.tax : Math.round(total * taxRate / 100)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </span>
                             </div>
                           )}
                           <div className="flex justify-between text-sm sm:text-lg font-bold">
                             <span className="text-gray-900">TOTAL:</span>
                             <span className="text-gray-900">
-                              ₱{(showReceipt && currentSaleData ? currentSaleData.total : Math.round(total * (1 + (taxEnabled ? taxRate / 100 : 0)))).toLocaleString()}
+                              ₱{(showReceipt && currentSaleData ? currentSaleData.total : Math.round(total * (1 + (taxEnabled ? taxRate / 100 : 0)))).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </span>
                           </div>
                         </div>
