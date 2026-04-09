@@ -1,12 +1,26 @@
 import { NextResponse } from 'next/server';
-import { getAllSales, createSale } from '@/lib/pg-direct';
+import { getAllSales, getSalesByDateRange, createSale } from '@/lib/pg-direct';
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const cabinet = searchParams.get('cabinet') || 'main';
+    const cabinet = searchParams.get('cabinet') || undefined;
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
 
-    const sales = await getAllSales(cabinet);
+    let sales;
+    
+    // If date range is provided, use date range query
+    if (startDate && endDate) {
+      sales = await getSalesByDateRange(
+        new Date(startDate), 
+        new Date(endDate), 
+        cabinet
+      );
+    } else {
+      // Otherwise use the standard getAllSales
+      sales = await getAllSales(cabinet || 'main');
+    }
 
     return NextResponse.json(sales);
   } catch (error) {
@@ -23,7 +37,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     console.log('Received sale request:', body);
     
-    const { items, amount, paymentMethod, staffName, cabinet, soldAt, referenceNumber } = body;
+    const { items, amount, paymentMethod, staffName, cabinet, soldAt, referenceNumber, bypassStockCheck, forceCreate, emergencySync } = body;
 
     // Validate input
     if (!items || items.length === 0) {
@@ -59,6 +73,9 @@ export async function POST(request: Request) {
       cabinet,
       soldAt,
       referenceNumber,
+      bypassStockCheck,
+      forceCreate,
+      emergencySync,
       items
     });
 

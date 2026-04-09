@@ -4,10 +4,13 @@ import React, { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Search, Filter, Calendar, User, Activity, RefreshCw, X, Package, DollarSign, Users, Boxes, Settings, LayoutList, ArrowUpDown } from "lucide-react"
+import { Search, Filter, Calendar, User, Activity, RefreshCw, X, Package, DollarSign, Users, Boxes, Settings, LayoutList, ArrowUpDown, Archive, FolderOpen } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useActivity } from "@/contexts/activity-context"
 import { formatToLocalTime } from "@/lib/datetime-utils"
+import { useToast } from "@/contexts/toast-context"
+import { useOffline } from "@/contexts/offline-context"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 const activityCategories = [
   { value: "all", label: "All Activities", icon: LayoutList },
@@ -19,7 +22,9 @@ const activityCategories = [
 ]
 
 export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
-  const { getActivities, loading, refreshActivities } = useActivity()
+  const { getActivities, loading, refreshActivities, archiveActivities, unarchiveActivities } = useActivity()
+  const { addToast } = useToast()
+  const { isOnline } = useOffline()
   const [searchQuery, setSearchQuery] = useState("")
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState("all")
@@ -28,6 +33,10 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
     year: "all", month: "all", day: "all", startDate: "", endDate: "" 
   })
   const [mounted, setMounted] = useState(false)
+  const [showManageArchives, setShowManageArchives] = useState(false)
+  const [manageArchiveMonth, setManageArchiveMonth] = useState("")
+  const [isArchiving, setIsArchiving] = useState(false)
+  const [archiveStatus, setArchiveStatus] = useState<{activeCount: number, archivedCount: number, totalCount: number} | null>(null)
 
   const activities = getActivities()
 
@@ -76,12 +85,163 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
     return new Date(timestamp).getTime();
   }
 
+  const checkArchiveStatus = async (month: string) => {
+    if (!month) {
+      setArchiveStatus(null);
+      return;
+    }
+
+    // If offline, calculate status from local activities
+    if (!isOnline) {
+      try {
+        const activities = getActivities();
+        const [year, monthNum] = month.split('-').map(Number);
+        const startDate = new Date(year, monthNum - 1, 1);
+        const endDate = new Date(year, monthNum, 0, 23, 59, 59, 999);
+
+        const monthActivities = activities.filter(activity => {
+          const activityDate = new Date(activity.timestamp);
+          return activityDate >= startDate && activityDate <= endDate;
+        });
+
+        setArchiveStatus({
+          activeCount: monthActivities.length,
+          archivedCount: 0, // Offline mode doesn't track archived activities
+          totalCount: monthActivities.length
+        });
+
+        addToast("Archive status calculated from local data (offline mode)", "info");
+      } catch (error) {
+        console.error('Error calculating offline archive status:', error);
+        setArchiveStatus(null);
+      }
+      return;
+    }
+
+    // Online mode: use API
+    try {
+      const statusResponse = await fetch('/api/activities/archive-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          month: month,
+          cabinet: 'all'
+        }),
+      });
+
+      if (statusResponse.ok) {
+        const statusData = await statusResponse.json();
+        setArchiveStatus(statusData.monthActivities);
+      } else {
+        setArchiveStatus(null);
+      }
+    } catch (error) {
+      console.error('Error checking archive status:', error);
+      setArchiveStatus(null);
+    }
+  };
+
+  const handleArchiveActivities = async (action: "archive" | "unarchive") => {
+    if (!manageArchiveMonth) {
+      addToast("Please select a month", "error");
+      return;
+    }
+
+    // If offline, queue the operation for later sync
+    if (!isOnline) {
+      addToast(`${action === 'archive' ? 'Archive' : 'Unarchive'} operation queued for when you're back online`, "info");
+      
+      // Store the operation in localStorage for later sync
+      const queuedOperation = {
+        action,
+        month: manageArchiveMonth,
+        timestamp: Date.now()
+      };
+      
+      const existingQueue = JSON.parse(localStorage.getItem('queuedArchiveOperations') || '[]');
+      existingQueue.push(queuedOperation);
+      localStorage.setItem('queuedArchiveOperations', JSON.stringify(existingQueue));
+      
+      // Close dialog
+      setManageArchiveMonth('');
+      setShowManageArchives(false);
+      setIsArchiving(false);
+      return;
+    }
+
+    setIsArchiving(true);
+    
+    try {
+      // First check the actual database status via API
+      const statusResponse = await fetch('/api/activities/archive-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          month: manageArchiveMonth,
+          cabinet: 'all' // Activities are not cabinet-specific
+        }),
+      });
+      
+      if (!statusResponse.ok) {
+        throw new Error('Failed to check archive status');
+      }
+      
+      const statusData = await statusResponse.json();
+      console.log('Archive status check:', statusData);
+      
+      // Check if there are any activities in the selected month
+      const totalActivities = statusData.monthActivities?.totalCount || 0;
+      
+      if (totalActivities === 0) {
+        addToast(`No activities found for ${manageArchiveMonth}`, "info");
+        return;
+      }
+      
+      if (action === 'archive' && statusData.monthActivities?.activeCount === 0) {
+        addToast(`No active activities to archive for ${manageArchiveMonth}. All activities are already archived.`, "info");
+        return;
+      }
+      
+      if (action === 'unarchive' && statusData.monthActivities?.archivedCount === 0) {
+        addToast(`No archived activities to unarchive for ${manageArchiveMonth}. All activities are already active.`, "info");
+        return;
+      }
+      
+      // Perform the archive/unarchive operation
+      let result;
+      if (action === 'unarchive') {
+        result = await unarchiveActivities('all', manageArchiveMonth);
+      } else {
+        result = await archiveActivities('all', manageArchiveMonth);
+      }
+      
+      // Show success toast ONLY after the archive operation completes
+      const count = action === 'archive' 
+        ? statusData.monthActivities?.activeCount || 0
+        : statusData.monthActivities?.archivedCount || 0;
+      
+      addToast(`${count} activities ${action}d successfully!`, "success");
+      
+      // Close dialog and reset
+      setManageArchiveMonth('');
+      setShowManageArchives(false);
+      
+    } catch (error) {
+      console.error(`Error ${action}ing activities:`, error);
+      addToast(`Failed to ${action} activities: ${error instanceof Error ? error.message : 'Unknown error'}`, "error");
+      // Refresh on error to restore correct state
+      refreshActivities();
+    } finally {
+      setIsArchiving(false);
+    }
+  };
+
   const filteredActivities = activities
     .filter(activity => {
       const searchLower = searchQuery.toLowerCase()
       const matchesSearch = activity.username.toLowerCase().includes(searchLower) ||
              activity.activity.toLowerCase().includes(searchLower) ||
-             activity.details.toLowerCase().includes(searchLower)
+             (activity.details?.toLowerCase().includes(searchLower) || false)
       const matchesCategory = selectedCategory === "all" || activity.category === selectedCategory
       
       // Date filter - skip during SSR to avoid timezone issues
@@ -235,6 +395,13 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
               <RefreshCw className="w-4 h-4 mr-2" />
               Refresh
             </Button>
+            <Button variant="outline" onClick={() => {
+              setShowManageArchives(true);
+              setArchiveStatus(null);
+              setManageArchiveMonth('');
+            }} className="h-8 px-3 rounded-md border-2 hover:bg-gray-50 text-xs">
+              <Archive size={14} className="mr-1" /> <span className="hidden sm:inline">Archive</span>
+            </Button>
           </div>
 
           {/* Activity Log Card */}
@@ -280,6 +447,92 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
           </Card>
         </div>
       </div>
+    {/* Archive Management Dialog */}
+      {showManageArchives && (
+        <Dialog open={showManageArchives} onOpenChange={(open) => {
+              setShowManageArchives(open);
+              if (!open) {
+                setArchiveStatus(null);
+                setManageArchiveMonth('');
+              }
+            }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Manage Activity Archives</DialogTitle>
+              <DialogDescription>
+                Archive or unarchive activities by month to manage your activity log visibility.
+                {!isOnline && (
+                  <span className="text-orange-600 font-medium"> (Offline Mode - Operations will be queued)</span>
+                )}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium mb-2 block">Select Month</label>
+                <Input 
+                  type="month" 
+                  value={manageArchiveMonth} 
+                  onChange={(e) => {
+                    setManageArchiveMonth(e.target.value);
+                    checkArchiveStatus(e.target.value);
+                  }} 
+                  className="w-full" 
+                />
+              </div>
+              
+              {/* Activity Status Display */}
+              {archiveStatus && (
+                <div className="bg-gray-50 p-3 rounded-lg">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-2">Activity Summary for {manageArchiveMonth}</h4>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div className="text-center">
+                      <div className="font-semibold text-blue-600">{archiveStatus.activeCount}</div>
+                      <div className="text-gray-600">Active</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="font-semibold text-orange-600">{archiveStatus.archivedCount}</div>
+                      <div className="text-gray-600">Archived</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="font-semibold text-gray-600">{archiveStatus.totalCount}</div>
+                      <div className="text-gray-600">Total</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div className="flex gap-3">
+                <Button onClick={() => handleArchiveActivities("archive")} className="flex-1" disabled={!manageArchiveMonth || isArchiving}>
+                  {isArchiving ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Archiving...
+                    </>
+                  ) : (
+                    <>
+                      <Archive size={16} className="mr-2" /> Archive
+                    </>
+                  )}
+                </Button>
+                <Button onClick={() => handleArchiveActivities("unarchive")} variant="outline" className="flex-1" disabled={!manageArchiveMonth || isArchiving}>
+                  {isArchiving ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2"></div>
+                      Unarchiving...
+                    </>
+                  ) : (
+                    <>
+                      <FolderOpen size={16} className="mr-2" /> Unarchive
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Button variant="outline" onClick={() => setShowManageArchives(false)}>Cancel</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   )
 }

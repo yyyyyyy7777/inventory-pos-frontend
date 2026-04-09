@@ -158,7 +158,7 @@ export async function updateLastLogout(username: string, clientTimestamp?: strin
 export async function getAllEmployees() {
   try {
     const rows = await query(
-      'SELECT id, name, username, role, "joinDate", "lastLogin", "lastLogout", "createdAt", "updatedAt" FROM employee ORDER BY "createdAt" DESC'
+      'SELECT id, name, username, role, "joinDate", "lastLogin", "lastLogout", "createdAt", "updatedAt" FROM employee ORDER BY role ASC, name ASC'
     );
     
     return rows.map(employee => ({
@@ -386,6 +386,71 @@ export async function getAllSales(cabinet: string = 'main') {
   }
 }
 
+// Get sales within a date range (for dashboard today sales and date filtering)
+export async function getSalesByDateRange(startDate: Date, endDate: Date, cabinet?: string) {
+  try {
+    // Ensure archived column exists
+    try {
+      await query(`ALTER TABLE sale ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT false`);
+    } catch (alterError) {
+      // Ignore errors if column already exists
+    }
+    
+    let sql: string;
+    let params: any[];
+    
+    if (cabinet && cabinet !== 'all') {
+      // Filter by both date range and cabinet
+      sql = `
+        SELECT * FROM sale 
+        WHERE date >= $1::timestamp 
+          AND date < $2::timestamp 
+          AND cabinet = $3 
+          AND archived = false 
+        ORDER BY date DESC
+      `;
+      params = [startDate.toISOString(), endDate.toISOString(), cabinet];
+    } else {
+      // Filter by date range only (all cabinets)
+      sql = `
+        SELECT * FROM sale 
+        WHERE date >= $1::timestamp 
+          AND date < $2::timestamp 
+          AND archived = false 
+        ORDER BY date DESC
+      `;
+      params = [startDate.toISOString(), endDate.toISOString()];
+    }
+    
+    const sales = await query(sql, params);
+    console.log(`getSalesByDateRange: Found ${sales.length} sales between ${startDate.toISOString()} and ${endDate.toISOString()}${cabinet ? ` for cabinet '${cabinet}'` : ' for all cabinets'}`);
+    
+    // Get items for each sale
+    for (const sale of sales) {
+      try {
+        const items = await query(
+          `SELECT * FROM "saleItem" WHERE "saleId" = $1`,
+          [sale.id]
+        );
+        
+        // Convert database boolean values to actual booleans
+        sale.items = items.map(item => ({
+          ...item,
+          isDiscounted: Boolean(item.isDiscounted)
+        }));
+      } catch (itemError) {
+        console.error(`Failed to fetch items for sale ${sale.id}:`, itemError);
+        sale.items = [];
+      }
+    }
+    
+    return sales;
+  } catch (error) {
+    console.error('Failed to fetch sales by date range:', error);
+    throw new Error('Failed to fetch sales from database');
+  }
+}
+
 // Helper function to get all sales including archived (for debugging)
 export async function getAllSalesWithArchiveStatus(cabinet: string = 'main') {
   try {
@@ -414,6 +479,9 @@ export async function createSale(data: {
   cabinet: string;
   soldAt: string;
   referenceNumber?: string;
+  bypassStockCheck?: boolean;
+  forceCreate?: boolean;
+  emergencySync?: boolean;
   items: Array<{
     productName: string;
     category: string;
@@ -473,49 +541,54 @@ export async function createSale(data: {
       
       // Try batch-aware stock deduction first
       try {
-        // Get available on-shelf stock batches using FIFO (only on-shelf, not in-storage)
-        const batchRows = await client.query(
-          `SELECT id, quantity, "costPerUnit" FROM stockbatch 
-           WHERE "productId" = $1 AND cabinet = $2 AND quantity > 0 AND status = 'on-shelf'
-           ORDER BY "batchDate" ASC`,
-          [productId, data.cabinet]
-        );
-        
-        // If no on-shelf batches found, check if there are in-storage batches
-        if (batchRows.rows.length === 0) {
-          const storageBatches = await client.query(
-            `SELECT COUNT(*) as count FROM stockbatch 
-             WHERE "productId" = $1 AND cabinet = $2 AND quantity > 0 AND status = 'in-storage'`,
+        // Skip stock check if bypass is enabled
+        if (data.bypassStockCheck || data.forceCreate || data.emergencySync) {
+          console.log(`🔓 BYPASSING STOCK CHECK for ${item.productName} (bypass: ${data.bypassStockCheck}, force: ${data.forceCreate}, emergency: ${data.emergencySync})`);
+        } else {
+          // Get available on-shelf stock batches using FIFO (only on-shelf, not in-storage)
+          const batchRows = await client.query(
+            `SELECT id, quantity, "costPerUnit" FROM stockbatch 
+             WHERE "productId" = $1 AND cabinet = $2 AND quantity > 0 AND status = 'on-shelf'
+             ORDER BY "batchDate" ASC`,
             [productId, data.cabinet]
           );
           
-          if (storageBatches.rows[0].count > 0) {
-            throw new Error(`Product "${item.productName}" is in storage. Please transfer to shelf before selling.`);
+          // If no on-shelf batches found, check if there are in-storage batches
+          if (batchRows.rows.length === 0) {
+            const storageBatches = await client.query(
+              `SELECT COUNT(*) as count FROM stockbatch 
+               WHERE "productId" = $1 AND cabinet = $2 AND quantity > 0 AND status = 'in-storage'`,
+              [productId, data.cabinet]
+            );
+            
+            if (storageBatches.rows[0].count > 0) {
+              throw new Error(`Product "${item.productName}" is in storage. Please transfer to shelf before selling.`);
+            }
           }
-        }
-        
-        let remainingQuantity = item.quantity;
-        const batchesUsed: Array<{ id: number; quantity: number }> = [];
-        
-        // FIFO deduction from on-shelf batches only
-        for (const batch of batchRows.rows) {
-          if (remainingQuantity <= 0) break;
           
-          const deductQuantity = Math.min(remainingQuantity, batch.quantity);
-          batchesUsed.push({ id: batch.id, quantity: deductQuantity });
-          remainingQuantity -= deductQuantity;
-        }
-        
-        if (remainingQuantity > 0) {
-          throw new Error(`Insufficient on-shelf stock for product: ${item.productName}. Need ${item.quantity}, only ${item.quantity - remainingQuantity} available on shelf. Please transfer from storage.`);
-        }
-        
-        // Update batches
-        for (const usage of batchesUsed) {
-          await client.query(
-            'UPDATE stockbatch SET quantity = quantity - $1 WHERE id = $2',
-            [usage.quantity, usage.id]
-          );
+          let remainingQuantity = item.quantity;
+          const batchesUsed: Array<{ id: number; quantity: number }> = [];
+          
+          // FIFO deduction from on-shelf batches only
+          for (const batch of batchRows.rows) {
+            if (remainingQuantity <= 0) break;
+            
+            const deductQuantity = Math.min(remainingQuantity, batch.quantity);
+            batchesUsed.push({ id: batch.id, quantity: deductQuantity });
+            remainingQuantity -= deductQuantity;
+          }
+          
+          if (remainingQuantity > 0) {
+            throw new Error(`Insufficient on-shelf stock for product: ${item.productName}. Need ${item.quantity}, only ${item.quantity - remainingQuantity} available on shelf. Please transfer from storage.`);
+          }
+          
+          // Update batches
+          for (const usage of batchesUsed) {
+            await client.query(
+              'UPDATE stockbatch SET quantity = quantity - $1 WHERE id = $2',
+              [usage.quantity, usage.id]
+            );
+          }
         }
         
         // Also update main product stock field (for consistency)
@@ -585,6 +658,7 @@ export async function updateProduct(id: string, data: {
   cabinet: string;
   categoryId: number;
   description?: string;
+  lastRestockDate?: string;
 }) {
   const client = await (await getConnection()).connect();
   
@@ -599,9 +673,25 @@ export async function updateProduct(id: string, data: {
       }
     }
     
+    // Build the UPDATE query dynamically to handle optional lastRestockDate
+    let updateFields = ['name = $1', 'sku = $2', 'price = $3', 'stock = $4', '"categoryId" = $5', 'description = $6'];
+    let queryParams = [data.name, data.sku || null, data.price, data.stock, data.categoryId, data.description || null];
+    let paramIndex = 7;
+
+    // Add lastRestockDate if provided
+    if (data.lastRestockDate !== undefined) {
+      updateFields.push(`"lastRestockDate" = $${paramIndex}`);
+      queryParams.push(data.lastRestockDate);
+      paramIndex++;
+    }
+
+    updateFields.push('"updatedAt" = NOW()');
+    updateFields.push(`WHERE id = $${paramIndex}`);
+    queryParams.push(parseInt(id));
+
     await client.query(
-      'UPDATE product SET name = $1, sku = $2, price = $3, stock = $4, "categoryId" = $5, description = $6, "updatedAt" = NOW() WHERE id = $7',
-      [data.name, data.sku || null, data.price, data.stock, data.categoryId, data.description || null, parseInt(id)]
+      `UPDATE product SET ${updateFields.join(', ')}`,
+      queryParams
     );
     
     await client.query('COMMIT');
@@ -610,6 +700,35 @@ export async function updateProduct(id: string, data: {
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Error updating product:', error);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function updateProductStock(id: string, stock: number) {
+  const client = await (await getConnection()).connect();
+  
+  try {
+    await client.query('BEGIN');
+    
+    // Validate stock is not negative
+    if (stock < 0) {
+      throw new Error('Stock cannot be negative');
+    }
+    
+    // Update only the stock field
+    await client.query(
+      'UPDATE product SET stock = $1, "updatedAt" = NOW() WHERE id = $2',
+      [stock, id]
+    );
+    
+    await client.query('COMMIT');
+    
+    return await getProductById(id);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error updating product stock:', error);
     throw error;
   } finally {
     client.release();

@@ -1,6 +1,9 @@
 "use client"
 
 import { createContext, useContext, ReactNode, useState, useEffect } from 'react';
+import { db } from '@/lib/indexeddb';
+import { enhancedSyncService } from '@/lib/enhanced-sync';
+import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
 
 export type ProductLocation = 'online' | 'physical' | 'both';
 
@@ -32,20 +35,26 @@ export interface Product {
   cabinet: string; // Added cabinet property
   description?: string; // Added optional description field
   stockBatches?: StockBatch[]; // Added stock batches for tracking
+  synced?: boolean; // Added for sync tracking
+  lastModified?: number; // Added for sync timestamp comparison
+  deleted?: boolean; // Added for offline deletion tracking
+  markedForDelete?: boolean; // Added for offline deletion tracking
+  deletedAt?: number; // Added for deletion timestamp
 }
 
 interface ProductsContextType {
   products: Product[];
   getProductsByCabinet: (cabinet: string) => Product[];
   addProduct: (product: Omit<Product, 'id'>, cabinet: string) => Promise<Product | { error: string; isSkuConflict: true } | undefined>;
-  updateProduct: (id: string, updates: Partial<Product>, cabinet: string) => Promise<{success: boolean, data?: Product, error?: string}>;
-  deleteProduct: (id: string, cabinet: string) => void;
-  addStockBatch: (productId: string, quantity: number, costPerUnit?: number, expiryDate?: string, cabinet?: string) => void;
+  updateProduct: (id: string, updates: Partial<Product>, cabinet: string) => Promise<{ success: boolean; error: string; data?: undefined; } | { success: boolean; data: any; error?: undefined; }>;
+  deleteProduct: (id: string, cabinet: string) => Promise<void>;
+  addStockBatch: (productId: string, quantity: number, costPerUnit?: number, expiryDate?: string, cabinet?: string) => Promise<void>;
   getStockBatches: (productId: string, cabinet: string) => Promise<StockBatch[]>;
   getOnShelfStock: (productId: string, cabinet: string) => Promise<number>;
   loading: boolean;
   error: string | null;
   refetch: () => Promise<void>;
+  syncStock: (cabinet?: string) => Promise<void>;
 }
 
 const ProductsContext = createContext<ProductsContextType | undefined>(undefined);
@@ -54,6 +63,86 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
   const [products, setProducts] = useState<Record<string, Product[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState(true);
+
+  // Check online status and load cached data from IndexedDB
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIsOnline(navigator.onLine);
+      
+      // Load products from IndexedDB immediately
+      const loadFromIndexedDB = async () => {
+        try {
+          const allProducts = await db.products.toArray();
+          // Group by cabinet
+          const productsByCabinet: Record<string, Product[]> = {};
+          allProducts.forEach((product) => {
+            const cabinet = product.cabinet || 'main';
+            if (!productsByCabinet[cabinet]) {
+              productsByCabinet[cabinet] = [];
+            }
+            productsByCabinet[cabinet].push(product);
+          });
+          setProducts(productsByCabinet);
+          setLoading(false);
+          console.log('Loaded products from IndexedDB:', allProducts.length);
+        } catch (err) {
+          console.error('Error loading from IndexedDB:', err);
+          // Fallback to localStorage for migration
+          const cachedProducts = localStorage.getItem('cached_products');
+          if (cachedProducts) {
+            try {
+              const parsed = JSON.parse(cachedProducts);
+              setProducts(parsed);
+              setLoading(false);
+              // Migrate to IndexedDB
+              const allProducts = Object.values(parsed).flat() as Product[];
+              await db.products.bulkPut(allProducts);
+              console.log('Migrated products from localStorage to IndexedDB');
+            } catch (migrationErr) {
+              console.error('Migration error:', migrationErr);
+            }
+          }
+        }
+      };
+      
+      loadFromIndexedDB();
+
+      // Listen for online/offline events
+      const handleOnline = () => {
+        setIsOnline(true);
+        enhancedSyncService.syncAll();
+      };
+      const handleOffline = () => setIsOnline(false);
+      
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+      
+      return () => {
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+      };
+    }
+  }, []);
+
+  // Cache products to IndexedDB
+  const cacheProducts = async (productsData: Record<string, Product[]>) => {
+    try {
+      const allProducts = Object.values(productsData).flat();
+      // Only update if we have products (don't clear if API returns empty)
+      if (allProducts.length === 0) {
+        console.log('Not caching empty products array');
+        return;
+      }
+      // Use bulkPut instead of bulkAdd to handle duplicates
+      await db.products.bulkPut(allProducts.map(p => ({ ...p, synced: true, lastModified: Date.now() })));
+      console.log('Cached products to IndexedDB:', allProducts.length);
+    } catch (err) {
+      console.error('Error caching to IndexedDB:', err);
+      // Fallback to localStorage
+      localStorage.setItem('cached_products', JSON.stringify(productsData));
+    }
+  };
 
   // Fetch products from database
   const fetchProducts = async (cabinet: string = 'main') => {
@@ -81,7 +170,13 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
 
   // Initialize products on mount and when cabinet changes
   useEffect(() => {
-    // Fetch products for all cabinets
+    // Don't fetch if we're offline - IndexedDB already loaded in first useEffect
+    if (!isOnline || !navigator.onLine) {
+      console.log('Offline mode - skipping API fetch, using IndexedDB data');
+      return;
+    }
+    
+    // Fetch all products on mount (for all cabinets)
     const fetchAllProducts = async () => {
       try {
         setLoading(true);
@@ -89,8 +184,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
         
         // Fetch all products first
         const response = await fetch('/api/products');
-        console.log('API Response status:', response.status);
-        console.log('API Response ok:', response.ok);
+        
         if (!response.ok) {
           const errorText = await response.text();
           console.log('API Response error text:', errorText);
@@ -99,20 +193,85 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
         
         const allProducts = await response.json();
         
-        // Group products by cabinet
+        // Only update if we got products from API
+        if (!allProducts || allProducts.length === 0) {
+          console.log('API returned no products, keeping IndexedDB data');
+          return;
+        }
+        
+        // Get local products to preserve offline changes
+        const localProductsByCabinet: Record<string, Product[]> = {};
+        try {
+          const allLocalProducts = await db.products.toArray();
+          const localProductsGrouped: Record<string, Product[]> = {};
+          allLocalProducts.forEach((product) => {
+            const cabinet = product.cabinet || 'main';
+            if (!localProductsGrouped[cabinet]) {
+              localProductsGrouped[cabinet] = [];
+            }
+            localProductsGrouped[cabinet].push(product);
+          });
+          Object.assign(localProductsByCabinet, localProductsGrouped);
+        } catch (cacheError) {
+          console.log('Could not load cached products:', cacheError);
+        }
+        
+        // Merge server products with local changes, preserving offline stock updates
         const productsByCabinet: Record<string, Product[]> = {};
-        allProducts.forEach((product: any) => { // Using any here to handle potential API response format
-          const cabinet = product.cabinet || 'main'; // Default to 'main' if cabinet is not specified
+        allProducts.forEach((serverProduct: any) => {
+          const cabinet = serverProduct.cabinet || 'main';
           if (!productsByCabinet[cabinet]) {
             productsByCabinet[cabinet] = [];
           }
-          productsByCabinet[cabinet].push({
-            ...product,
-            cabinet // Ensure cabinet is set
+          
+          // Check if we have local changes for this product
+          const localProducts = localProductsByCabinet[cabinet] || [];
+          const localProduct = localProducts.find(p => 
+            p.name === serverProduct.name || 
+            (p.id && p.id === serverProduct.id.toString()) ||
+            (p.sku && p.sku === serverProduct.sku)
+          );
+          
+          // Use server data but preserve local stock if it was modified offline
+          const mergedProduct: Product = {
+            ...serverProduct,
+            cabinet,
+            id: serverProduct.id.toString(),
+            // Preserve local stock if it exists and was recently modified
+            stock: localProduct && (localProduct.lastModified || 0) > (serverProduct.lastModified || 0) 
+              ? localProduct.stock 
+              : serverProduct.stock,
+            // Preserve other local modifications
+            synced: !localProduct || localProduct.synced,
+            lastModified: localProduct ? Math.max(serverProduct.lastModified || 0, localProduct.lastModified || 0) : (serverProduct.lastModified || 0)
+          };
+          
+          productsByCabinet[cabinet].push(mergedProduct);
+        });
+        
+        // Add any local products that don't exist on server (temporary products)
+        Object.keys(localProductsByCabinet).forEach(cabinet => {
+          const localProducts = localProductsByCabinet[cabinet];
+          localProducts.forEach(localProduct => {
+            const existsOnServer = productsByCabinet[cabinet]?.find(p => 
+              p.name === localProduct.name || 
+              p.id === localProduct.id ||
+              (p.sku && localProduct.sku && p.sku === localProduct.sku)
+            );
+            
+            if (!existsOnServer && (localProduct.id?.startsWith('temp_') || localProduct.id?.startsWith('temp-'))) {
+              if (!productsByCabinet[cabinet]) {
+                productsByCabinet[cabinet] = [];
+              }
+              productsByCabinet[cabinet].push(localProduct);
+            }
           });
         });
         
         setProducts(productsByCabinet);
+        cacheProducts(productsByCabinet);
+        
+        console.log('Merged server and local products, preserving offline stock changes');
       } catch (err) {
         // Only set error state for non-SKU related errors
         const errorMessage = err instanceof Error ? err.message : 'Failed to fetch products';
@@ -120,17 +279,153 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
           setError(errorMessage);
         }
         console.error('Error fetching products:', err);
+        
+        // If fetch fails and we have IndexedDB data, use that
+        try {
+          const allProducts = await db.products.toArray();
+          if (allProducts.length > 0) {
+            const productsByCabinet: Record<string, Product[]> = {};
+            allProducts.forEach((product) => {
+              const cabinet = product.cabinet || 'main';
+              if (!productsByCabinet[cabinet]) {
+                productsByCabinet[cabinet] = [];
+              }
+              productsByCabinet[cabinet].push(product);
+            });
+            setProducts(productsByCabinet);
+            setError(null); // Clear error since we have IndexedDB data
+            console.log('Fallback to IndexedDB:', allProducts.length, 'products');
+          }
+        } catch (cacheErr) {
+          console.error('Error loading from IndexedDB as fallback:', cacheErr);
+        }
       } finally {
         setLoading(false);
       }
     };
     
     fetchAllProducts();
+  }, [isOnline]);
+
+  // Realtime cross-user updates (admin/staff)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!navigator.onLine) return;
+
+    let supabase: ReturnType<typeof getSupabaseBrowserClient> | null = null;
+    try {
+      supabase = getSupabaseBrowserClient();
+    } catch {
+      // Missing env vars; skip realtime without crashing.
+      return;
+    }
+
+    let refreshTimer: any = null;
+    const scheduleProductsRefresh = () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        // Pulling products keeps local IndexedDB + UI consistent across users.
+        // Use lightweight /api/products, not full pullFromServer().
+        fetch('/api/products')
+          .then((r) => (r.ok ? r.json() : null))
+          .then(async (allProducts) => {
+            if (!allProducts || !Array.isArray(allProducts) || allProducts.length === 0) return;
+
+            const productsByCabinet: Record<string, Product[]> = {};
+            allProducts.forEach((p: any) => {
+              const c = p.cabinet || 'main';
+              (productsByCabinet[c] ||= []).push(p);
+            });
+            setProducts((prev) => ({ ...prev, ...productsByCabinet }));
+            await cacheProducts(productsByCabinet);
+          })
+          .catch(() => {
+            // Silent fail; realtime should never break offline/online UX.
+          });
+      }, 600);
+    };
+
+    const scheduleBatchRefresh = (productId?: string, cabinet?: string) => {
+      if (!productId || !cabinet) {
+        scheduleProductsRefresh();
+        return;
+      }
+
+      // Refresh batches for pricing/stock correctness (POS + Inventory)
+      fetch(`/api/stock-batches?productId=${encodeURIComponent(productId)}&cabinet=${encodeURIComponent(cabinet)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then(async (batches) => {
+          if (!batches || !Array.isArray(batches)) return;
+
+          // If server returns no batches, keep local batches (important for newly created products
+          // where the initial batch may exist locally before server-side batch rows exist).
+          if (batches.length === 0) {
+            scheduleProductsRefresh();
+            return;
+          }
+
+          // Replace local batches for this product/cabinet
+          await db.stockBatches
+            .where({ productId: String(productId), cabinet })
+            .delete();
+
+          await db.stockBatches.bulkAdd(
+            batches.map((b: any) => ({
+              productId: String(b.productId),
+              quantity: Number(b.quantity) || 0,
+              costPerUnit: b.costPerUnit ?? 0,
+              cabinet: b.cabinet || cabinet,
+              addedDate: b.addedDate || new Date().toISOString(),
+              notes: b.notes,
+              status: b.status || 'in-storage',
+              synced: true,
+              lastModified: Date.now(),
+            }))
+          );
+
+          // Ensure price cache updates everywhere
+          const { clearPriceCacheOnBatchUpdate } = await import('@/lib/batch-price');
+          clearPriceCacheOnBatchUpdate(String(productId), cabinet);
+
+          scheduleProductsRefresh();
+        })
+        .catch(() => {
+          // Silent fail.
+        });
+    };
+
+    const channel = supabase
+      .channel('realtime-inventory-pos')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'product' },
+        () => scheduleProductsRefresh()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'stockbatch' },
+        (payload: any) => {
+          const row = payload?.new || payload?.old;
+          scheduleBatchRefresh(String(row?.productId || ''), String(row?.cabinet || 'main'));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      supabase?.removeChannel(channel);
+    };
   }, []);
 
   // Smart refresh: only update when data actually changes
   useEffect(() => {
     const checkForUpdates = async () => {
+      // Skip if offline
+      if (!navigator.onLine) {
+        console.log('Offline mode - skipping background update');
+        return;
+      }
+      
       try {
         const response = await fetch('/api/products');
         if (response.ok) {
@@ -165,15 +460,46 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
 
   const getProductsByCabinet = (cabinet: string) => {
     if (cabinet === 'all') {
-      return Object.values(products).flat()
+      return Object.values(products).flat().filter(product => 
+        !product.deleted && !product.markedForDelete
+      );
     }
-    return products[cabinet] || []
+    return (products[cabinet] || []).filter(product => 
+      !product.deleted && !product.markedForDelete
+    );
   };
 
   const addProduct = async (product: Omit<Product, 'id'>, cabinet: string): Promise<Product | { error: string; isSkuConflict: true } | undefined> => {
     try {
       setError(null);
       console.log('Adding product:', product); // Debug log
+      console.log('Online status:', isOnline); // Debug log
+      
+      // Check if offline first
+      if (!isOnline) {
+        console.warn('Offline mode detected, creating temporary product');
+        // Create a temporary product with generated ID
+        const tempProduct = {
+          ...product,
+          id: `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          lastUpdated: new Date().toLocaleDateString('en-CA'),
+          synced: false,
+          lastModified: Date.now(),
+        };
+        
+        setProducts((prev) => ({
+          ...prev,
+          [cabinet]: [tempProduct, ...(prev[cabinet] || [])],
+        }));
+        
+        // Save to IndexedDB
+        await db.products.add(tempProduct);
+        
+        // Queue for sync when online
+        await enhancedSyncService.queueChange('product', 'create', tempProduct, cabinet);
+        
+        return tempProduct;
+      }
       
       const response = await fetch('/api/products', {
         method: 'POST',
@@ -208,17 +534,21 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
           return { error: errorMessage, isSkuConflict: true };
         }
         
-        // Handle database connection errors gracefully
+      // Handle database connection errors or offline mode
         if (errorMessage === 'Failed to connect to database' || 
             errorMessage?.includes('database') ||
             errorMessage?.includes('connection') ||
-            response.status === 503) {
-          console.warn('Database not available, using fallback mode');
+            errorMessage?.includes('ENOTFOUND') ||
+            response.status === 503 ||
+            !isOnline) {
+          console.warn('Database not available, using offline mode');
           // Create a temporary product with generated ID
           const tempProduct = {
             ...product,
             id: `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             lastUpdated: new Date().toLocaleDateString('en-CA'),
+            synced: false,
+            lastModified: Date.now(),
           };
           
           setProducts((prev) => ({
@@ -226,7 +556,12 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
             [cabinet]: [tempProduct, ...(prev[cabinet] || [])],
           }));
           
-          // Still log the activity even in fallback mode
+          // Save to IndexedDB
+          await db.products.add(tempProduct);
+          
+          // Queue for sync when online
+          await enhancedSyncService.queueChange('product', 'create', tempProduct, cabinet);
+          
           return tempProduct;
         }
         
@@ -245,16 +580,26 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       
       return newProduct; // Return the created product
     } catch (err) {
-      console.error('Add product error:', err); // Debug log
+      console.error('Add product error:', err);
       
-      // Handle network errors gracefully
-      if (err instanceof Error && (err.message.includes('fetch') || err.message.includes('Network'))) {
-        console.warn('Network error, using fallback mode');
+      // Handle network errors or offline mode more comprehensively
+      if (err instanceof Error && (
+        err.message.includes('fetch') || 
+        err.message.includes('Network') || 
+        err.message.includes('ENOTFOUND') ||
+        err.message.includes('Failed to fetch') ||
+        err.message.includes('ECONNREFUSED') ||
+        err.message.includes('ERR_INTERNET_DISCONNECTED') ||
+        !isOnline
+      )) {
+        console.warn('Network error or offline detected, creating temporary product');
         // Create a temporary product with generated ID
         const tempProduct = {
           ...product,
           id: `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           lastUpdated: new Date().toLocaleDateString('en-CA'),
+          synced: false,
+          lastModified: Date.now(),
         };
         
         setProducts((prev) => ({
@@ -262,16 +607,17 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
           [cabinet]: [tempProduct, ...(prev[cabinet] || [])],
         }));
         
+        // Save to IndexedDB
+        await db.products.add(tempProduct);
+        
+        // Queue for sync when online
+        await enhancedSyncService.queueChange('product', 'create', tempProduct, cabinet);
+        
         return tempProduct;
       }
       
-      // Handle other errors - set error state but don't throw to prevent console errors
-      const errorMessage = err instanceof Error ? err.message : 'Failed to add product';
-      
-      // Don't set error for SKU conflicts (already handled above)
-      if (!errorMessage.includes('SKU')) {
-        setError(errorMessage);
-      }
+      setError(err instanceof Error ? err.message : 'Failed to add product');
+      throw err;
       
       // Don't throw the error to prevent console.error from showing
       // The error state is set for UI display
@@ -281,7 +627,32 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
   const updateProduct = async (id: string, updates: Partial<Product>, cabinet: string) => {
     try {
       setError(null);
-      const response = await fetch(`/api/products/manage?id=${id}`, {
+      
+      // If offline, update locally in IndexedDB
+      if (!isOnline) {
+        console.log('Offline mode - updating product locally in IndexedDB');
+        
+        // Update in state
+        setProducts(prev => ({
+          ...prev,
+          [cabinet]: (prev[cabinet] || []).map((product) =>
+            product.id === id ? { ...product, ...updates, synced: false, lastModified: Date.now() } : product
+          ),
+        }));
+        
+        // Update in IndexedDB
+        const existingProduct = await db.products.get(id);
+        if (existingProduct) {
+          await db.products.update(id, { ...updates, synced: false, lastModified: Date.now() });
+        }
+        
+        // Queue for sync when online
+        await enhancedSyncService.queueChange('product_update', 'update', { id, updates, cabinet }, cabinet);
+        
+        return { success: true, data: { ...updates, id } as Product };
+      }
+
+      const response = await fetch(`/api/products/${parseInt(id)}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -325,6 +696,30 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to update product';
       
+      // If it's a network error or offline, update locally in IndexedDB
+      if (errorMessage.includes('ENOTFOUND') || errorMessage.includes('fetch') || errorMessage.includes('Network') || !isOnline) {
+        console.log('Network error or offline - updating product locally in IndexedDB');
+        
+        // Update in state
+        setProducts(prev => ({
+          ...prev,
+          [cabinet]: (prev[cabinet] || []).map((product) =>
+            product.id === id ? { ...product, ...updates, synced: false, lastModified: Date.now() } : product
+          ),
+        }));
+        
+        // Update in IndexedDB
+        const existingProduct = await db.products.get(id);
+        if (existingProduct) {
+          await db.products.update(id, { ...updates, synced: false, lastModified: Date.now() });
+        }
+        
+        // Queue for sync when online
+        await enhancedSyncService.queueChange('product_update', 'update', { id, updates, cabinet }, cabinet);
+        
+        return { success: true, data: { ...updates, id } as Product };
+      }
+      
       // Only set error state for non-SKU errors
       if (!errorMessage.includes('SKU')) {
         setError(errorMessage);
@@ -337,6 +732,40 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
   const addStockBatch = async (productId: string, quantity: number, costPerUnit?: number, expiryDate?: string, cabinet?: string) => {
     try {
       setError(null);
+      
+      // If offline, queue for later sync
+      if (!isOnline) {
+        console.log('Offline mode - queuing stock batch for sync');
+        await enhancedSyncService.queueChange('stock_update', 'create', {
+          productId,
+          quantity,
+          costPerUnit,
+          expiryDate,
+          cabinet: cabinet || 'main',
+          batchDate: new Date().toISOString(),
+        }, cabinet || 'main');
+        
+        // Update local product stock
+        const product = await db.products.get(productId);
+        if (product) {
+          await db.products.update(productId, {
+            stock: product.stock + quantity,
+            lastModified: Date.now(),
+            synced: false,
+          });
+          
+          // Update state
+          setProducts(prev => ({
+            ...prev,
+            [cabinet || 'main']: (prev[cabinet || 'main'] || []).map(p =>
+              p.id === productId ? { ...p, stock: p.stock + quantity } : p
+            ),
+          }));
+        }
+        
+        return;
+      }
+      
       const response = await fetch('/api/stock-batches', {
         method: 'POST',
         headers: {
@@ -355,41 +784,8 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
         throw new Error('Failed to add stock batch');
       }
 
-      // Refresh products to get updated stock
-      const fetchAllProducts = async () => {
-        try {
-          setLoading(true);
-          // Fetch all products first
-          const response = await fetch('/api/products');
-          if (!response.ok) {
-            throw new Error('Failed to fetch products');
-          }
-          
-          const allProducts = await response.json();
-          
-          // Group products by cabinet
-          const productsByCabinet: Record<string, Product[]> = {};
-          allProducts.forEach((product: any) => { // Using any here to handle potential API response format
-            const cabinet = product.cabinet || 'main'; // Default to 'main' if cabinet is not specified
-            if (!productsByCabinet[cabinet]) {
-              productsByCabinet[cabinet] = [];
-            }
-            productsByCabinet[cabinet].push({
-              ...product,
-              cabinet // Ensure cabinet is set
-            });
-          });
-          
-          setProducts(productsByCabinet);
-        } catch (err) {
-          setError(err instanceof Error ? err.message : 'Failed to fetch products');
-          console.error('Error fetching products:', err);
-        } finally {
-          setLoading(false);
-        }
-      };
-      
-      await fetchAllProducts();
+      // Refresh from server and update IndexedDB
+      await enhancedSyncService.pullFromServer(cabinet);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add stock batch');
       throw err;
@@ -398,6 +794,22 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
 
   const getStockBatches = async (productId: string, cabinet: string): Promise<StockBatch[]> => {
     try {
+      // If offline, load from IndexedDB
+      if (!navigator.onLine) {
+        console.log('Offline mode - loading stock batches from IndexedDB');
+        const batches = await db.stockBatches
+          .where({ productId, cabinet })
+          .toArray();
+        return batches.map(batch => ({
+          ...batch,
+          id: batch.id?.toString() || '',
+          status: 'on-shelf' as const,
+          createdAt: batch.addedDate,
+          batchDate: batch.addedDate,
+          updatedAt: batch.addedDate,
+        }));
+      }
+
       const response = await fetch(`/api/stock-batches?productId=${productId}&cabinet=${cabinet}`);
       
       if (!response.ok) {
@@ -406,6 +818,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
 
       return await response.json();
     } catch (err) {
+      console.error('Error fetching stock batches:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch stock batches');
       return [];
     }
@@ -425,6 +838,42 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
   const deleteProduct = async (id: string, cabinet: string) => {
     try {
       setError(null);
+      
+      // If offline, mark for deletion and queue for sync
+      if (!isOnline) {
+        console.log('Offline mode - queuing product deletion');
+        
+        // Get the complete product data before deletion
+        const productToDelete = await db.products.get(id);
+        
+        // Remove from state
+        setProducts((prev) => ({
+          ...prev,
+          [cabinet]: (prev[cabinet] || []).filter((product) => product.id !== id),
+        }));
+        
+        // Mark as deleted in IndexedDB instead of removing completely
+        const currentProduct = await db.products.get(id);
+        if (currentProduct) {
+          await db.products.update(id, {
+            ...currentProduct,
+            deleted: true,
+            markedForDelete: true,
+            deletedAt: Date.now(),
+            synced: false
+          });
+        }
+        
+        // Queue for sync when online with complete product data
+        if (productToDelete) {
+          await enhancedSyncService.queueChange('product', 'delete', productToDelete, cabinet);
+        } else {
+          console.warn('Product not found in IndexedDB for deletion sync:', id);
+        }
+        
+        return;
+      }
+
       const response = await fetch(`/api/products/manage?id=${id}`, {
         method: 'DELETE',
       });
@@ -437,6 +886,9 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
         ...prev,
         [cabinet]: (prev[cabinet] || []).filter((product) => product.id !== id),
       }));
+      
+      // Remove from IndexedDB
+      await db.products.delete(id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete product');
       throw err;
@@ -451,6 +903,12 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
   // Refetch function to refresh all products
   const refetch = async () => {
     try {
+      // If offline, don't try to fetch - use cached data
+      if (!isOnline) {
+        console.log('Offline mode - cannot refetch, using cached products');
+        return;
+      }
+
       setLoading(true);
       setError(null);
       
@@ -464,23 +922,59 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       
       // Group products by cabinet
       const productsByCabinet: Record<string, Product[]> = {};
-      allProducts.forEach((product: any) => {
+      allProducts.forEach((product: Product) => {
         const cabinet = product.cabinet || 'main';
         if (!productsByCabinet[cabinet]) {
           productsByCabinet[cabinet] = [];
         }
-        productsByCabinet[cabinet].push({
-          ...product,
-          cabinet
-        });
+        productsByCabinet[cabinet].push(product);
       });
       
       setProducts(productsByCabinet);
+      cacheProducts(productsByCabinet);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch products');
       console.error('Error refetching products:', err);
+      
+      // If refetch fails and we have IndexedDB data, use that
+      try {
+        const allProducts = await db.products.toArray();
+        if (allProducts.length > 0) {
+          const productsByCabinet: Record<string, Product[]> = {};
+          allProducts.forEach((product) => {
+            const cabinet = product.cabinet || 'main';
+            if (!productsByCabinet[cabinet]) {
+              productsByCabinet[cabinet] = [];
+            }
+            productsByCabinet[cabinet].push(product);
+          });
+          setProducts(productsByCabinet);
+          setError(null); // Clear error since we have IndexedDB data
+          console.log('Fallback to IndexedDB:', allProducts.length, 'products');
+        }
+      } catch (cacheErr) {
+        console.error('Error loading from IndexedDB as fallback:', cacheErr);
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Manual stock sync function for recovery
+  const syncStock = async (cabinet?: string) => {
+    try {
+      console.log(' Manual stock sync initiated...');
+      
+      // Trigger enhanced sync service to sync stock batches
+      const { enhancedSyncService } = await import('@/lib/enhanced-sync');
+      await enhancedSyncService.syncAll();
+      
+      // Refresh products to get updated stock
+      await refetch();
+      
+      console.log(' Manual stock sync completed');
+    } catch (error) {
+      console.error(' Manual stock sync failed:', error);
     }
   };
 
@@ -497,7 +991,8 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
         getOnShelfStock,
         loading,
         error,
-        refetch
+        refetch,
+        syncStock
       }}
     >
       {children}

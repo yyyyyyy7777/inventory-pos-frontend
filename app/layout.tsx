@@ -16,7 +16,7 @@ import { ServiceWorkerRegister } from "@/components/pwa-service-worker"
 import { BeforeUnloadWarning } from "@/components/before-unload-warning"
 import { AutosaveProvider } from "@/contexts/autosave-context"
 import { AutosaveRestoreDialog } from "@/components/autosave-restore-dialog"
-import { OfflineStatus } from "@/components/offline/offline-status"
+import { SyncStatusIndicator } from "@/components/sync-status-indicator"
 
 // <CHANGE> Removed unused @vercel/analytics/next import that was causing error
 
@@ -29,9 +29,9 @@ export const metadata: Metadata = {
   generator: "v0.app",
   manifest: "/manifest.json",
   icons: {
-    icon: "/Wheezard logo.png",
-    shortcut: "/Wheezard logo.png",
-    apple: "/Wheezard logo.png",
+    icon: "/icon-192x192.png",
+    shortcut: "/icon-192x192.png",
+    apple: "/icon-192x192.png",
   },
 }
 
@@ -65,7 +65,9 @@ export default function RootLayout({
                           <ToastContainer />
                           <ServiceWorkerRegister />
                           <AutosaveRestoreDialog />
-                          <OfflineStatus />
+                          <div className="fixed bottom-4 right-4 z-50">
+                            <SyncStatusIndicator />
+                          </div>
                         </RemittanceProvider>
                       </EmployeesProvider>
                     </SalesProvider>

@@ -8,22 +8,36 @@ interface EmptyStateProps {
     label: string
     onClick: () => void
   }
+  secondaryAction?: {
+    label: string
+    onClick: () => void
+  }
 }
 
-export function EmptyState({ icon, title, description, action }: EmptyStateProps) {
+export function EmptyState({ icon, title, description, action, secondaryAction }: EmptyStateProps) {
   return (
     <div className="flex flex-col items-center justify-center py-12 px-4">
       <div className="text-6xl mb-4">{icon}</div>
       <h3 className="text-lg font-semibold text-foreground mb-2">{title}</h3>
       <p className="text-sm text-muted-foreground text-center mb-6 max-w-sm">{description}</p>
-      {action && (
-        <button
-          onClick={action.onClick}
-          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium"
-        >
-          {action.label}
-        </button>
-      )}
+      <div className="flex gap-3">
+        {action && (
+          <button
+            onClick={action.onClick}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium"
+          >
+            {action.label}
+          </button>
+        )}
+        {secondaryAction && (
+          <button
+            onClick={secondaryAction.onClick}
+            className="px-4 py-2 border-2 border-[#3B18DA] text-[#3B18DA] rounded-lg hover:bg-[#3B18DA]/10 transition-colors text-sm font-medium"
+          >
+            {secondaryAction.label}
+          </button>
+        )}
+      </div>
     </div>
   )
 }

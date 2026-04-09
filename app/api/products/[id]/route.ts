@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAllProducts, updateProduct, deleteProduct, getProductById, findOrCreateCategory } from '@/lib/pg-direct';
+import { getAllProducts, updateProduct, deleteProduct, getProductById, findOrCreateCategory, updateProductStock } from '@/lib/pg-direct';
 import { validateProductForm } from '@/utils/validation';
 
 // Force dynamic rendering
@@ -84,7 +84,7 @@ export async function PUT(
       );
     }
 
-    const { name, sku, price, stock, category, location, cabinet, description } = body;
+    const { name, sku, price, stock, category, location, cabinet, description, lastRestockDate } = body;
 
     // Additional business logic validation
     if (name && name.length > 100) {
@@ -187,6 +187,100 @@ export async function PUT(
       return NextResponse.json(
         { error: 'Database connection failed' },
         { status: 503 }
+      );
+    }
+    
+    const errorMessage = error instanceof Error ? error.message : 'Failed to update product';
+    return NextResponse.json(
+      { error: errorMessage },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    // Validate product ID parameter
+    const productId = params.id;
+    if (!productId || isNaN(parseInt(productId)) || parseInt(productId) <= 0) {
+      return NextResponse.json(
+        { error: 'Invalid product ID. Must be a positive integer.' },
+        { status: 400 }
+      );
+    }
+
+    const body = await request.json();
+    
+    // Validate request body structure
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json(
+        { error: 'Invalid request body. Must be a JSON object.' },
+        { status: 400 }
+      );
+    }
+
+    // Check if product exists before updating
+    const existingProduct = await getProductById(productId);
+    if (!existingProduct) {
+      return NextResponse.json(
+        { error: 'Product not found' },
+        { status: 404 }
+      );
+    }
+
+    // Handle stock update (for offline sync)
+    if (body.hasOwnProperty('stock') && typeof body.stock === 'number') {
+      if (body.stock < 0) {
+        return NextResponse.json(
+          { error: 'Stock cannot be negative' },
+          { status: 400 }
+        );
+      }
+
+      const updatedProduct = await updateProductStock(productId, Math.floor(body.stock));
+
+      return NextResponse.json(updatedProduct);
+    }
+
+    // Handle partial updates for other fields
+    const { name, sku, price, stock, category, location, cabinet, description } = body;
+    const updateData: any = {};
+
+    if (name !== undefined) updateData.name = name.trim();
+    if (sku !== undefined) updateData.sku = sku.trim().toUpperCase();
+    if (price !== undefined) updateData.price = parseFloat(price);
+    if (stock !== undefined) updateData.stock = parseInt(stock);
+    if (cabinet !== undefined) updateData.cabinet = cabinet || 'main';
+    if (description !== undefined) updateData.description = description.trim();
+
+    // Handle category if provided
+    if (category !== undefined) {
+      const categoryRecord = await findOrCreateCategory(category);
+      updateData.categoryId = categoryRecord.id;
+    }
+
+    const updatedProduct = await updateProduct(productId, updateData);
+    return NextResponse.json(updatedProduct);
+    
+  } catch (error: any) {
+    console.error('Error updating product (PATCH):', error);
+    
+    // Check for database connection errors
+    if (error.message && error.message.includes('connect')) {
+      return NextResponse.json(
+        { error: 'Database connection failed' },
+        { status: 503 }
+      );
+    }
+    
+    // Check for foreign key constraint violation
+    if (error.message && error.message.includes('foreign key constraint')) {
+      return NextResponse.json(
+        { error: 'Invalid category or cabinet reference' },
+        { status: 400 }
       );
     }
     

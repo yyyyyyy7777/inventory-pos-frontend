@@ -1,13 +1,11 @@
 "use client"
 
 import { createContext, useContext, ReactNode, useState, useEffect } from "react"
-import { offlineStorage } from "@/lib/offline-storage"
-import { syncService } from "@/lib/sync-service"
+import { enhancedSyncService } from "@/lib/enhanced-sync"
 
 interface OfflineContextType {
   isOnline: boolean;
-  pendingCount: { sales: number; inventory: number; activities: number };
-  syncStatus: { sales: { lastSync: number; pending: number } | null; inventory: { lastSync: number; pending: number } | null; activities: { lastSync: number; pending: number } | null };
+  pendingCount: { indexedDB: number };
   forceSync: () => Promise<void>;
   clearPendingData: () => Promise<void>;
 }
@@ -16,19 +14,11 @@ const OfflineContext = createContext<OfflineContextType | undefined>(undefined)
 
 export function OfflineProvider({ children }: { children: ReactNode }) {
   const [isOnline, setIsOnline] = useState(true); // Default to true for SSR
-  const [pendingCount, setPendingCount] = useState({ sales: 0, inventory: 0, activities: 0 });
-  const [syncStatus, setSyncStatus] = useState({
-    sales: null as { lastSync: number; pending: number } | null,
-    inventory: null as { lastSync: number; pending: number } | null,
-    activities: null as { lastSync: number; pending: number } | null
-  });
+  const [pendingCount, setPendingCount] = useState({ indexedDB: 0 });
 
   useEffect(() => {
     // Only run on client-side
     if (typeof window === 'undefined') return;
-
-    // Initialize offline storage
-    offlineStorage.init().catch(console.error);
 
     // Set initial online status
     setIsOnline(navigator.onLine);
@@ -58,21 +48,8 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
 
   const updatePendingCount = async () => {
     try {
-      const count = await syncService.getPendingCount();
-      setPendingCount(count);
-
-      // Update sync status
-      const [salesStatus, inventoryStatus, activitiesStatus] = await Promise.all([
-        offlineStorage.getSyncStatus('sales'),
-        offlineStorage.getSyncStatus('inventory'),
-        offlineStorage.getSyncStatus('activities')
-      ]);
-
-      setSyncStatus({
-        sales: salesStatus,
-        inventory: inventoryStatus,
-        activities: activitiesStatus
-      });
+      const status = await enhancedSyncService.getSyncStatus();
+      setPendingCount({ indexedDB: status.pendingCount.indexedDB });
     } catch (error) {
       console.error('Failed to update pending count:', error);
     }
@@ -80,32 +57,14 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
 
   const forceSync = async () => {
     if (isOnline) {
-      await syncService.syncAll();
+      await enhancedSyncService.syncAll();
       await updatePendingCount();
     }
   };
 
   const clearPendingData = async () => {
     try {
-      // Clear all pending data
-      const [sales, inventory, activities] = await Promise.all([
-        offlineStorage.getPendingSales(),
-        offlineStorage.getPendingInventory(),
-        offlineStorage.getPendingActivities()
-      ]);
-
-      for (const sale of sales) {
-        await offlineStorage.removePendingSale(sale.id);
-      }
-
-      for (const item of inventory) {
-        await offlineStorage.removePendingInventory(item.id);
-      }
-
-      for (const activity of activities) {
-        await offlineStorage.removePendingActivity(activity.id);
-      }
-
+      await enhancedSyncService.forceClearProblematicItems();
       await updatePendingCount();
     } catch (error) {
       console.error('Failed to clear pending data:', error);
@@ -116,7 +75,6 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
     <OfflineContext.Provider value={{
       isOnline,
       pendingCount,
-      syncStatus,
       forceSync,
       clearPendingData
     }}>

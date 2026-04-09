@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
@@ -36,6 +36,10 @@ import {
   AlertTriangle
 } from "lucide-react"
 import { useProducts } from "@/contexts/products-context"
+import { useSales, SaleItem } from "@/contexts/sales-context"
+import { db } from "@/lib/indexeddb"
+import { countUnitsInSale } from "@/lib/sale-metrics"
+import { summarizeSalesForPeriod, type SalesPeriodFilter } from "@/lib/analytics-from-sales"
 
 interface AnalyticsData {
   summary: {
@@ -186,14 +190,205 @@ const MetricCard = ({
 };
 
 export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps) {
+  // Ensure cabinet has a stable default value to prevent useEffect dependency issues
+  const cabinetValue = cabinet || 'all';
+  
   const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
   const [periodLoading, setPeriodLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [timePeriod, setTimePeriod] = useState<"weekly" | "monthly" | "quarterly" | "yearly">("weekly");
+  const [timePeriod, setTimePeriod] = useState<"weekly" | "monthly" | "quarterly" | "annually">("weekly");
   const { getProductsByCabinet, loading: productsLoading } = useProducts();
+  const { sales, loading: salesLoading } = useSales();
+  const [todaySalesData, setTodaySalesData] = useState<{ revenue: number; transactions: number; items: number }>({ revenue: 0, transactions: 0, items: 0 });
+  const [todaySalesLoading, setTodaySalesLoading] = useState(false);
+  const [periodSummaryData, setPeriodSummaryData] = useState<{ revenue: number; transactions: number; items: number; avgTransactionValue: number }>({ revenue: 0, transactions: 0, items: 0, avgTransactionValue: 0 });
 
-  const fetchAnalytics = async (isPeriodChange = false) => {
+  // Unified data source for consistent transaction filtering - defined first
+  const getUnifiedTransactions = async (dateRange?: { start: Date, end: Date }) => {
+    try {
+      console.log('Getting unified transactions for analytics...');
+      
+      // Use same data source as sales tab for consistency
+      const filteredSales = cabinetValue === 'all' 
+        ? sales.filter((sale) => !sale.archived)
+        : sales.filter((sale) => sale.cabinet === cabinetValue && !sale.archived);
+      
+      // Filter by date range if provided
+      let finalSales = filteredSales;
+      if (dateRange) {
+        finalSales = filteredSales.filter(sale => {
+          try {
+            const saleDate = new Date(sale.date || sale.createdAt || sale.soldAt);
+            return saleDate >= dateRange.start && saleDate <= dateRange.end;
+          } catch {
+            return false;
+          }
+        });
+      }
+      
+      console.log(`Unified transactions: ${finalSales.length} total after filtering`);
+      return finalSales;
+      
+    } catch (error) {
+      console.error('Error getting unified transactions:', error);
+      return [];
+    }
+  };
+
+  // Generate analytics from local IndexedDB data for offline mode
+  const generateOfflineAnalytics = async () => {
+    try {
+      console.log('Generating analytics from local IndexedDB data...');
+      
+      // Use same data source as sales tab for consistency
+      const filteredSales = cabinetValue === 'all' 
+        ? sales.filter((sale) => !sale.archived)
+        : sales.filter((sale) => sale.cabinet === cabinetValue && !sale.archived);
+      
+      const {
+        revenue: totalRevenue,
+        transactions: totalTransactions,
+        items: totalItems,
+        periodSales,
+      } = summarizeSalesForPeriod(filteredSales, cabinetValue, timePeriod as SalesPeriodFilter);
+      const avgTransactionValue = totalTransactions > 0 ? totalRevenue / totalTransactions : 0;
+      
+      // Generate revenue data for charts with period-aware grouping
+      const revenueData: Array<{
+        period: string;
+        revenue: number;
+        sales: number;
+        transactions: number;
+        items: number;
+      }> = [];
+      const periodBuckets = new Map<string, { label: string; revenue: number; sales: number; transactions: number; items: number }>();
+
+      const getPeriodBucket = (saleDate: Date) => {
+        // Keep weekly detailed (per-day), aggregate larger ranges to meaningful buckets.
+        if (timePeriod === 'weekly') {
+          const key = new Date(saleDate.getFullYear(), saleDate.getMonth(), saleDate.getDate()).toISOString();
+          const label = saleDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+          return { key, label };
+        }
+
+        if (timePeriod === 'monthly') {
+          // Group by week start (Sunday) for readable month trend.
+          const start = new Date(saleDate);
+          start.setDate(start.getDate() - start.getDay());
+          start.setHours(0, 0, 0, 0);
+          const key = start.toISOString();
+          const label = `Week of ${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+          return { key, label };
+        }
+
+        if (timePeriod === 'quarterly') {
+          // Group by quarter labels (Q1..Q4) for the selected range.
+          const quarter = Math.floor(saleDate.getMonth() / 3) + 1;
+          const start = new Date(saleDate.getFullYear(), (quarter - 1) * 3, 1);
+          const key = start.toISOString();
+          const label = `Q${quarter} ${saleDate.getFullYear()}`;
+          return { key, label };
+        }
+
+        // annually: group by year
+        const start = new Date(saleDate.getFullYear(), 0, 1);
+        const key = start.toISOString();
+        const label = `${saleDate.getFullYear()}`;
+        return { key, label };
+      };
+      
+      periodSales.forEach(sale => {
+        try {
+          const dateField = sale.date || sale.createdAt;
+          if (!dateField) return;
+          const saleDate = new Date(dateField);
+          const { key, label } = getPeriodBucket(saleDate);
+
+          if (!periodBuckets.has(key)) {
+            periodBuckets.set(key, { label, revenue: 0, sales: 0, transactions: 0, items: 0 });
+          }
+          
+          const bucketData = periodBuckets.get(key);
+          if (!bucketData) return;
+          const amount = typeof sale.amount === 'number' ? sale.amount : parseFloat(sale.amount) || 0;
+          bucketData.revenue += amount;
+          bucketData.sales += 1;
+          bucketData.transactions += 1;
+          bucketData.items += countUnitsInSale(sale);
+        } catch (err) {
+          console.warn('Error processing sale for revenue data:', err);
+        }
+      });
+      
+      // Convert map to array and sort chronologically by bucket key
+      Array.from(periodBuckets.entries())
+        .sort(([keyA], [keyB]) => new Date(keyA).getTime() - new Date(keyB).getTime())
+        .forEach(([, data]) => {
+        revenueData.push({
+          period: data.label,
+          revenue: data.revenue,
+          sales: data.sales,
+          transactions: data.transactions,
+          items: data.items
+        });
+      });
+      
+      // Generate top products
+      const productSales = new Map();
+      periodSales.forEach(sale => {
+        if (sale.items && Array.isArray(sale.items)) {
+          sale.items.forEach((item: any) => {
+            const productName = item.productName || item.name || 'Unknown Product';
+            if (!productSales.has(productName)) {
+              productSales.set(productName, { quantity: 0, revenue: 0 });
+            }
+            const productData = productSales.get(productName);
+            productData.quantity += item.quantity || 1;
+            productData.revenue += (item.price || 0) * (item.quantity || 1);
+          });
+        }
+      });
+      
+      const topProducts = Array.from(productSales.entries())
+        .map(([name, data]) => ({ 
+          name, 
+          quantity: data.quantity, 
+          revenue: data.revenue,
+          sales: data.quantity // Use quantity as sales count (number of times sold)
+        }))
+        .sort((a, b) => b.revenue - a.revenue)
+        .slice(0, 3);
+      
+      const analyticsData = {
+        summary: {
+          totalRevenue,
+          totalTransactions,
+          totalItems,
+          avgTransactionValue,
+          revenueGrowth: 0, // Can't calculate growth without historical data
+          todayRevenue: 0, // Not available in offline analytics
+          todayTransactions: 0, // Not available in offline analytics  
+          todayItems: 0 // Not available in offline analytics
+        },
+        revenueData,
+        topProducts,
+        period: timePeriod,
+        generatedAt: new Date().toISOString(),
+        _isOffline: true
+      };
+      
+      console.log('Generated offline analytics:', analyticsData);
+      return analyticsData;
+      
+    } catch (error) {
+      console.error('Error generating offline analytics:', error);
+      return null;
+    }
+  };
+
+  // fetchAnalytics function - always use client-side data to match sales tab
+  const fetchAnalytics = useCallback(async (isPeriodChange = false) => {
     try {
       if (isPeriodChange) {
         setPeriodLoading(true);
@@ -201,69 +396,232 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
         setAnalyticsLoading(true);
       }
       setError(null);
-      const response = await fetch(`/api/analytics?cabinet=${cabinet}&period=${timePeriod}`);
       
-      if (!response.ok) {
-        throw new Error('Failed to fetch analytics');
-      }
+      console.log('Generating analytics from client-side data (same as sales tab)');
       
-      const data = await response.json();
-      console.log('Analytics data received:', data);
-      console.log('Revenue data:', data.revenueData);
-      console.log('Top products:', data.topProducts);
-      
-      // Validate data structure
-      if (!data || typeof data !== 'object') {
-        throw new Error('Invalid analytics data received');
-      }
-      
-      // Ensure revenueData is an array
-      if (!data.revenueData || !Array.isArray(data.revenueData)) {
-        console.warn('Revenue data is missing or not an array, using empty array');
-        data.revenueData = [];
-      }
-      
-      // Ensure topProducts is an array
-      if (!data.topProducts || !Array.isArray(data.topProducts)) {
-        console.warn('Top products data is missing or not an array, using empty array');
-        data.topProducts = [];
-      }
-      
-      setAnalyticsData(data);
-    } catch (error) {
-      console.error('Error fetching analytics:', error);
-      setError(error instanceof Error ? error.message : 'Failed to load analytics');
-    } finally {
-      if (isPeriodChange) {
-        setPeriodLoading(false);
+      // Always use client-side data to match sales tab
+      const clientAnalytics = await generateOfflineAnalytics();
+      if (clientAnalytics) {
+        setAnalyticsData(clientAnalytics);
+        setPeriodSummaryData({
+          revenue: clientAnalytics.summary.totalRevenue,
+          transactions: clientAnalytics.summary.totalTransactions,
+          items: clientAnalytics.summary.totalItems,
+          avgTransactionValue: clientAnalytics.summary.avgTransactionValue
+        });
+        
+        console.log('Client-side analytics generated successfully');
       } else {
-        setAnalyticsLoading(false);
+        throw new Error('Failed to generate analytics from client data');
       }
+    } catch (error) {
+      console.error('Error generating analytics:', error);
+      setError(error instanceof Error ? error.message : 'Failed to load analytics');
+      const cacheKey = `cached_analytics_${cabinetValue}_${timePeriod}_v2`;
+      const cachedAnalytics = localStorage.getItem(cacheKey);
+      if (cachedAnalytics) {
+        try {
+          const data = JSON.parse(cachedAnalytics);
+          setAnalyticsData(data);
+          setError(null); // Clear error since we have cached data
+        } catch (cacheErr) {
+          console.error('Error loading cached analytics as fallback:', cacheErr);
+        }
+      }
+    } finally {
+      setAnalyticsLoading(false);
+      setPeriodLoading(false);
     }
-  };
+  }, [cabinetValue, timePeriod, sales]);
 
+  // calculateTodaySales function - defined before useEffect that uses it
+  const calculateTodaySales = useCallback(async () => {
+    // Prevent multiple simultaneous calculations
+    if (todaySalesLoading) {
+      console.log('Today sales calculation already in progress, skipping...');
+      return;
+    }
+
+    setTodaySalesLoading(true);
+    console.log('Starting Today sales calculation with unified data source...');
+    try {
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // Start of today (00:00:00)
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1); // Start of tomorrow (00:00:00)
+
+      console.log('Date range:', { today: today.toISOString(), tomorrow: tomorrow.toISOString() });
+      console.log('Cabinet filter:', cabinetValue);
+      console.log('Online status:', navigator.onLine);
+
+      // Use unified data source for consistency
+      const todaySales = await getUnifiedTransactions({ start: today, end: tomorrow });
+
+      // Calculate metrics from filtered sales data
+      const todayRevenue = todaySales.reduce((sum: number, sale: any) => {
+        // Calculate from items for accuracy
+        if (sale.items && sale.items.length > 0) {
+          const itemRevenue = sale.items.reduce((itemSum: number, item: SaleItem) => {
+            return itemSum + ((item.price || 0) * (item.quantity || 0));
+          }, 0);
+          return sum + itemRevenue;
+        }
+        // Fallback to sale.amount
+        const saleAmount = typeof sale.amount === 'number' ? sale.amount : parseFloat(sale.amount) || 0;
+        return sum + saleAmount;
+      }, 0);
+      const todayTransactions = todaySales.length;
+      const todayItems = todaySales.reduce((sum: number, sale: any) => sum + countUnitsInSale(sale), 0);
+
+      console.log('Today sales calculated with unified data source:', {
+        revenue: todayRevenue,
+        transactions: todayTransactions,
+        items: todayItems,
+        dataSource: 'Unified (IndexedDB + Context)'
+      });
+
+      setTodaySalesData({
+        revenue: todayRevenue,
+        transactions: todayTransactions,
+        items: todayItems
+      });
+
+    } catch (error) {
+      console.error('Error calculating today\'s sales:', error);
+      setTodaySalesData({ revenue: 0, transactions: 0, items: 0 });
+    } finally {
+      setTodaySalesLoading(false);
+      console.log('Today sales calculation completed');
+    }
+  }, [cabinetValue, sales]); // Add sales dependency for real-time updates
+
+  // Event listeners useEffect - now all functions are defined before this
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleNewTransaction = (event: CustomEvent) => {
+      console.log('New transaction detected, updating analytics:', event.detail);
+      // Immediately update today's sales for real-time feedback
+      calculateTodaySales();
+      // Update analytics if online, otherwise regenerate offline analytics
+      if (navigator.onLine) {
+        fetchAnalytics();
+      } else {
+        generateOfflineAnalytics().then(data => {
+          if (data) {
+            setAnalyticsData(data);
+            setPeriodSummaryData({
+              revenue: data.summary.totalRevenue,
+              transactions: data.summary.totalTransactions,
+              items: data.summary.totalItems,
+              avgTransactionValue: data.summary.avgTransactionValue
+            });
+          }
+        });
+      }
+    };
+
+    const handleSyncComplete = (event: CustomEvent) => {
+      console.log('Sync completed, refreshing analytics:', event.detail);
+      // Full refresh after sync to ensure data consistency
+      fetchAnalytics();
+      calculateTodaySales();
+    };
+
+    const handleOnlineStatusChange = () => {
+      console.log('Online status changed, refreshing analytics:', navigator.onLine);
+      if (navigator.onLine) {
+        // When coming back online, fetch fresh data
+        fetchAnalytics();
+        calculateTodaySales();
+      } else {
+        // When going offline, generate from local data
+        generateOfflineAnalytics().then(data => {
+          if (data) {
+            setAnalyticsData(data);
+            setPeriodSummaryData({
+              revenue: data.summary.totalRevenue,
+              transactions: data.summary.totalTransactions,
+              items: data.summary.totalItems,
+              avgTransactionValue: data.summary.avgTransactionValue
+            });
+          }
+        });
+      }
+    };
+
+    // Register event listeners
+    window.addEventListener('newTransaction', handleNewTransaction as EventListener);
+    window.addEventListener('syncComplete', handleSyncComplete as EventListener);
+    window.addEventListener('online', handleOnlineStatusChange);
+    window.addEventListener('offline', handleOnlineStatusChange);
+
+    return () => {
+      window.removeEventListener('newTransaction', handleNewTransaction as EventListener);
+      window.removeEventListener('syncComplete', handleSyncComplete as EventListener);
+      window.removeEventListener('online', handleOnlineStatusChange);
+      window.removeEventListener('offline', handleOnlineStatusChange);
+    };
+  }, [calculateTodaySales, fetchAnalytics]);
+
+  // Fetch analytics on component mount, when cabinet / period / sales data changes
+  useEffect(() => {
+    // Avoid rendering "0" analytics while core data is still loading on first load.
+    if (productsLoading || salesLoading) return;
     fetchAnalytics();
-  }, [cabinet]);
+  }, [fetchAnalytics, productsLoading, salesLoading]);
 
+  // Recalculate today's sales when cabinet or sales list changes
   useEffect(() => {
-    fetchAnalytics(true);
-  }, [timePeriod]);
+    calculateTodaySales();
+  }, [calculateTodaySales]);
 
   // Get low stock products (available immediately from context)
-  const products = getProductsByCabinet(cabinet);
+  const products = getProductsByCabinet(cabinetValue);
   const lowStockProducts = products
     .filter(product => product.stock < 20)
     .sort((a, b) => a.stock - b.stock);
 
   const getLowStockColor = (stock: number) => {
-    if (stock <= 5) return { border: "border-red-300", bg: "from-red-50 to-red-100/50", badge: "bg-red-600", text: "text-red-900", label: "CRITICAL" };
-    return { border: "border-orange-300", bg: "from-orange-50 to-orange-100/50", badge: "bg-orange-600", text: "text-orange-900", label: "LOW" };
+    if (stock <= 5) return { bg: "bg-red-100", badge: "bg-red-600", text: "text-red-900", label: "CRITICAL" };
+    return { bg: "bg-orange-100", badge: "bg-orange-600", text: "text-orange-900", label: "LOW" };
   };
 
   const summary = analyticsData?.summary;
   const revenueData = analyticsData?.revenueData || [];
   const topProducts = analyticsData?.topProducts || [];
+
+  // Use unified data source for Today's card to match graph exactly
+  console.log('Available revenueData periods:', revenueData.map(d => d.period));
+  
+  // Look for today's data in revenueData with multiple fallback patterns
+  const todayRevenueData = revenueData.find(data => {
+    const today = new Date();
+    const todayStr = today.toLocaleDateString('en-US', { 
+      weekday: 'short', 
+      month: 'short', 
+      day: 'numeric' 
+    });
+    
+    return data.period === 'Today' || 
+           data.period?.toLowerCase().includes('today') ||
+           data.period === todayStr ||
+           data.period === today.toLocaleDateString('en-US', { weekday: 'long' });
+  });
+  
+  // Use unified data source for consistency
+  const todayTransactionsFromGraph = todayRevenueData?.transactions || todaySalesData.transactions;
+  const todayRevenueFromGraph = todayRevenueData?.revenue || todaySalesData.revenue;
+  
+  console.log('Today data sources:', {
+    revenueDataFound: !!todayRevenueData,
+    revenueDataTransactions: todayRevenueData?.transactions,
+    unifiedTransactions: todaySalesData.transactions,
+    finalTransactions: todayTransactionsFromGraph,
+    revenueDataRevenue: todayRevenueData?.revenue,
+    unifiedRevenue: todaySalesData.revenue,
+    finalRevenue: todayRevenueFromGraph
+  });
 
   return (
     <div className="space-y-8">
@@ -280,21 +638,12 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
               </p>
         </div>
             <div className="text-right">
-              <p className="text-sm text-muted-foreground">Current Time</p>
+              <p className="text-sm text-muted-foreground">Dashboard</p>
               <p className="text-lg font-semibold">
-                {new Date().toLocaleTimeString('en-US', { 
-                  hour: '2-digit', 
-                  minute: '2-digit',
-                  hour12: true 
-                })}
+                Analytics Overview
               </p>
               <p className="text-sm text-muted-foreground">
-                {new Date().toLocaleDateString('en-US', { 
-                  weekday: 'long',
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric'
-                })}
+                Real-time insights
               </p>
         </div>
       </div>
@@ -303,32 +652,32 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
 
       {/* Key Metrics Cards - Show immediately with available data */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
-        {/* Total Sales Card */}
+        {/* Total Sales Card - Shows period-specific data */}
         <MetricCard
           title="Total Sales"
-          value={analyticsLoading ? "..." : formatCurrency(summary?.totalRevenue || 0)}
+          value={analyticsLoading ? "..." : formatCurrency(periodSummaryData.revenue)}
           change={summary?.revenueGrowth ?? 0}
           changeType={(summary?.revenueGrowth ?? 0) >= 0 ? 'increase' : 'decrease'}
           icon={<DollarSign className="h-6 w-6" />}
-          description={analyticsLoading ? "Loading..." : `${summary?.totalTransactions || 0} total transactions`}
+          description={analyticsLoading ? "Loading..." : `Revenue for selected period`}
           color="green"
         />
         
         {/* Today's Sales Card */}
         <MetricCard
           title="Today's Sales"
-          value={analyticsLoading ? "..." : formatCurrency(summary?.todayRevenue || 0)}
+          value={analyticsLoading ? "..." : formatCurrency(todayRevenueFromGraph || todaySalesData.revenue)}
           icon={<TrendingUp className="h-6 w-6" />}
-          description={analyticsLoading ? "Loading..." : `${summary?.todayTransactions || 0} transactions today`}
+          description={analyticsLoading ? "Loading..." : `${todayTransactionsFromGraph || todaySalesData.transactions} transactions today`}
           color="blue"
         />
         
-        {/* Products Sold Card */}
+        {/* Units sold (sum of quantities) — same basis as Sales tab */}
         <MetricCard
-          title="Products Sold"
-          value={analyticsLoading ? "..." : (summary?.totalItems || 0).toLocaleString()}
+          title="Overall Units Sold"
+          value={analyticsLoading ? "..." : periodSummaryData.items.toLocaleString()}
           icon={<Package className="h-6 w-6" />}
-          description={analyticsLoading ? "Loading..." : `Average sale: ${formatCurrency(summary?.avgTransactionValue || 0)}`}
+          description={analyticsLoading ? "Loading..." : "Selected period"}
           color="orange"
         />
         
@@ -390,7 +739,7 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
               <div className="flex items-center gap-2">
                 <Select 
                   value={timePeriod} 
-                  onValueChange={(value: "weekly" | "monthly" | "quarterly" | "yearly") => setTimePeriod(value)}
+                  onValueChange={(value: "weekly" | "monthly" | "quarterly" | "annually") => setTimePeriod(value)}
                   disabled={periodLoading}
                 >
                   <SelectTrigger className="w-32">
@@ -400,7 +749,7 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
                     <SelectItem value="weekly">Weekly</SelectItem>
                     <SelectItem value="monthly">Monthly</SelectItem>
                     <SelectItem value="quarterly">Quarterly</SelectItem>
-                    <SelectItem value="yearly">Yearly</SelectItem>
+                    <SelectItem value="annually">Annually</SelectItem>
                   </SelectContent>
                 </Select>
                 <Button onClick={() => fetchAnalytics(true)} variant="outline" size="sm" disabled={periodLoading}>
@@ -439,7 +788,7 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
                   formatter={(value: number) => [formatCurrency(value), 'Revenue']}
                 />
                 <Area
-                  type="monotone"
+                  type="natural"
                   dataKey="revenue"
                   stroke="#6366f1"
                   strokeWidth={3}
@@ -491,125 +840,137 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
                     border: "1px solid #e5e7eb",
                     borderRadius: "8px",
                   }}
-                  formatter={(value: number, name: string) => [
-                    name === 'revenue' ? formatCurrency(value) : value,
-                    name === 'revenue' ? 'Revenue' : 'Units Sold'
-                  ]}
+                  formatter={(value: number) => [formatCurrency(value), 'Revenue']}
                 />
-                <Bar dataKey="revenue" fill="#6366f1" radius={[8, 8, 0, 0]} />
-                <Bar dataKey="quantity" fill="#8b5cf6" radius={[8, 8, 0, 0]} />
+                <Bar dataKey="revenue" fill="#6366f1" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
             )}
           </CardContent>
         </Card>
-  </div>
 
-      {/* Transactions and Items Chart */}
-      <Card className="bg-card/60 border border-primary/10 shadow-sm backdrop-blur-sm">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ShoppingCart className="h-5 w-5 text-primary" />
-            Transaction Analytics
-          </CardTitle>
-          <CardDescription>
-            Transactions and items sold over time
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="relative">
-          {periodLoading ? (
-            <div className="flex items-center justify-center h-[300px]">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-        </div>
-          ) : (revenueData || []).length === 0 ? (
-            <div className="flex items-center justify-center h-[300px] text-muted-foreground">
-              No transaction data available for this period
-        </div>
-          ) : (
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={revenueData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="period" stroke="#6b7280" />
-              <YAxis stroke="#6b7280" />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "#ffffff",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: "8px",
-                }}
-              />
-              <Legend />
-              <Line
-                type="monotone"
-                dataKey="transactions"
-                stroke="#6366f1"
-                strokeWidth={3}
-                dot={{ r: 4, fill: "#6366f1", stroke: "#ffffff", strokeWidth: 2 }}
-                activeDot={{ r: 6, fill: "#6366f1", stroke: "#ffffff", strokeWidth: 2 }}
-                name="Transactions"
-              />
-              <Line
-                type="monotone"
-                dataKey="items"
-                stroke="#8b5cf6"
-                strokeWidth={3}
-                dot={{ r: 4, fill: "#8b5cf6", stroke: "#ffffff", strokeWidth: 2 }}
-                activeDot={{ r: 6, fill: "#8b5cf6", stroke: "#ffffff", strokeWidth: 2 }}
-                name="Items Sold"
-              />
-            </LineChart>
-          </ResponsiveContainer>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Low Stock Advisory */}
-      {lowStockProducts.length > 0 && (
-        <Card className="bg-white border border-gray-200">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="rounded-full bg-red-100 p-2">
-                  <AlertTriangle className="h-5 w-5 text-red-600" />
-            </div>
-                <div>
-                  <CardTitle className="text-gray-900">Low Stock Advisory</CardTitle>
-                  <CardDescription className="text-gray-600">
-                    Products that need immediate restocking
-                  </CardDescription>
-            </div>
-          </div>
-              <span className="text-xs font-semibold px-3 py-1 bg-red-100 text-red-800 rounded-full">
-                {lowStockProducts.length} Items
-              </span>
-        </div>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-3 lg:gap-4">
-              {lowStockProducts.map((product) => {
-                const colors = getLowStockColor(product.stock);
-                return (
-                  <div key={product.id} className={`relative overflow-hidden rounded-lg border-2 ${colors.border} bg-gradient-to-br ${colors.bg} p-4 hover:shadow-md transition-shadow`}>
-                    <div className="absolute top-0 right-0 w-20 h-20 bg-opacity-30 rounded-full -mr-10 -mt-10" style={{ backgroundColor: colors.badge }}></div>
-                    <div className="relative z-10">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <p className={`font-semibold ${colors.text} text-sm`}>{product.name}</p>
-                          <p className={`text-xs ${colors.text} mt-1 opacity-80`}>Only {product.stock} left in stock</p>
-                          <p className={`text-xs ${colors.text} mt-1 opacity-60`}>SKU: {product.sku}</p>
-                    </div>
-                        <span className={`px-2 py-1 ${colors.badge} text-white text-xs font-bold rounded-full`}>{colors.label}</span>
+            {/* Transaction Analysis */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ShoppingCart className="h-5 w-5" />
+                  Transaction Analysis
+                </CardTitle>
+                <CardDescription>
+                  Transaction trends and patterns ({timePeriod})
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {periodLoading ? (
+                  <div className="flex items-center justify-center h-[300px]">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
                   </div>
+                ) : (revenueData || []).length === 0 ? (
+                  <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                    No transaction data available for this period
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <LineChart data={revenueData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                      <XAxis dataKey="period" stroke="#6b7280" />
+                      <YAxis stroke="#6b7280" />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: "#ffffff",
+                          border: "1px solid #e5e7eb",
+                          borderRadius: "8px",
+                        }}
+                      />
+                      <Legend />
+                      <Line 
+                        type="monotone" 
+                        dataKey="transactions" 
+                        stroke="#10b981" 
+                        strokeWidth={3}
+                        dot={{ r: 4, fill: "#10b981", stroke: "#ffffff", strokeWidth: 2 }}
+                        activeDot={{ r: 6, fill: "#10b981", stroke: "#ffffff", strokeWidth: 2 }}
+                        name="Transactions"
+                      />
+                      <Line 
+                        type="monotone" 
+                        dataKey="items" 
+                        stroke="#6366f1" 
+                        strokeWidth={3}
+                        dot={{ r: 4, fill: "#6366f1", stroke: "#ffffff", strokeWidth: 2 }}
+                        activeDot={{ r: 6, fill: "#6366f1", stroke: "#ffffff", strokeWidth: 2 }}
+                        name="Items Sold"
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Low Stock Advisory */}
+            <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5" />
+                Low Stock Advisory
+              </CardTitle>
+              <CardDescription>
+                Products that need restocking soon
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {productsLoading ? (
+                <div className="flex items-center justify-center h-[200px]">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                 </div>
-              </div>
-                );
-              })}
-        </div>
-          </CardContent>
-        </Card>
+              ) : lowStockProducts.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-[200px] text-muted-foreground">
+                  <Package className="h-12 w-12 mb-2 text-green-600" />
+                  <p className="text-green-700 font-medium">All products are well stocked!</p>
+                  <p className="text-sm text-green-600">No items need immediate attention</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="text-sm text-muted-foreground font-medium">
+                    {lowStockProducts.length} products need attention
+                  </div>
+                  <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                    {lowStockProducts.slice(0, 10).map((product, index) => {
+                      const stockColor = getLowStockColor(product.stock);
+                      return (
+                        <div 
+                          key={product.id} 
+                          className={`flex items-center justify-between p-3 rounded-lg ${stockColor.bg} hover:shadow-md transition-all duration-200`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`w-2 h-2 rounded-full ${stockColor.badge}`}></div>
+                            <div>
+                              <p className={`font-medium ${stockColor.text}`}>{product.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {product.category} • Cabinet: {product.cabinet}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className={`font-bold ${stockColor.text}`}>{product.stock}</p>
+                            <p className="text-xs text-muted-foreground">units left</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {lowStockProducts.length > 10 && (
+                    <p className="text-sm text-muted-foreground text-center pt-2 border-t">
+                      ... and {lowStockProducts.length - 10} more products
+                    </p>
+                  )}
+                </div>
+              )}
+            </CardContent>
+            </Card>
+          </div>
+        </>
       )}
-    </>
-  )}
-  </div>
+    </div>
   );
 }

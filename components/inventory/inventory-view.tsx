@@ -7,12 +7,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ArrowUp, ArrowDown, Plus, Search, Package, Clock, Trash2, Edit2, Filter, X, Calendar, DollarSign, ArrowUpDown, Zap, Check, AlertTriangle, XCircle, Printer, Download, RefreshCw, Globe, FileText, BarChart3, Folder } from "lucide-react"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useProducts, type Product, type ProductLocation } from "@/contexts/products-context"
 import { useToast } from "@/contexts/toast-context"
 import { useActivity } from "@/contexts/activity-context"
 import { validateProductForm } from "@/utils/validation"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { BatchPriceDisplay } from "@/components/shared/batch-price-display"
+import { getCurrentPriceFromBatches, clearPriceCacheOnBatchUpdate } from "@/lib/batch-price"
 import { Spinner } from "@/components/ui/spinner"
 import { EmptyState } from "@/components/ui/empty-state"
 
@@ -38,6 +40,167 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
   const { getProductsByCabinet, addProduct, updateProduct, deleteProduct, loading, error, refetch } = useProducts()
   const { addToast } = useToast()
   const { addActivity } = useActivity()
+  
+  // FIFO batch rotation function - moves next batch from storage to on-shelf when current batch is depleted
+  const rotateFIFOBatches = async (productId: string, cabinet: string): Promise<void> => {
+    try {
+      const { db } = await import('@/lib/indexeddb');
+      
+      // Get all batches for this product, sorted by added date (oldest first)
+      const allBatches = await db.stockBatches
+        .where({ productId: String(productId), cabinet: cabinet })
+        .toArray();
+      
+      // Filter out deleted batches
+      const deletedBatches = await db.deletedBatches
+        .where({ productId: String(productId), cabinet: cabinet })
+        .toArray();
+      const deletedBatchIds = new Set(deletedBatches.map(db => db.batchId));
+      
+      const activeBatches = allBatches.filter(batch => !deletedBatchIds.has(String(batch.id)));
+      
+      // Find current on-shelf batch WITH STOCK (current batch)
+      const onShelfBatch = activeBatches.find(batch => batch.status === 'on-shelf' && (Number(batch.quantity) || 0) > 0);
+      
+      // If no on-shelf batch or on-shelf batch is depleted, rotate to next batch
+      if (!onShelfBatch || onShelfBatch.quantity <= 0) {
+        // Find oldest batch in storage that has stock > 0
+        const storageBatches = activeBatches.filter(batch =>
+          batch.status === 'in-storage' && (Number(batch.quantity) || 0) > 0
+        );
+        const oldestStorageBatch = storageBatches.sort((a, b) => 
+          new Date(a.addedDate).getTime() - new Date(b.addedDate).getTime()
+        )[0];
+        
+        if (oldestStorageBatch) {
+          console.log(`Rotating FIFO: Moving batch ${oldestStorageBatch.id} from storage to on-shelf (stock: ${oldestStorageBatch.quantity})`);
+          
+          // Promote the oldest storage batch to on-shelf
+          await db.stockBatches.update(oldestStorageBatch.id!, {
+            status: 'on-shelf',
+            lastModified: Date.now()
+          });
+          // Current batch changed → refresh price everywhere immediately
+          clearPriceCacheOnBatchUpdate(productId, cabinet);
+          
+          
+          console.log(`FIFO rotation completed: Batch ${oldestStorageBatch.id} is now on-shelf`);
+        } else {
+          console.log('No available batches with stock > 0 to rotate to on-shelf');
+          
+          // If there was a depleted on-shelf batch, mark it as sold
+          if (onShelfBatch && (Number(onShelfBatch.quantity) || 0) <= 0) {
+            await db.stockBatches.update(onShelfBatch.id!, {
+              status: 'sold',
+              lastModified: Date.now()
+            });
+            console.log(`Marked depleted batch ${onShelfBatch.id} as sold - no replacement available`);
+            
+            // Clear price cache since the current batch was depleted
+            clearPriceCacheOnBatchUpdate(productId, cabinet);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error in FIFO batch rotation:', error);
+    }
+  };
+
+  // Helper function to filter out deleted batches
+  const getFilteredBatches = async (productId: string, cabinet: string) => {
+    try {
+      const { db } = await import('@/lib/indexeddb');
+      
+      // Get batches that were deleted offline for this product/cabinet
+      const deletedBatches = await db.deletedBatches
+        .where({ productId: String(productId), cabinet: cabinet })
+        .toArray();
+      const deletedBatchIds = new Set(deletedBatches.map(db => db.batchId));
+      
+      // Get all batches and filter out deleted ones
+      const allBatches = await db.stockBatches
+        .where({ productId: String(productId), cabinet: cabinet })
+        .toArray();
+      const filteredBatches = allBatches.filter(batch => !deletedBatchIds.has(String(batch.id)));
+      
+      // Proper FIFO sorting with 0-stock batch handling:
+      // 1. Current batch is the oldest 'on-shelf' batch with stock > 0
+      // 2. Batches with stock > 0 sorted by status and date
+      // 3. Batches with stock = 0 moved to bottom
+      const sortedBatches = filteredBatches.sort((a, b) => {
+        // Find the oldest on-shelf batch - this should be the current batch
+        const aDate = new Date(a.addedDate || 0).getTime();
+        const bDate = new Date(b.addedDate || 0).getTime();
+        
+        // Priority 1: Separate by stock availability
+        const aHasStock = a.quantity > 0;
+        const bHasStock = b.quantity > 0;
+        
+        if (aHasStock && !bHasStock) {
+          return -1; // A has stock, comes first
+        }
+        if (!aHasStock && bHasStock) {
+          return 1; // B has stock, comes first
+        }
+        
+        // Priority 2: If both have stock or both don't, sort by status
+        if (a.status === 'on-shelf' && b.status === 'on-shelf') {
+          return aDate - bDate; // Older on-shelf batch comes first (current)
+        }
+        
+        // If only one is on-shelf, it comes first
+        if (a.status === 'on-shelf' && b.status !== 'on-shelf') {
+          return -1;
+        }
+        if (b.status === 'on-shelf' && a.status !== 'on-shelf') {
+          return 1;
+        }
+        
+        // For non-on-shelf batches, sort by addedDate (newest first for display)
+        return bDate - aDate;
+      });
+      
+      return sortedBatches;
+    } catch (err) {
+      console.error('Failed to get filtered batches:', err);
+      return [];
+    }
+  }
+
+  // Helper function to get latest restock date from batches
+  const getLatestRestockDate = async (productId: string, cabinet: string): Promise<string | null> => {
+    try {
+      const { db } = await import('@/lib/indexeddb');
+      
+      // Get batches that were deleted offline for this product/cabinet
+      const deletedBatches = await db.deletedBatches
+        .where({ productId: String(productId), cabinet: cabinet })
+        .toArray();
+      const deletedBatchIds = new Set(deletedBatches.map(db => db.batchId));
+      
+      // Get all batches and filter out deleted ones
+      const allBatches = await db.stockBatches
+        .where({ productId: String(productId), cabinet: cabinet })
+        .toArray();
+      const filteredBatches = allBatches.filter(batch => !deletedBatchIds.has(String(batch.id)));
+      
+      if (filteredBatches.length === 0) {
+        return null;
+      }
+      
+      // Find the most recent batch by addedDate
+      const latestBatch = filteredBatches.reduce((latest, batch) => {
+        const batchDate = new Date(batch.addedDate || 0).getTime();
+        const latestDate = new Date(latest.addedDate || 0).getTime();
+        return batchDate > latestDate ? batch : latest;
+      });
+      
+      return latestBatch.addedDate || null;
+    } catch (err) {
+      console.error('Failed to get latest restock date:', err);
+      return null;
+    }
+  }
   const products = getProductsByCabinet(cabinet)
   const [searchQuery, setSearchQuery] = useState("")
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -54,6 +217,8 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
   const [showRestockConfirm, setShowRestockConfirm] = useState(false)
   const [showDeleteBatchConfirm, setShowDeleteBatchConfirm] = useState(false)
   const [batchToDelete, setBatchToDelete] = useState<any>(null)
+  const [showProductNameConfirm, setShowProductNameConfirm] = useState(false)
+  const [confirmProductName, setConfirmProductName] = useState('')
   
   // Loading states for operations
   const [isAddingStock, setIsAddingStock] = useState(false)
@@ -64,6 +229,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState("all")
   const [stockFilter, setStockFilter] = useState("all")
+  const [priceRangeFilter, setPriceRangeFilter] = useState({ min: "", max: "" })
   const [dateFilter, setDateFilter] = useState({ 
     year: "all", 
     month: "all", 
@@ -75,8 +241,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
     startDate: "", 
     endDate: "" 
   })
-  const [priceFilter, setPriceFilter] = useState("all")
-  const [sortBy, setSortBy] = useState("name")
+    const [sortBy, setSortBy] = useState("name")
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc")
   const [timePeriod, setTimePeriod] = useState("all")
   
@@ -128,7 +293,6 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                       stockFilter !== "all" || 
                       (dateFilter.startDate || dateFilter.endDate) || 
                       dateFilter.year !== "all" || 
-                      priceFilter !== "all" ||
                       searchQuery !== "";
     
     if (!hasFilters) {
@@ -142,6 +306,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
   const confirmClearFilters = () => {
     setSelectedCategory("all")
     setStockFilter("all")
+    setPriceRangeFilter({ min: "", max: "" })
     setDateFilter({ 
       year: "all", 
       month: "all", 
@@ -153,14 +318,13 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
       startDate: "", 
       endDate: "" 
     })
-    setPriceFilter("all")
     setSortBy("name")
     setSortDirection("asc")
     setSearchQuery("")
     setClearConfirm(false)
     addToast("All filters cleared", "success")
   }
-  
+
   // Track if filters have been applied and results are empty
   const [filtersApplied, setFiltersApplied] = useState(false)
   
@@ -237,12 +401,12 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
           <h1>Inventory List</h1>
           <div class="header-info">
             <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
-            <p><strong>Cabinet:</strong> ${cabinet.charAt(0).toUpperCase() + cabinet.slice(1)}</p>
-            <p><strong>Total Items:</strong> ${filteredInventory.length}</p>
+            <p><strong>Cabinet:</strong> ${cabinet}</p>
+            <p><strong>Total Products:</strong> ${filteredInventory.length}</p>
             <p><strong>Filters Applied:</strong> ${[
               selectedCategory !== "all" ? `Category: ${selectedCategory}` : null,
               stockFilter !== "all" ? `Stock: ${stockFilter}` : null,
-              priceFilter !== "all" ? `Price: ${priceFilter}` : null,
+              null, // Price filter disabled for batch-based pricing
               searchQuery ? `Search: ${searchQuery}` : null
             ].filter(Boolean).join(', ') || 'None'}</p>
           </div>
@@ -250,11 +414,10 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
             <thead>
               <tr>
                 <th>SKU</th>
-                <th>Product Name</th>
+                <th>Name</th>
                 <th>Description</th>
                 <th>Category</th>
                 <th>Stock</th>
-                <th>Price</th>
                 <th>Last Restock</th>
               </tr>
             </thead>
@@ -266,7 +429,6 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                   <td>${item.description || '-'}</td>
                   <td>${item.category}</td>
                   <td class="${item.stock === 0 ? 'zero-stock' : item.stock < 20 ? 'low-stock' : ''}">${item.stock}</td>
-                  <td>₱${item.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   <td>${item.lastRestockDate || 'No restocks'}</td>
                 </tr>
               `).join('')}
@@ -276,25 +438,52 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
       </html>
     `;
     
-    const printWindow = window.open('', '_blank');
+    const printWindow = window.open('', '', 'width=800,height=600');
     if (printWindow) {
       printWindow.document.write(printContent);
       printWindow.document.close();
+      
+      // Show message before triggering print dialog
+      addToast("Opening print dialog...", "info");
+      
+      // Trigger print dialog immediately
       printWindow.print();
-      addToast("Print dialog opened", "success");
+      
+      // Handle print completion or cancellation
+      let printHandled = false;
+      
+      printWindow.onafterprint = () => {
+        printHandled = true;
+        printWindow.close();
+        addToast("Inventory report printed successfully!", "success");
+      };
+      
+      // Close window if user cancels or closes without printing
+      setTimeout(() => {
+        if (!printWindow.closed && !printHandled) {
+          printWindow.close();
+          addToast("Print cancelled", "info");
+        }
+      }, 2000);
+      
+      // Fallback cleanup
+      setTimeout(() => {
+        if (!printWindow.closed) {
+          printWindow.close();
+        }
+      }, 10000);
     }
   };
 
   // Export to Excel
   const handleExportExcel = () => {
-    const headers = ['SKU', 'Product Name', 'Description', 'Category', 'Stock', 'Price', 'Last Restock'];
+    const headers = ['SKU', 'Product Name', 'Description', 'Category', 'Stock', 'Last Restock'];
     const data = filteredInventory.map(item => [
       item.sku,
       item.name,
       item.description || '',
       item.category,
       item.stock.toString(),
-      item.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
       item.lastRestockDate || 'No restocks'
     ]);
 
@@ -332,18 +521,21 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                          (stockFilter === "low" && item.stock > 0 && item.stock < 20) ||
                          (stockFilter === "out" && item.stock === 0);
     
-    // Price filter
-    const matchesPrice = priceFilter === "all" || (() => {
-      const price = item.price;
-      switch (priceFilter) {
-        case "under-100": return price < 100;
-        case "100-500": return price >= 100 && price < 500;
-        case "500-1000": return price >= 500 && price < 1000;
-        case "1000-5000": return price >= 1000 && price < 5000;
-        case "5000-plus": return price >= 5000;
-        default: return true;
+    // Price filter based on current batch price (simplified for now)
+    // Note: For optimal performance, this could be enhanced with caching or memoization
+    let matchesPrice = true;
+    if (priceRangeFilter.min || priceRangeFilter.max) {
+      // Use a simple price estimate for filtering - this will be refined
+      // For now, we'll use the product's base price as a rough estimate
+      const estimatedPrice = item.price || 0;
+      
+      if (priceRangeFilter.min && estimatedPrice < parseFloat(priceRangeFilter.min)) {
+        matchesPrice = false;
       }
-    })();
+      if (priceRangeFilter.max && estimatedPrice > parseFloat(priceRangeFilter.max)) {
+        matchesPrice = false;
+      }
+    }
     
     // Date filter
     let matchesDate = true;
@@ -421,7 +613,6 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                           stockFilter !== "all" || 
                           (dateFilter.startDate || dateFilter.endDate) || 
                           dateFilter.year !== "all" || 
-                          priceFilter !== "all" ||
                           searchQuery !== "";
   
   React.useEffect(() => {
@@ -434,7 +625,11 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
   }, [filteredInventory.length, hasActiveFilters, filtersApplied, addToast]);
 
   const handleDelete = (id: string) => {
-    setDeleteConfirm({ open: true, id })
+    const productToDelete = products.find(p => p.id === id)
+    if (productToDelete) {
+      setDeleteConfirm({ open: true, id })
+      setConfirmProductName('')
+    }
   }
 
   // Open stock dialog and fetch fresh data
@@ -443,15 +638,57 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
       setIsLoadingStock(true)
       setSelectedProductForStock(product)
       
-      // Always fetch fresh stock data from server
-      const response = await fetch(`/api/stock-batches?productId=${product.id}&cabinet=${cabinet}`)
-      if (response.ok) {
-        const additions = await response.json()
-        console.log('Fresh stock data loaded:', additions.map((a: any) => ({id: a.id, quantity: a.quantity})));
-        setStockAdditions(additions)
+      // Check if offline
+      const isOnline = navigator.onLine;
+      
+      if (!isOnline) {
+        // Load from IndexedDB when offline, excluding deleted batches
+        const filteredBatches = await getFilteredBatches(String(product.id), cabinet);
+        console.log('Stock batches loaded from IndexedDB (filtered):', filteredBatches);
+        setStockAdditions(filteredBatches);
       } else {
-        // If no batches exist, set empty array
-        setStockAdditions([])
+        // Fetch from server when online
+        const response = await fetch(`/api/stock-batches?productId=${product.id}&cabinet=${cabinet}`)
+        if (response.ok) {
+          const additions = await response.json()
+          console.log('Fresh stock data loaded:', additions.map((a: any) => ({id: a.id, quantity: a.quantity})));
+          setStockAdditions(additions)
+          
+          // Sync server data to IndexedDB for offline consistency
+          try {
+            const { db } = await import('@/lib/indexeddb');
+            
+            // Get batches that were deleted offline for this product/cabinet
+            const deletedBatches = await db.deletedBatches
+              .where({ productId: String(product.id), cabinet: cabinet })
+              .toArray();
+            const deletedBatchIds = new Set(deletedBatches.map(db => db.batchId));
+            
+            // Clear existing batches for this product/cabinet in IndexedDB
+            await db.stockBatches
+              .where({ productId: String(product.id), cabinet: cabinet })
+              .delete();
+            
+            // Add fresh server data to IndexedDB, excluding deleted batches
+            if (additions.length > 0) {
+              const filteredAdditions = additions.filter((batch: any) => !deletedBatchIds.has(String(batch.id)));
+              const indexedDBBatches = filteredAdditions.map((batch: any) => ({
+                ...batch,
+                productId: String(batch.productId),
+                synced: true,
+                lastModified: Date.now()
+              }));
+              await db.stockBatches.bulkAdd(indexedDBBatches);
+            }
+            
+            console.log('Synced server batch data to IndexedDB, excluding offline deletions');
+          } catch (dbError) {
+            console.error('Failed to sync batch data to IndexedDB:', dbError);
+          }
+        } else {
+          // If no batches exist, set empty array
+          setStockAdditions([])
+        }
       }
       setShowStockDialog(true)
     } catch (error: any) {
@@ -464,50 +701,146 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
 
   // Delete stock batch function
   const handleDeleteBatch = async (batchId: string) => {
-    console.log('handleDeleteBatch called with batchId:', batchId);
-    console.log('Current stockAdditions in state:', stockAdditions.map(s => ({id: s.id, quantity: s.quantity})));
-    console.log('batchToDelete:', batchToDelete);
-    console.log('selectedProductForStock:', selectedProductForStock?.name);
-    
     if (!batchId || !selectedProductForStock) {
-      console.log('Early return - batchId:', batchId, 'selectedProductForStock:', !!selectedProductForStock);
       return
     }
 
-    try {
-      setIsDeletingBatch(true)
-      
-      // Delete the batch via API
-      const response = await fetch(`/api/stock-batches/${batchId}`, {
-        method: 'DELETE',
-      })
+    // Check if we're offline
+    const isOnline = navigator.onLine;
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to delete batch')
+    // Optimistic UI: remove immediately and show "deleting" state.
+    const previousBatches = stockAdditions;
+    const previousSelected = selectedProductForStock;
+    const deletedBatchSnapshot = stockAdditions.find((b) => String(b.id) === String(batchId));
+
+    setIsDeletingBatch(true)
+    setStockAdditions(prev => prev.filter(batch => String(batch.id) !== String(batchId)));
+
+    if (deletedBatchSnapshot) {
+      const remainingBatches = stockAdditions.filter(b => String(b.id) !== String(batchId));
+      const updatedStock = remainingBatches.reduce((total, batch) => total + (Number(batch.quantity) || 0), 0);
+      setSelectedProductForStock({
+        ...selectedProductForStock,
+        stock: updatedStock
+      });
+    }
+    
+    try {
+      if (isOnline) {
+        // Online mode - Delete via API
+        const response = await fetch(`/api/stock-batches/${batchId}`, {
+          method: 'DELETE',
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || 'Failed to delete batch')
+        }
+        
+        // Also remove from IndexedDB to maintain consistency
+        try {
+          const { db } = await import('@/lib/indexeddb');
+          await db.stockBatches.delete(String(batchId));
+          await db.stockBatches.delete(parseInt(batchId)); // Try both ID types
+        } catch (err) {
+          console.log('Could not remove from IndexedDB:', err);
+        }
+      } else {
+        // Offline mode - Delete from IndexedDB only, no sync
+        const { db } = await import('@/lib/indexeddb');
+        
+        // Try to delete the batch - handle both string and integer IDs
+        let deleteSuccess = false;
+        let deletedBatch = null;
+        
+        try {
+          // Try with original batchId first (for string IDs from online batches)
+          deletedBatch = await db.stockBatches.get(batchId);
+          if (deletedBatch) {
+            await db.stockBatches.delete(batchId);
+            deleteSuccess = true;
+          }
+        } catch (error) {
+          // Continue to try integer ID
+        }
+        
+        if (!deleteSuccess) {
+          try {
+            // Try with parseInt for integer IDs (for offline batches)
+            deletedBatch = await db.stockBatches.get(parseInt(batchId));
+            if (deletedBatch) {
+              await db.stockBatches.delete(parseInt(batchId));
+              deleteSuccess = true;
+            }
+          } catch (intError) {
+            throw new Error('Failed to delete batch from local storage');
+          }
+        }
+        
+        if (deleteSuccess) {
+          // Track this deletion to prevent server sync from restoring it
+          await db.deletedBatches.add({
+            batchId: batchId,
+            productId: String(selectedProductForStock.id),
+            cabinet: selectedProductForStock.cabinet,
+            deletedAt: Date.now()
+          });
+
+          // Queue deletion for server sync once connection is restored.
+          const { enhancedSyncService } = await import('@/lib/enhanced-sync');
+          await enhancedSyncService.queueChange(
+            'stock_batch_delete',
+            'delete',
+            {
+              batchId: String(batchId),
+              productId: String(selectedProductForStock.id),
+              cabinet: selectedProductForStock.cabinet,
+            },
+            selectedProductForStock.cabinet
+          );
+          
+          addToast(`Batch deleted`, "success");
+        } else {
+          throw new Error('Batch not found');
+        }
       }
 
-      // Update local state to reflect the change
-      setStockAdditions(prev => prev.filter(batch => batch.id !== batchId))
-      
-      // Find the deleted batch to get its quantity for stock calculation
-      const deletedBatch = stockAdditions.find(batch => batch.id === batchId)
-      if (deletedBatch) {
-        // Update product stock locally (will be refreshed from server anyway)
-        const updatedStock = Math.max(0, (selectedProductForStock.stock || 0) - deletedBatch.quantity)
+      if (deletedBatchSnapshot && selectedProductForStock) {
+        // Calculate new stock based on remaining batches (more accurate)
+        const remainingBatches = stockAdditions.filter(batch => String(batch.id) !== String(batchId))
+        const updatedStock = remainingBatches.reduce((total, batch) => total + (Number(batch.quantity) || 0), 0)
         
-        // Update the selected product state to show real-time stock decrease
-        setSelectedProductForStock({
-          ...selectedProductForStock,
-          stock: updatedStock
-        })
+        // Update product in IndexedDB and context
+        try {
+          await updateProduct(String(selectedProductForStock.id), {
+            stock: updatedStock
+          }, cabinet);
+          
+          // Don't refresh from IndexedDB - we already updated the state by filtering
+          // This prevents the deleted batch from reappearing
+          console.log('Batch deletion completed - state already updated');
+          
+          // Refresh products list to show updated stock count in inventory
+          await refetch();
+          
+          // Run FIFO rotation to ensure proper batch management
+          await rotateFIFOBatches(String(selectedProductForStock.id), cabinet);
+          
+          // Clear price cache to trigger immediate price update across all components
+          clearPriceCacheOnBatchUpdate(String(selectedProductForStock.id), cabinet);
+        } catch (err) {
+          console.error('Failed to update product stock:', err);
+          // If update fails, revert optimistic UI
+          setStockAdditions(previousBatches);
+          setSelectedProductForStock(previousSelected);
+        }
         
-        addToast(`Removed batch of ${deletedBatch.quantity} units from ${selectedProductForStock.name}`, "success")
+        addToast(`Removed batch of ${deletedBatchSnapshot.quantity} units from ${selectedProductForStock.name}`, "success")
         
         addActivity({
           username: username || "Unknown User",
           activity: "Removed stock batch",
-          details: `Removed batch of ${deletedBatch.quantity} units from '${selectedProductForStock.name}' (SKU: ${selectedProductForStock.sku || 'N/A'}) in ${cabinet} cabinet - New stock: ${updatedStock} units`,
+          details: `Removed batch of ${deletedBatchSnapshot.quantity} units from '${selectedProductForStock.name}' (SKU: ${selectedProductForStock.sku || 'N/A'}) in ${cabinet} cabinet - New stock: ${updatedStock} units`,
           category: "product"
         })
       }
@@ -518,6 +851,9 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
     } catch (error) {
       console.error('Error deleting batch:', error)
       addToast(error instanceof Error ? error.message : 'Failed to delete batch', 'error')
+      // Revert optimistic UI on failure
+      setStockAdditions(previousBatches);
+      setSelectedProductForStock(previousSelected);
     } finally {
       setIsDeletingBatch(false)
       setShowDeleteBatchConfirm(false)
@@ -526,9 +862,39 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
   }
 
   // Update batch status function
-  const handleUpdateBatchStatus = async (batchId: string, newStatus: string) => {
+  const handleUpdateBatchStatus = async (batchId: string, newStatus: 'on-shelf' | 'in-storage') => {
     try {
       setIsUpdatingStatus(batchId)
+      
+      // Check if we're offline
+      const isOnline = navigator.onLine;
+      
+      if (!isOnline) {
+        // Offline mode - update locally in IndexedDB
+        const { db } = await import('@/lib/indexeddb');
+        await db.stockBatches.update(batchId, { 
+          status: newStatus,
+          lastModified: Date.now()
+        });
+
+        const { enhancedSyncService } = await import('@/lib/enhanced-sync');
+        await enhancedSyncService.queueChange(
+          'stock_batch_status_update',
+          'update',
+          { batchId: String(batchId), status: newStatus, cabinet },
+          cabinet
+        );
+        
+        // Update local state
+        setStockAdditions(prev => 
+          prev.map(batch => 
+            batch.id === batchId ? { ...batch, status: newStatus } : batch
+          )
+        );
+        
+        addToast(`Batch status updated to ${newStatus} (offline)`, "success");
+        return;
+      }
       
       const response = await fetch(`/api/stock-batches/${batchId}/status`, {
         method: 'PATCH',
@@ -552,7 +918,38 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
       
     } catch (error) {
       console.error('Error updating batch status:', error)
-      addToast(error instanceof Error ? error.message : 'Failed to update batch status', 'error')
+      
+      // If fetch fails, try offline fallback
+      if (error instanceof Error && error.message.includes('fetch')) {
+        try {
+          const { db } = await import('@/lib/indexeddb');
+          await db.stockBatches.update(batchId, { 
+            status: newStatus,
+            lastModified: Date.now()
+          });
+
+          const { enhancedSyncService } = await import('@/lib/enhanced-sync');
+          await enhancedSyncService.queueChange(
+            'stock_batch_status_update',
+            'update',
+            { batchId: String(batchId), status: newStatus, cabinet },
+            cabinet
+          );
+          
+          // Update local state
+          setStockAdditions(prev => 
+            prev.map(batch => 
+              batch.id === batchId ? { ...batch, status: newStatus } : batch
+            )
+          );
+          
+          addToast(`Batch status updated to ${newStatus} (offline mode)`, "success");
+        } catch (offlineError) {
+          addToast(error instanceof Error ? error.message : 'Failed to update batch status', 'error')
+        }
+      } else {
+        addToast(error instanceof Error ? error.message : 'Failed to update batch status', 'error')
+      }
     } finally {
       setIsUpdatingStatus(null)
     }
@@ -561,49 +958,119 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
   const handleAddStock = async () => {
     if (!selectedProductForStock) return
 
-    // Frontend validation
-    const validationErrors = []
-
-    // Validate quantity
-    if (!newStock.quantity || newStock.quantity <= 0) {
-      validationErrors.push('Quantity must be greater than 0')
-    }
-    
-    if (newStock.quantity > 10000) {
-      validationErrors.push('Quantity cannot exceed 10,000 units')
-    }
-
-    if (!Number.isInteger(newStock.quantity)) {
-      validationErrors.push('Quantity must be a whole number')
-    }
-
     // Validate cost per unit
-    if (newStock.costPerUnit < 0) {
-      validationErrors.push('Cost per unit cannot be negative')
+    if (!newStock.costPerUnit || newStock.costPerUnit <= 0) {
+      addToast("Cost per unit is required and must be greater than 0", "error");
+      return;
     }
 
-    if (newStock.costPerUnit === 0) {
-      validationErrors.push('Cost per unit cannot be 0')
+    // Check if we're offline
+    const isOnline = navigator.onLine;
+    
+    // Check if product ID is a temporary offline ID (starts with temp- or prod_)
+    const isTempId = String(selectedProductForStock.id).startsWith('temp-') || 
+                     String(selectedProductForStock.id).startsWith('prod_');
+    
+    if (!isOnline || isTempId) {
+      // Offline mode or temporary product - update locally in IndexedDB
+      try {
+        setIsAddingStock(true);
+        
+        // Update product stock locally
+        const updatedProduct = {
+          ...selectedProductForStock,
+          stock: (parseInt(String(selectedProductForStock.stock || '0')) + newStock.quantity),
+          lastModified: Date.now(),
+          synced: false
+        };
+        
+        // Update in IndexedDB
+        const { db } = await import('@/lib/indexeddb');
+        await db.products.update(String(selectedProductForStock.id), updatedProduct);
+        
+        // Update product using the context to ensure state consistency
+        await updateProduct(String(selectedProductForStock.id), {
+          stock: updatedProduct.stock,
+          lastRestockDate: newStock.addedDate || new Date().toISOString()
+        }, cabinet);
+        
+        // Also save the stock batch for offline history
+        
+        // Check existing batches to implement FIFO properly
+        const existingBatches = await db.stockBatches
+          .where({ productId: String(selectedProductForStock.id), cabinet: selectedProductForStock.cabinet })
+          .toArray();
+        
+        // FIFO Logic: if there is NO on-shelf stock available, the new batch becomes the current on-shelf batch.
+        // This prevents the “only batch with stock” from ending up in storage.
+        const hasOnShelfStock = existingBatches.some(
+          (b: any) => String(b.status).trim() === 'on-shelf' && (Number(b.quantity) || 0) > 0
+        );
+        // Rule: if there is a current on-shelf batch with stock, ALL new restocks go to storage.
+        // Only if there is NO on-shelf stock at all do we put the new batch on-shelf.
+        const batchStatus = hasOnShelfStock ? 'in-storage' : 'on-shelf';
+        
+        await db.stockBatches.add({
+          productId: String(selectedProductForStock.id),
+          quantity: newStock.quantity,
+          costPerUnit: newStock.costPerUnit,
+          cabinet: selectedProductForStock.cabinet,
+          addedDate: newStock.addedDate || new Date().toISOString(),
+          notes: newStock.notes || 'Offline stock addition',
+          status: batchStatus,
+          synced: false,
+          lastModified: Date.now()
+        });
+        clearPriceCacheOnBatchUpdate(String(selectedProductForStock.id), selectedProductForStock.cabinet);
+        
+        // Queue the stock addition for later sync
+        const { enhancedSyncService } = await import('@/lib/enhanced-sync');
+        await enhancedSyncService.queueChange('product', 'update', {
+          productId: selectedProductForStock.id,
+          quantity: newStock.quantity,
+          costPerUnit: newStock.costPerUnit,
+          cabinet: selectedProductForStock.cabinet
+        }, selectedProductForStock.cabinet);
+        
+        addToast(`Added ${newStock.quantity} units to ${selectedProductForStock.name} (offline mode - will sync when online)`, "success");
+        
+        addActivity({
+          username: username || "Unknown User",
+          activity: "Added stock to product",
+          details: `Added ${newStock.quantity} units to '${selectedProductForStock.name}' (offline mode)`,
+          category: "product"
+        });
+        
+        // Reset form
+        setNewStock({ quantity: 1, costPerUnit: 0, notes: "", addedDate: new Date().toISOString() });
+        
+        // Update selected product state
+        setSelectedProductForStock(updatedProduct);
+        
+        // Refresh products list
+        await refetch();
+        
+        // Refresh stock additions from IndexedDB
+        const filteredBatches = await getFilteredBatches(String(selectedProductForStock.id), selectedProductForStock.cabinet);
+        setStockAdditions(filteredBatches);
+        
+        // Run FIFO rotation to ensure proper batch management
+        await rotateFIFOBatches(String(selectedProductForStock.id), selectedProductForStock.cabinet);
+        clearPriceCacheOnBatchUpdate(String(selectedProductForStock.id), selectedProductForStock.cabinet);
+        
+      } catch (error: any) {
+        console.error('Add stock error (offline):', error);
+        addToast(error.message || "Failed to add stock", "error");
+      } finally {
+        setIsAddingStock(false);
+      }
+      return;
     }
 
-    if (newStock.costPerUnit > 999999.99) {
-      validationErrors.push('Cost per unit cannot exceed $999,999.99')
-    }
-
-    // Check for decimal places in cost
-    if (newStock.costPerUnit && !Number.isFinite(newStock.costPerUnit)) {
-      validationErrors.push('Cost per unit must be a valid number')
-    }
-
-    if (validationErrors.length > 0) {
-      addToast(validationErrors.join('; '), 'error')
-      return
-    }
-
+    // Online mode with real product ID - use API
     try {
       setIsAddingStock(true)
       
-      // Add stock batch using the proper API
       const response = await fetch('/api/stock-batches', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -619,6 +1086,37 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
         const errorData = await response.json()
         const errorMessage = errorData.details || errorData.error || 'Failed to add stock'
         throw new Error(errorMessage)
+      }
+
+        // Also save to IndexedDB for offline history
+      try {
+        const { db } = await import('@/lib/indexeddb');
+        
+        // Check existing batches to implement FIFO properly
+        const existingBatches = await db.stockBatches
+          .where({ productId: String(selectedProductForStock.id), cabinet: selectedProductForStock.cabinet })
+          .toArray();
+        
+        // FIFO Logic: if there is NO on-shelf stock available, the new batch becomes the current on-shelf batch.
+        const hasOnShelfStock = existingBatches.some(
+          (b: any) => String(b.status).trim() === 'on-shelf' && (Number(b.quantity) || 0) > 0
+        );
+        const batchStatus = hasOnShelfStock ? 'in-storage' : 'on-shelf';
+        
+        await db.stockBatches.add({
+          productId: String(selectedProductForStock.id),
+          quantity: newStock.quantity,
+          costPerUnit: newStock.costPerUnit,
+          cabinet: selectedProductForStock.cabinet,
+          addedDate: newStock.addedDate || new Date().toISOString(),
+          notes: newStock.notes || 'Stock addition',
+          status: batchStatus,
+          synced: true,
+          lastModified: Date.now()
+        });
+        clearPriceCacheOnBatchUpdate(String(selectedProductForStock.id), selectedProductForStock.cabinet);
+      } catch (dbError) {
+        console.error('Failed to save batch to IndexedDB:', dbError);
       }
 
       // Stock is already updated in the database by the API, no need to updateProduct here
@@ -642,15 +1140,18 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
         stock: parseInt(String(selectedProductForStock.stock || '0')) + newStock.quantity
       })
       
-      // Refresh stock additions
-      const refreshResponse = await fetch(`/api/stock-batches?productId=${selectedProductForStock.id}&cabinet=${cabinet}`)
-      if (refreshResponse.ok) {
-        const additions = await refreshResponse.json()
-        setStockAdditions(additions)
+      // Refresh stock additions from IndexedDB (which has the notes)
+      try {
+        const freshBatches = await getFilteredBatches(String(selectedProductForStock.id), cabinet);
+        setStockAdditions(freshBatches);
+        console.log('Fresh stock data loaded from IndexedDB:', freshBatches);
+      } catch (error) {
+        console.error('Failed to refresh stock additions:', error);
       }
       
       // Force refresh the products list to get updated stock calculations
       await refetch()
+      clearPriceCacheOnBatchUpdate(String(selectedProductForStock.id), selectedProductForStock.cabinet);
     } catch (error: any) {
       console.error('Add stock error:', error)
       addToast(error.message || "Failed to add stock", "error")
@@ -673,26 +1174,49 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
     return "text-green-600 bg-green-50" // New stock
   }
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (deleteConfirm.id) {
       const productToDelete = products.find(p => p.id === deleteConfirm.id)
-      deleteProduct(deleteConfirm.id, cabinet)
       
-      addActivity({
-        username: username || "Unknown User",
-        activity: "Deleted product",
-        details: `Removed '${productToDelete?.name}' (SKU: ${productToDelete?.sku || 'N/A'}) from ${cabinet} cabinet - Category: ${productToDelete?.category || 'N/A'}`,
-        category: "product"
-      })
+      // Verify the typed product name matches exactly
+      if (confirmProductName !== productToDelete?.name) {
+        addToast("Product name does not match. Please type the exact product name to confirm deletion.", "error")
+        return
+      }
       
-      addToast("Product deleted successfully!", "success")
-      setDeleteConfirm({ open: false, id: null })
+      try {
+        await deleteProduct(deleteConfirm.id, cabinet)
+        
+        addActivity({
+          username: username || "Unknown User",
+          activity: "Deleted product",
+          details: `Removed '${productToDelete?.name}' (SKU: ${productToDelete?.sku || 'N/A'}) from ${cabinet} cabinet - Category: ${productToDelete?.category || 'N/A'}`,
+          category: "product"
+        })
+        
+        addToast("Product deleted successfully!", "success")
+        setDeleteConfirm({ open: false, id: null })
+        setConfirmProductName('')
+        
+        // Clear any active filters that might be hiding the product list
+        handleClearFilters()
+        
+        // Force refresh to ensure UI updates
+        await refetch()
+      } catch (error) {
+        console.error('Delete product error:', error)
+        addToast("Failed to delete product", "error")
+      }
     }
   }
 
   const handleAddProduct = async () => {
     console.log('Submitting product:', newProduct);
     console.log('Initial stock:', initialStock);
+    
+    // Check if offline first
+    const isOnline = navigator.onLine;
+    console.log('Online status:', isOnline);
     
     // Validate form - now require price and quantity since we're creating initial batch
     const validation = validateProductForm({
@@ -753,21 +1277,66 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
 
       // Only create stock batch if product was created successfully
       try {
-        const batchResponse = await fetch('/api/stock-batches', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            productId: product.id,
-            quantity: initialStock.quantity,
-            costPerUnit: newProduct.price, // Use selling price as initial cost
-            cabinet: cabinet,
-          }),
-        });
+        // Check if offline
+        const isOnline = navigator.onLine;
+        
+        if (!isOnline) {
+          // Create stock batch locally when offline
+          try {
+            const { db } = await import('@/lib/indexeddb');
+            await db.stockBatches.add({
+              productId: String(product.id),
+              quantity: initialStock.quantity,
+              costPerUnit: newProduct.price,
+              cabinet: cabinet,
+              addedDate: new Date().toISOString(),
+              notes: 'Initial stock',
+              status: 'on-shelf', // CRITICAL: Set status to 'on-shelf' for initial stock
+              synced: false,
+              lastModified: Date.now()
+            });
+            console.log('Initial stock batch created offline with on-shelf status');
+            clearPriceCacheOnBatchUpdate(String(product.id), cabinet);
+          } catch (dbError) {
+            console.error('Failed to save initial batch to IndexedDB:', dbError);
+          }
+        } else {
+          // Create stock batch via API when online
+          const batchResponse = await fetch('/api/stock-batches', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              productId: product.id,
+              quantity: initialStock.quantity,
+              costPerUnit: newProduct.price, // Use selling price as initial cost
+              cabinet: cabinet,
+            }),
+          });
 
-        if (!batchResponse.ok) {
-          const errorData = await batchResponse.json()
-          console.warn('Failed to create initial stock batch:', errorData);
-          // Don't fail the whole operation if batch creation fails
+          if (!batchResponse.ok) {
+            const errorData = await batchResponse.json()
+            console.warn('Failed to create initial stock batch:', errorData);
+            // Don't fail the whole operation if batch creation fails
+          }
+          
+          // Also save to IndexedDB for offline history
+          try {
+            const { db } = await import('@/lib/indexeddb');
+            await db.stockBatches.add({
+              productId: String(product.id),
+              quantity: initialStock.quantity,
+              costPerUnit: newProduct.price,
+              cabinet: cabinet,
+              addedDate: new Date().toISOString(),
+              notes: 'Initial stock',
+              status: 'on-shelf', // CRITICAL: Set status to 'on-shelf' for initial stock
+              synced: true,
+              lastModified: Date.now()
+            });
+            clearPriceCacheOnBatchUpdate(String(product.id), cabinet);
+          } catch (dbError) {
+            console.error('Failed to save initial batch to IndexedDB:', dbError);
+          }
         }
       } catch (batchError) {
         console.warn('Stock batch creation failed:', batchError);
@@ -782,6 +1351,9 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
       })
 
       addToast(`Product added successfully! ${initialStock.quantity} units added to stock.`, "success")
+      
+      // Clear any active filters that might be hiding the new product
+      handleClearFilters()
       
       // Refresh products to ensure stock calculations are up to date
       await refetch()
@@ -903,7 +1475,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
               <Filter size={14} className="text-[#3B18DA]" />
               <h3 className="font-semibold text-gray-800 text-sm">Filters</h3>
               <span className="bg-[#3B18DA]/10 text-[#3B18DA] px-1.5 py-0.5 rounded-full text-xs">
-                {[selectedCategory !== "all" ? 1 : 0, stockFilter !== "all" ? 1 : 0, (dateFilter.startDate || dateFilter.endDate) ? 1 : 0, priceFilter !== "all" ? 1 : 0, searchQuery !== "" ? 1 : 0].reduce((a, b) => a + b, 0)}
+                {[selectedCategory !== "all" ? 1 : 0, stockFilter !== "all" ? 1 : 0, (priceRangeFilter.min || priceRangeFilter.max) ? 1 : 0, (dateFilter.startDate || dateFilter.endDate) ? 1 : 0, searchQuery !== "" ? 1 : 0].reduce((a, b) => a + b, 0)}
               </span>
             </div>
             <Button
@@ -957,25 +1529,30 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
               </Select>
             </div>
 
-            {/* Price */}
+            {/* Price Range */}
             <div className="space-y-1">
               <label className="text-xs font-semibold text-gray-700 flex items-center gap-1">
-                <DollarSign size={10} className="text-orange-600" />
+                <DollarSign size={10} className="text-yellow-600" />
                 Price Range
               </label>
-              <Select value={priceFilter} onValueChange={setPriceFilter}>
-                <SelectTrigger className="h-7 border-2 focus:border-orange-500 text-xs">
-                  <SelectValue placeholder="All" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Prices</SelectItem>
-                  <SelectItem value="under-100">&lt;₱100</SelectItem>
-                  <SelectItem value="100-500">₱100 - ₱500</SelectItem>
-                  <SelectItem value="500-1000">₱500 - ₱1,000</SelectItem>
-                  <SelectItem value="1000-5000">₱1,000 - ₱5,000</SelectItem>
-                  <SelectItem value="5000-plus">₱5,000+</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="flex gap-1">
+                <Input
+                  type="number"
+                  placeholder="Min"
+                  value={priceRangeFilter.min}
+                  onChange={(e) => setPriceRangeFilter(prev => ({ ...prev, min: e.target.value }))}
+                  className="h-7 text-xs border-2 focus:border-yellow-500"
+                  min="0"
+                />
+                <Input
+                  type="number"
+                  placeholder="Max"
+                  value={priceRangeFilter.max}
+                  onChange={(e) => setPriceRangeFilter(prev => ({ ...prev, max: e.target.value }))}
+                  className="h-7 text-xs border-2 focus:border-yellow-500"
+                  min="0"
+                />
+              </div>
             </div>
 
             {/* Sort */}
@@ -1042,9 +1619,9 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                   onClick={() => {
                     setSelectedCategory("all")
                     setStockFilter("low")
+                    setPriceRangeFilter({ min: "", max: "" })
                     setDateFilter({ year: "all", month: "all", day: "all", startDate: "", endDate: "" })
                     setTempDateFilter({ startDate: "", endDate: "" })
-                    setPriceFilter("all")
                     addToast("Showing low stock items", "info")
                   }}
                   className="h-6 px-2 border-yellow-300 text-yellow-700 hover:bg-yellow-50 text-xs"
@@ -1057,9 +1634,9 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                   onClick={() => {
                     setSelectedCategory("all")
                     setStockFilter("out")
+                    setPriceRangeFilter({ min: "", max: "" })
                     setDateFilter({ year: "all", month: "all", day: "all", startDate: "", endDate: "" })
                     setTempDateFilter({ startDate: "", endDate: "" })
-                    setPriceFilter("all")
                     addToast("Showing out of stock items", "info")
                   }}
                   className="h-6 px-2 border-red-300 text-red-700 hover:bg-red-50 text-xs"
@@ -1076,9 +1653,9 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                       String(today.getDate()).padStart(2, '0');
                     setSelectedCategory("all")
                     setStockFilter("all")
+                    setPriceRangeFilter({ min: "", max: "" })
                     setDateFilter({ year: "all", month: "all", day: "all", startDate: localDateString, endDate: localDateString })
                     setTempDateFilter({ startDate: localDateString, endDate: localDateString })
-                    setPriceFilter("all")
                     addToast("Showing today's restocks", "info")
                   }}
                   className="h-6 px-2 border-green-300 text-green-700 hover:bg-green-50 text-xs col-span-2"
@@ -1117,33 +1694,16 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
 
         {!loading && !error && (
           <>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-2 flex-1 w-full sm:w-auto">
-                <div className="flex-1 relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                  <Input
-                    placeholder="Search by product name or SKU..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10 h-8 text-sm"
-                  />
+            <div className="flex flex-col gap-4">
+              {/* Action Buttons Row */}
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-gray-600">
+                  Showing {filteredInventory.length} of {products.length} items
+                  {searchQuery && ` for "${searchQuery}"`}
+                  {selectedCategory !== "all" && ` in ${selectedCategory}`}
+                  {stockFilter !== "all" && ` with ${stockFilter.replace(/([A-Z])/g, ' $1').trim()}`}
                 </div>
-                <Button
-                  variant="outline"
-                  onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-                  className="h-8 px-3 rounded-md border-2 border-[#3B18DA] hover:bg-[#3B18DA]/10 text-[#3B18DA] text-xs font-medium"
-                  title="Toggle filters panel"
-                >
-                  <div className="flex items-center gap-1">
-                    <Filter size={12} className="text-[#3B18DA]" />
-                    Filters
-                    {(selectedCategory !== "all" || stockFilter !== "all" || (dateFilter.startDate || dateFilter.endDate) || dateFilter.year !== "all" || priceFilter !== "all") && (
-                      <span className="w-2 h-2 bg-[#3B18DA] rounded-full animate-pulse"></span>
-                    )}
-                  </div>
-                </Button>
-              </div>
-              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
                   onClick={handlePrint}
@@ -1162,15 +1722,13 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                   <Download size={12} className="mr-1" />
                   Export
                 </Button>
-                {isAdmin && (
-                  <Button
-                    onClick={() => setShowAddForm(true)}
-                    className="h-8 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-lg text-xs"
-                  >
-                    <Plus size={14} className="mr-1" />
-                    Add Product
-                  </Button>
-                )}
+                <Button
+                  onClick={() => setShowAddForm(true)}
+                  className="h-8 px-3 bg-[#3B18DA] hover:bg-[#2A1199] text-white shadow-lg text-xs"
+                >
+                  <Plus size={14} className="mr-1" />
+                  Add Product
+                </Button>
               </div>
             </div>
 
@@ -1186,166 +1744,107 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                     <div className="text-xl font-bold text-gray-900">{filteredInventory.length}</div>
                   </div>
                 </div>
+
+                {/* Match Sales tab: keep only the Filters button here. */}
+                <div className="mt-3 flex items-center justify-end">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+                    className="h-8 px-3 rounded-md border-2 border-[#3B18DA] hover:bg-[#3B18DA]/10 text-[#3B18DA] text-xs font-medium"
+                    title="Toggle filters panel"
+                  >
+                    <div className="flex items-center gap-1">
+                      <Filter size={12} className="text-[#3B18DA]" />
+                      Filters
+                      {(selectedCategory !== "all" || stockFilter !== "all" || (priceRangeFilter.min || priceRangeFilter.max) || (dateFilter.startDate || dateFilter.endDate) || dateFilter.year !== "all" || searchQuery !== "") && (
+                        <span className="w-2 h-2 bg-[#3B18DA] rounded-full animate-pulse"></span>
+                      )}
+                    </div>
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[700px]">
                     <thead className="border-b border-border bg-muted/50">
                       <tr>
-                        <th className="py-3 px-4 text-left font-semibold text-foreground">SKU</th>
-                        <th className="py-3 px-4 text-left font-semibold text-foreground">Product Name</th>
-                        <th className="py-3 px-4 text-left font-semibold text-foreground">Description</th>
-                        <th className="py-3 px-4 text-left font-semibold text-foreground">Last Restock</th>
-                        <th className="py-3 px-4 text-left font-semibold text-foreground">Stock</th>
-                        <th className="py-3 px-4 text-left font-semibold text-foreground">Price</th>
-                        <th className="py-3 px-4 text-left font-semibold text-foreground">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-8 px-2 -ml-2 font-semibold hover:bg-muted/80">
-                              Category
-                              <ArrowUpDown size={14} className="ml-1 text-muted-foreground" />
-                              {selectedCategory !== "all" && (
-                                <span className="ml-1 w-2 h-2 bg-blue-500 rounded-full"></span>
-                              )}
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="start" className="w-56">
-                            <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                              Sort By
-                            </div>
-                            <DropdownMenuItem 
-                              onClick={() => {
-                                if (sortBy === "category") {
-                                  setSortDirection(sortDirection === "asc" ? "desc" : "asc")
-                                } else {
-                                  setSortBy("category")
-                                  setSortDirection("asc")
-                                }
-                              }} 
-                              className={sortBy === "category" ? "bg-accent" : ""}
-                            >
-                              {sortBy === "category" && sortDirection === "asc" ? <ArrowUp size={14} className="mr-2" /> : 
-                               sortBy === "category" && sortDirection === "desc" ? <ArrowDown size={14} className="mr-2" /> : 
-                               <ArrowUpDown size={14} className="mr-2" />}
-                              Category Name {sortBy === "category" ? (sortDirection === "asc" ? "(A-Z)" : "(Z-A)") : ""}
-                              {sortBy === "category" && <Check size={12} className="ml-auto text-blue-600" />}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem 
-                              onClick={() => {
-                                if (sortBy === "name") {
-                                  setSortDirection(sortDirection === "asc" ? "desc" : "asc")
-                                } else {
-                                  setSortBy("name")
-                                  setSortDirection("asc")
-                                }
-                              }} 
-                              className={sortBy === "name" ? "bg-accent" : ""}
-                            >
-                              {sortBy === "name" && sortDirection === "asc" ? <ArrowUp size={14} className="mr-2" /> : 
-                               sortBy === "name" && sortDirection === "desc" ? <ArrowDown size={14} className="mr-2" /> : 
-                               <FileText size={14} className="mr-2" />}
-                              Product Name {sortBy === "name" ? (sortDirection === "asc" ? "(A-Z)" : "(Z-A)") : ""}
-                              {sortBy === "name" && <Check size={12} className="ml-auto text-blue-600" />}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem 
-                              onClick={() => {
-                                if (sortBy === "stock") {
-                                  setSortDirection(sortDirection === "asc" ? "desc" : "asc")
-                                } else {
-                                  setSortBy("stock")
-                                  setSortDirection("desc")
-                                }
-                              }} 
-                              className={sortBy === "stock" ? "bg-accent" : ""}
-                            >
-                              {sortBy === "stock" && sortDirection === "desc" ? <ArrowDown size={14} className="mr-2" /> : 
-                               sortBy === "stock" && sortDirection === "asc" ? <ArrowUp size={14} className="mr-2" /> : 
-                               <BarChart3 size={14} className="mr-2" />}
-                              Stock Level {sortBy === "stock" ? (sortDirection === "desc" ? "(High-Low)" : "(Low-High)") : ""}
-                              {sortBy === "stock" && <Check size={12} className="ml-auto text-blue-600" />}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem 
-                              onClick={() => {
-                                if (sortBy === "price") {
-                                  setSortDirection(sortDirection === "asc" ? "desc" : "asc")
-                                } else {
-                                  setSortBy("price")
-                                  setSortDirection("asc")
-                                }
-                              }} 
-                              className={sortBy === "price" ? "bg-accent" : ""}
-                            >
-                              {sortBy === "price" && sortDirection === "asc" ? <ArrowUp size={14} className="mr-2" /> : 
-                               sortBy === "price" && sortDirection === "desc" ? <ArrowDown size={14} className="mr-2" /> : 
-                               <DollarSign size={14} className="mr-2" />}
-                              Price {sortBy === "price" ? (sortDirection === "asc" ? "(Low-High)" : "(High-Low)") : ""}
-                              {sortBy === "price" && <Check size={12} className="ml-auto text-blue-600" />}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem 
-                              onClick={() => {
-                                if (sortBy === "lastRestock") {
-                                  setSortDirection(sortDirection === "asc" ? "desc" : "asc")
-                                } else {
-                                  setSortBy("lastRestock")
-                                  setSortDirection("desc")
-                                }
-                              }} 
-                              className={sortBy === "lastRestock" ? "bg-accent" : ""}
-                            >
-                              {sortBy === "lastRestock" && sortDirection === "desc" ? <ArrowDown size={14} className="mr-2" /> : 
-                               sortBy === "lastRestock" && sortDirection === "asc" ? <ArrowUp size={14} className="mr-2" /> : 
-                               <Calendar size={14} className="mr-2" />}
-                              Last Restock {sortBy === "lastRestock" ? (sortDirection === "desc" ? "(Newest)" : "(Oldest)") : ""}
-                              {sortBy === "lastRestock" && <Check size={12} className="ml-auto text-blue-600" />}
-                            </DropdownMenuItem>
-                            <div className="border-t my-1"></div>
-                            <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                              Filter Category
-                            </div>
-                            <div className="max-h-48 overflow-y-auto">
-                              <DropdownMenuItem onClick={() => setSelectedCategory("all")} className={selectedCategory === "all" ? "bg-accent" : ""}>
-                                <Globe size={14} className="mr-2" />
-                                All Categories
-                                {selectedCategory === "all" && <Check size={12} className="ml-auto text-blue-600" />}
-                              </DropdownMenuItem>
-                              {categories.map((category) => (
-                                <DropdownMenuItem 
-                                  key={category} 
-                                  onClick={() => setSelectedCategory(selectedCategory === category ? "all" : category)}
-                                  className={selectedCategory === category ? "bg-accent" : ""}
-                                >
-                                  <Folder size={14} className="mr-2" />
-                                  {category}
-                                  {selectedCategory === category && <Check size={12} className="ml-auto text-blue-600" />}
-                                </DropdownMenuItem>
-                              ))}
-                            </div>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        <th className="py-4 px-5 text-left font-semibold text-foreground">
+                          SKU
                         </th>
-                          <th className="py-3 px-4 text-center font-semibold text-foreground">Edit</th>
-                          <th className="py-3 px-4 text-center font-semibold text-foreground">Batches</th>
-                          <th className="py-3 px-4 text-center font-semibold text-foreground">Delete</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border">
+                        <th className="py-4 px-5 text-left font-semibold text-foreground">
+                          Name
+                        </th>
+                        <th className="py-4 px-5 text-left font-semibold text-foreground">
+                          Description
+                        </th>
+                        <th className="py-4 px-5 text-left font-semibold text-foreground">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8 px-2 -ml-2 font-semibold hover:bg-muted/80">
+                                Category
+                                <ArrowUpDown size={14} className="ml-1 text-muted-foreground" />
+                                {selectedCategory !== "all" && (
+                                  <span className="ml-1 w-2 h-2 bg-violet-500 rounded-full"></span>
+                                )}
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="w-56">
+                              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                Filter Category
+                              </div>
+                              <div className="max-h-48 overflow-y-auto">
+                                <DropdownMenuItem onClick={() => setSelectedCategory("all")} className={selectedCategory === "all" ? "bg-accent" : ""}>
+                                  <Globe size={14} className="mr-2" />
+                                  All Categories
+                                  {selectedCategory === "all" && <Check size={12} className="ml-auto text-violet-600" />}
+                                </DropdownMenuItem>
+                                {categories.map((category) => (
+                                  <DropdownMenuItem
+                                    key={category}
+                                    onClick={() => setSelectedCategory(category)}
+                                    className={selectedCategory === category ? "bg-accent" : ""}
+                                  >
+                                    <Folder size={14} className="mr-2" />
+                                    {category}
+                                    {selectedCategory === category && <Check size={12} className="ml-auto text-violet-600" />}
+                                  </DropdownMenuItem>
+                                ))}
+                              </div>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </th>
+                        <th className="py-4 px-5 text-center font-semibold text-foreground">
+                          Stock
+                        </th>
+                        <th className="py-4 px-5 text-center font-semibold text-foreground">
+                          Current Batch Price
+                        </th>
+                        <th className="py-4 px-5 text-center font-semibold text-foreground">
+                          Last Restock
+                        </th>
+                        <th className="py-4 px-5 text-center font-semibold text-foreground">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
                         {filteredInventory.length === 0 ? (
                           <tr>
-                            <td colSpan={10} className="py-12 text-center">
+                            <td colSpan={8} className="py-12 text-center">
                               <div className="flex flex-col items-center">
                                 <Package size={48} className="text-gray-400 mb-4" />
                                 <h3 className="text-lg font-semibold text-gray-900 mb-2">No products found</h3>
                                 <p className="text-sm text-gray-500 mb-6">
-                                  {searchQuery || selectedCategory !== "all" || stockFilter !== "all" || priceFilter !== "all" || dateFilter.startDate || dateFilter.endDate 
+                                  {searchQuery || selectedCategory !== "all" || stockFilter !== "all" || dateFilter.startDate || dateFilter.endDate 
                                     ? "No products match your current filters. Try adjusting or clearing them." 
                                     : "Start by adding your first product"}
                                 </p>
                                 <div className="flex gap-3">
-                                  <Button onClick={() => setShowAddForm(true)}>
+                                  <Button onClick={() => setShowAddForm(true)} className="bg-[#3B18DA] hover:bg-[#2A1199] text-white">
                                     <Plus size={16} className="mr-2" />
                                     Add Product
                                   </Button>
-                                  {(searchQuery || selectedCategory !== "all" || stockFilter !== "all" || priceFilter !== "all" || dateFilter.startDate || dateFilter.endDate) && (
+                                  {(searchQuery || selectedCategory !== "all" || stockFilter !== "all" || dateFilter.startDate || dateFilter.endDate) && (
                                     <Button 
                                       variant="outline" 
                                       onClick={() => setClearConfirm(true)}
@@ -1360,17 +1859,21 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                         ) : (
                           filteredInventory.map((item) => (
                             <tr key={item.id} className="hover:bg-muted/50 transition-colors">
-                              <td className="py-3 px-4 text-muted-foreground text-sm">{item.sku}</td>
-                              <td className="py-3 px-4 text-foreground font-medium">{item.name}</td>
-                              <td className="py-3 px-4 text-muted-foreground text-sm max-w-xs truncate" title={item.description || ''}>
+                              <td className="py-4 px-5 text-left text-muted-foreground text-sm">{item.sku}</td>
+                              <td className="py-4 px-5 text-left text-foreground font-medium">{item.name}</td>
+                              <td className="py-4 px-5 text-left text-muted-foreground text-sm max-w-xs truncate" title={item.description || ''}>
                                 {item.description || '-'}
                               </td>
-                              <td className="py-3 px-4 text-muted-foreground text-sm">
-                                {item.lastRestockDate || 'No restocks'}
+                              <td className="py-4 px-5 text-muted-foreground text-sm">
+                                <div className="flex flex-wrap gap-1">
+                                  <span className="px-2 py-0.5 bg-[#3B18DA]/10 text-[#3B18DA] rounded text-xs">
+                                    {item.category}
+                                  </span>
+                                </div>
                               </td>
-                              <td className="py-3 px-4">
+                              <td className="py-4 px-5 text-center">
                                 <span
-                                  className={`px-3 py-1 rounded-full text-sm font-medium ${
+                                  className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                                     item.stock === 0 
                                       ? "bg-red-100 text-red-700" 
                                       : item.stock < 20 
@@ -1381,51 +1884,62 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                                   {item.stock}
                                 </span>
                               </td>
-                              <td className="py-3 px-4 text-muted-foreground text-sm font-medium">₱{item.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                              <td className="py-3 px-4 text-muted-foreground text-sm">{item.category}</td>
-                              <td className="py-3 px-4 text-center">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="text-primary hover:bg-primary/10"
-                                  onClick={() => handleEditProduct(item)}
-                                  title="Edit Product"
-                                >
-                                  <Edit2 size={16} />
-                                </Button>
+                              <td className="py-4 px-5 text-center text-muted-foreground text-sm font-semibold">
+                                <BatchPriceDisplay 
+                                  productId={String(item.id)} 
+                                  cabinet={cabinet}
+                                  className="text-foreground text-sm font-semibold"
+                                />
                               </td>
-                              <td className="py-3 px-4 text-center">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="text-blue-600 hover:bg-blue-10"
-                                  onClick={() => openStockDialog(item)}
-                                  title="View Stock Tracking"
-                                >
-                                  <Clock size={16} />
-                                </Button>
+                              <td className="py-4 px-5 text-center text-muted-foreground text-sm">
+                                {item.lastRestockDate ? new Date(item.lastRestockDate).toLocaleDateString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric'
+                                }) : '-'}
                               </td>
-                              <td className="py-3 px-4 text-center">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="text-destructive hover:bg-destructive/10"
-                                  onClick={() => handleDelete(item.id)}
-                                  title="Delete Product"
-                                >
-                                  <Trash2 size={16} />
-                                </Button>
+                              <td className="py-4 px-5 text-center">
+                                <div className="flex items-center justify-center gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-primary hover:bg-primary/10 h-7 w-7 p-0"
+                                    onClick={() => handleEditProduct(item)}
+                                    title="Edit Product"
+                                  >
+                                    <Edit2 size={14} />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-blue-600 hover:bg-blue-10 h-7 w-7 p-0"
+                                    onClick={() => openStockDialog(item)}
+                                    title="View Stock Tracking"
+                                  >
+                                    <Clock size={14} />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-destructive hover:bg-destructive/10 h-7 w-7 p-0"
+                                    onClick={() => handleDelete(item.id)}
+                                    title="Delete Product"
+                                  >
+                                    <Trash2 size={14} />
+                                  </Button>
+                                </div>
                               </td>
                             </tr>
                           ))
                         )}
                       </tbody>
-                    </table>
-                  </div>
+                  </table>
+                </div>
               </CardContent>
             </Card>
+            </div>
           </>
-        )}
+          )}
       </div>
     </div>
 
@@ -1517,10 +2031,16 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                 <label className="text-sm font-medium text-blue-700 mb-1 block">Description</label>
                 <textarea
                   value={newProduct.description}
-                  onChange={(e) => setNewProduct({ ...newProduct, description: e.target.value })}
+                  onChange={(e) => {
+                    if (e.target.value.length <= 50) {
+                      setNewProduct({ ...newProduct, description: e.target.value })
+                    }
+                  }}
                   placeholder="Product description (optional)..."
                   className="w-full p-2 border rounded-md resize-none h-20 border-blue-300 focus:border-blue-500"
+                  maxLength={50}
                 />
+                <p className="text-xs text-gray-500 mt-1">{newProduct.description.length}/50 characters</p>
               </div>
             </div>
           </div>
@@ -1529,7 +2049,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
             <Button onClick={() => setShowAddForm(false)} variant="outline">
               Cancel
             </Button>
-            <Button onClick={handleAddProduct} className="bg-blue-600 hover:bg-blue-700">
+            <Button onClick={handleAddProduct} className="bg-[#3B18DA] hover:bg-[#2A1199] text-white">
               <Plus size={16} className="mr-2" />
               Add Product
             </Button>
@@ -1557,10 +2077,16 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
               <label className="text-sm font-medium text-foreground mb-1 block">Description</label>
               <textarea
                 value={editingProduct?.description || ""}
-                onChange={(e) => setEditingProduct(editingProduct ? { ...editingProduct, description: e.target.value } : null)}
+                onChange={(e) => {
+                  if (e.target.value.length <= 50) {
+                    setEditingProduct(editingProduct ? { ...editingProduct, description: e.target.value } : null)
+                  }
+                }}
                 placeholder="Product description..."
                 className="w-full p-2 border rounded-md resize-none h-20"
+                maxLength={50}
               />
+              <p className="text-xs text-gray-500 mt-1">{(editingProduct?.description || "").length}/50 characters</p>
             </div>
             <div>
               <label className="text-sm font-medium text-foreground mb-1 block">Category</label>
@@ -1593,16 +2119,57 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
       </DialogContent>
     </Dialog>
 
-    <ConfirmDialog
-      open={deleteConfirm.open}
-      title="Delete Product"
-      description="Are you sure you want to delete this product? This action cannot be undone."
-      confirmText="Delete"
-      cancelText="Cancel"
-      isDangerous={true}
-      onConfirm={confirmDelete}
-      onCancel={() => setDeleteConfirm({ open: false, id: null })}
-    />
+    <Dialog open={deleteConfirm.open} onOpenChange={(open) => !open && setDeleteConfirm({ open: false, id: null })}>
+      <DialogContent className="max-w-md mx-4">
+        <DialogHeader>
+          <DialogTitle className="text-destructive">Delete Product</DialogTitle>
+          <DialogDescription>
+            This action cannot be undone. To confirm deletion, please type the product name exactly.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-destructive">
+              Product to delete:
+            </label>
+            <div className="p-3 bg-muted rounded-md font-mono text-sm border border-destructive/20">
+              {products.find(p => p.id === deleteConfirm.id)?.name || 'Unknown Product'}
+            </div>
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="confirmName" className="text-sm font-medium">
+              Type product name to confirm:
+            </label>
+            <Input
+              id="confirmName"
+              type="text"
+              value={confirmProductName}
+              onChange={(e) => setConfirmProductName(e.target.value)}
+              placeholder="Type the exact product name"
+              className="border-destructive/20 focus:border-destructive"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setDeleteConfirm({ open: false, id: null })
+              setConfirmProductName('')
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={confirmDelete}
+            disabled={confirmProductName !== products.find(p => p.id === deleteConfirm.id)?.name}
+          >
+            Delete Product
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
 
     {/* Stock Tracking Dialog */}
     <Dialog open={showStockDialog} onOpenChange={setShowStockDialog}>
@@ -1648,10 +2215,18 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                   <label className="text-sm font-medium text-green-700 mb-1 block">Notes</label>
                   <Input
                     value={newStock.notes}
-                    onChange={(e) => setNewStock({ ...newStock, notes: e.target.value })}
+                    onChange={(e) => {
+                      if (e.target.value.length <= 50) {
+                        setNewStock({ ...newStock, notes: e.target.value })
+                      }
+                    }}
                     placeholder="e.g., New shipment, Restock"
                     className="border-green-300 focus:border-green-500"
+                    maxLength={50}
                   />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {newStock.notes.length}/50 characters
+                  </p>
                 </div>
                 <div className="flex justify-end">
                   <Button onClick={() => setShowRestockConfirm(true)} className="bg-green-600 hover:bg-green-700" disabled={isAddingStock}>
@@ -1696,6 +2271,10 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                     const isYellow = age >= 30 && age <= 90;
                     const isRed = age > 90;
                     
+                    // Check if batch has zero stock
+                    const isZeroStock = addition.quantity === 0;
+                    const hasStock = addition.quantity > 0;
+                    
                     const addedDate = new Date(addition.addedDate);
                     const formattedDate = addedDate.toLocaleDateString('en-US', { 
                       month: 'short', 
@@ -1709,28 +2288,50 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                     });
                     
                     return (
-                    <div key={addition.id} className={`bg-white border rounded-lg p-5 shadow-sm space-y-3 ${
-                      index === 0 ? 'border-blue-500 border-2' : 'border-gray-200'
+                    <div key={`${addition.id}-${index}`} className={`border rounded-lg p-5 shadow-sm space-y-3 ${
+                      isZeroStock 
+                        ? 'bg-gray-50 border-gray-300 opacity-60' 
+                        : index === 0 
+                          ? 'bg-white border-blue-500 border-2' 
+                          : 'bg-white border-gray-200'
                     }`}>
                       {/* Top row - Main info */}
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          {/* Quantity */}
-                          <span className="font-semibold text-lg">{addition.quantity} units</span>
+                        <div className="flex items-start gap-3">
+                          {/* Quantity and Notes */}
+                          <div className="flex flex-col">
+                            <span className="font-semibold text-lg">{addition.quantity} units</span>
+                            
+                            {/* Notes - simple text display */}
+                            {addition.notes && (
+                              <p className="text-sm text-gray-700 mt-1 font-medium">
+                                Notes: {addition.notes}
+                              </p>
+                            )}
+                          </div>
                           
-                          {/* Price */}
-                          {addition.costPerUnit && addition.costPerUnit > 0 && (
-                            <span className="text-sm text-green-600">
-                              ₱{addition.costPerUnit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </span>
-                          )}
-                          
-                          {/* Current batch indicator */}
-                          {index === 0 && (
-                            <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
-                              Current Batch
-                            </span>
-                          )}
+                          {/* Price and other items */}
+                          <div className="flex items-center gap-2">
+                            {addition.costPerUnit && addition.costPerUnit > 0 && (
+                              <span className="text-sm text-green-600">
+                                ₱{addition.costPerUnit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            )}
+                            
+                            {/* Current batch indicator - only for batches with stock > 0 */}
+                            {index === 0 && hasStock && (
+                              <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
+                                Current Batch
+                              </span>
+                            )}
+                            
+                            {/* Zero stock indicator */}
+                            {isZeroStock && (
+                              <span className="px-2 py-1 bg-red-100 text-red-800 text-xs font-medium rounded-full">
+                                Out of Stock
+                              </span>
+                            )}
+                          </div>
                         </div>
                         
                         {/* Delete button */}
@@ -1775,7 +2376,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                             ) : (
                               <select
                                 value={addition.status || 'in-storage'}
-                                onChange={(e) => handleUpdateBatchStatus(addition.id, e.target.value)}
+                                onChange={(e) => handleUpdateBatchStatus(addition.id, e.target.value as 'on-shelf' | 'in-storage')}
                                 className="text-sm text-gray-600 bg-transparent border-0 focus:outline-none focus:ring-0 cursor-pointer"
                               >
                                 <option value="on-shelf">On Shelf</option>
@@ -1795,13 +2396,6 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                           {formattedDate}
                         </span>
                       </div>
-                      
-                      {/* Notes (only if present) */}
-                      {addition.notes && (
-                        <p className="text-sm text-gray-500 italic pt-2 border-t border-gray-100">
-                          "{addition.notes}"
-                        </p>
-                      )}
                     </div>
                     )
                   })}
@@ -1856,27 +2450,65 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
       onConfirm={() => {
         console.log('Confirm dialog onConfirm called');
         console.log('batchToDelete at confirm:', batchToDelete);
-        if (batchToDelete && batchToDelete.id) {
-          const batchId = String(batchToDelete.id); // Ensure it's a string
-          console.log('Calling handleDeleteBatch with:', batchId);
-          handleDeleteBatch(batchId)
-        } else {
-          console.log('batchToDelete is null/undefined or has no id');
-          // Fallback: try to get the ID from the first batch if available
-          if (stockAdditions.length > 0) {
-            const fallbackBatchId = String(stockAdditions[0].id);
-            console.log('Using fallback batch ID:', fallbackBatchId);
-            handleDeleteBatch(fallbackBatchId);
-          } else {
-            addToast('No batch available to delete', 'error');
-          }
-        }
+        setShowDeleteBatchConfirm(false);
+        setShowProductNameConfirm(true);
+        setConfirmProductName('');
       }}
       onCancel={() => {
         setShowDeleteBatchConfirm(false)
         setBatchToDelete(null)
       }}
     />
+
+    {/* Product Name Confirmation Dialog */}
+    <Dialog open={showProductNameConfirm} onOpenChange={setShowProductNameConfirm}>
+      <DialogContent className="max-w-md mx-4">
+        <DialogHeader>
+          <DialogTitle className="text-destructive">⚠️ Confirm Batch Deletion</DialogTitle>
+          <DialogDescription>
+            To prevent accidental deletion, please type the product name exactly as shown below to confirm:
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="bg-muted p-3 rounded-md">
+            <p className="font-semibold text-center text-lg">{selectedProductForStock?.name}</p>
+          </div>
+          <Input
+            placeholder="Type product name to confirm"
+            value={confirmProductName}
+            onChange={(e) => setConfirmProductName(e.target.value)}
+            className="w-full"
+          />
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setShowProductNameConfirm(false);
+              setConfirmProductName('');
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={confirmProductName !== selectedProductForStock?.name}
+            onClick={() => {
+              if (confirmProductName === selectedProductForStock?.name && batchToDelete?.id) {
+                const batchId = String(batchToDelete.id);
+                console.log('Calling handleDeleteBatch with:', batchId);
+                handleDeleteBatch(batchId);
+                setShowProductNameConfirm(false);
+                setConfirmProductName('');
+                setBatchToDelete(null);
+              }
+            }}
+          >
+            Delete Batch
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </>
   )
 }

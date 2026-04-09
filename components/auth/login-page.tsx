@@ -105,11 +105,13 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         <Card className="border-2 border-primary/20 shadow-2xl bg-card/95 backdrop-blur-sm transition-all duration-300">
           <CardHeader className="space-y-2 text-center pb-4">
             <div className="flex justify-center mb-2">
-              <img 
-                src="/Wheezard logo.png" 
-                alt="The Wheezard PH Logo" 
-                className="w-20 h-20 sm:w-28 sm:h-28 md:w-32 md:h-32 object-contain"
-              />
+              {typeof window !== 'undefined' && navigator.onLine && (
+                <img 
+                  src="/Wheezard logo.png" 
+                  alt="The Wheezard PH Logo" 
+                  className="w-20 h-20 sm:w-28 sm:h-28 md:w-32 md:h-32 object-contain"
+                />
+              )}
             </div>
             <CardTitle className="text-lg sm:text-xl md:text-2xl leading-tight">Point of Sale and Inventory System</CardTitle>
           </CardHeader>

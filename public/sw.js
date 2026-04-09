@@ -5,11 +5,16 @@ const IMAGE_CACHE = 'images-v3';
 
 const staticUrlsToCache = [
   '/',
+  '/manifest.json',
+  // Icons - prioritize for PWA functionality
+  '/icon-192x192.png',
+  '/icon-512x512.png',
+  // Images
   '/Wheezard logo.png',
   '/bg wheezard.jpg',
-  '/manifest.json',
-  '/icon-192x192.png',
-  '/icon-512x512.png'
+  '/placeholder-logo.png',
+  '/placeholder-user.jpg',
+  '/placeholder.jpg'
 ];
 
 // Install event - cache static resources
@@ -21,13 +26,19 @@ self.addEventListener('install', event => {
         console.log('✅ Opened static cache');
         return cache.addAll(staticUrlsToCache);
       })
-      .then(() => self.skipWaiting())
+      .then(() => {
+        console.log('✅ Static resources cached successfully');
+        self.skipWaiting();
+      })
+      .catch(error => {
+        console.error('❌ Failed to cache static resources:', error);
+      })
   );
 });
 
 // Activate event - clean up old caches
 self.addEventListener('activate', event => {
-  console.log('🚀 Service Worker activating...');
+  console.log(' Service Worker activating...');
   event.waitUntil(
     caches.keys().then(cacheNames => {
       return Promise.all(
@@ -50,48 +61,81 @@ self.addEventListener('fetch', event => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // API requests - network first, cache fallback
-  if (url.pathname.startsWith('/api/')) {
+  // API requests - cache first, network fallback
+  if (request.url.includes('/api/')) {
     event.respondWith(
-      fetch(request)
-        .then(response => {
-          // Only cache successful GET requests
-          if (response.ok && request.method === 'GET') {
+      caches.match(request).then(cached => {
+        if (cached) {
+          return cached;
+        }
+        
+        // Only try network if actually online
+        if (navigator.onLine) {
+          return fetch(request).then(response => {
             const responseClone = response.clone();
             caches.open(API_CACHE).then(cache => {
               cache.put(request, responseClone);
             });
-          }
-          return response;
-        })
-        .catch(() => {
-          // Try cache first for GET requests
-          if (request.method === 'GET') {
-            return caches.match(request).then(cached => {
-              if (cached) {
-                console.log('📱 Serving from cache:', request.url);
-                return cached;
-              }
-            });
-          }
-          // Return offline fallback for other API requests
-          return new Response(
-            JSON.stringify({ 
-              error: 'Offline - request queued for sync',
-              queued: true,
-              url: request.url 
-            }),
-            { 
-              status: 503, 
-              headers: { 'Content-Type': 'application/json' }
+            return response;
+          }).catch(() => {
+            // Network failed, return cached version if available
+            return caches.match(request);
+          });
+        } else {
+          // Offline, return cached version or offline fallback (no network attempts)
+          return caches.match(request).then(cached => {
+            if (cached) {
+              return cached;
             }
-          );
-        })
+            // Return offline fallback for API requests (no console spam)
+            return new Response(
+              JSON.stringify({ 
+                error: 'Offline - request queued for sync',
+                queued: true,
+                url: request.url 
+              }),
+              { 
+                status: 503, 
+                headers: { 'Content-Type': 'application/json' }
+              }
+            );
+          });
+        }
+      })
     );
     return;
   }
 
-  // Image requests - cache first, network fallback
+  // Icon requests - always serve from cache
+  if (request.url.includes('icon-192x192.png') || request.url.includes('icon-512x512.png')) {
+    event.respondWith(
+      caches.match(request).then(cached => {
+        if (cached) {
+          console.log('📱 Serving icon from cache:', request.url);
+          return cached;
+        }
+        // If not in cache, try to fetch and cache
+        return fetch(request).then(response => {
+          if (response.ok) {
+            const responseClone = response.clone();
+            caches.open(IMAGE_CACHE).then(cache => {
+              cache.put(request, responseClone);
+              console.log('📱 Cached icon:', request.url);
+            });
+            return response;
+          }
+          // If fetch fails, try to serve from static cache
+          return caches.match(request);
+        }).catch(() => {
+          console.log('📱 Icon fetch failed, trying cache fallback:', request.url);
+          return caches.match(request);
+        });
+      })
+    );
+    return;
+  }
+
+  // Other image requests - cache first, network fallback
   if (request.destination === 'image') {
     event.respondWith(
       caches.match(request).then(cached => {

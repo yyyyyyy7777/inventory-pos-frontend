@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import React, { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -13,6 +13,8 @@ import { useFormAutosave } from "@/contexts/autosave-context"
 import { useToast } from "@/contexts/toast-context"
 import { useActivity } from "@/contexts/activity-context"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { BatchPriceDisplay } from "@/components/shared/batch-price-display"
+import { getCurrentPriceFromBatches } from "@/lib/batch-price"
 
 // Type for receipt display (different from SaleItem)
 interface ReceiptItem {
@@ -75,6 +77,7 @@ export function POSView({ cabinet, username }: POSViewProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("All Categories")
   const [showOutOfStock, setShowOutOfStock] = useState(false)
+  const [sortAlpha, setSortAlpha] = useState<"none" | "az" | "za">("none")
   const [showCompletionDialog, setShowCompletionDialog] = useState(false)
   const [completedSale, setCompletedSale] = useState<number | null>(null)
   const [currentTime, setCurrentTime] = useState(new Date())
@@ -85,6 +88,7 @@ export function POSView({ cabinet, username }: POSViewProps) {
   const [cashAmount, setCashAmount] = useState<string>('')
   const [change, setChange] = useState<number>(0)
   const [referenceNumber, setReferenceNumber] = useState<string>('')
+  const [showQrphConfirmDialog, setShowQrphConfirmDialog] = useState(false)
   const [showReceipt, setShowReceipt] = useState(false)
   const [currentSaleData, setCurrentSaleData] = useState<any>(null)
   const [taxEnabled, setTaxEnabled] = useState(true)
@@ -174,7 +178,14 @@ export function POSView({ cabinet, username }: POSViewProps) {
     return matchesSearch && matchesCategory && hasOnShelfStock;
   })
 
-  const addToCart = (product: Product) => {
+  const visibleProducts = React.useMemo(() => {
+    if (sortAlpha === "none") return filteredProducts
+    const dir = sortAlpha === "az" ? 1 : -1
+    return [...filteredProducts].sort((a, b) => dir * a.name.localeCompare(b.name))
+  }, [filteredProducts, sortAlpha])
+
+  
+  const addToCart = async (product: Product) => {
     // Check if there's a completed sale receipt showing
     if (showReceipt && currentSaleData) {
       // Show toast notification instead of adding to cart
@@ -206,6 +217,9 @@ export function POSView({ cabinet, username }: POSViewProps) {
       return;
     }
     
+    // Get current batch price
+    const { price: batchPrice } = await getCurrentPriceFromBatches(String(product.id), cabinet);
+    
     // Update or add the item to the cart
     setCart(prevCart => {
       const existingItem = prevCart.find(item => item.id === product.id);
@@ -225,9 +239,9 @@ export function POSView({ cabinet, username }: POSViewProps) {
         const newItem: CartItem = {
           id: product.id,
           name: product.name,
-          price: product.price,
-          originalPrice: product.price,
-          costPrice: product.costPrice || product.price * 0.7, // Default to 70% of selling price if no cost price
+          price: batchPrice,
+          originalPrice: batchPrice,
+          costPrice: product.costPrice || batchPrice * 0.7, // Default to 70% of selling price if no cost price
           quantity: 1,
           isDiscounted: false,
         };
@@ -302,26 +316,26 @@ export function POSView({ cabinet, username }: POSViewProps) {
         return newMap;
       });
     }, 1000); // Wait 1 second after user stops typing
-    
-    // Add timeout to map
-    setDiscountTimeouts(prev => {
-      const newMap = new Map(prev);
-      newMap.set(id, timeout);
-      return newMap;
-    });
-    
-    setCart(cart.map(item => {
-      if (item.id === id) {
-        const isDiscounted = newPrice < item.originalPrice;
-        return { 
-          ...item, 
-          price: Math.max(0, newPrice), 
-          isDiscounted 
-        };
-      }
-      return item;
-    }));
-  }
+  
+  // Add timeout to map
+  setDiscountTimeouts(prev => {
+    const newMap = new Map(prev);
+    newMap.set(id, timeout);
+    return newMap;
+  });
+  
+  setCart(cart.map(item => {
+    if (item.id === id) {
+      const isDiscounted = newPrice < item.originalPrice;
+      return { 
+        ...item, 
+        price: Math.max(0, newPrice), 
+        isDiscounted 
+      };
+    }
+    return item;
+  }));
+  };
 
   const total = cart.reduce((sum, item) => {
     return sum + (item.price * item.quantity);
@@ -672,19 +686,19 @@ export function POSView({ cabinet, username }: POSViewProps) {
           throw new Error(`Product not found: ${item.id}`);
         }
         
-        // Always compare against current inventory price for discount detection
-        const isDiscounted = item.price < product.price;
-        console.log(`Discount check for ${item.name}: sale price=${item.price}, product price=${product.price}, isDiscounted=${isDiscounted}`);
+        // Always compare against original price for discount detection (item.originalPrice is set when added to cart)
+        const isDiscounted = item.price < item.originalPrice;
+        console.log(`Discount check for ${item.name}: sale price=${item.price}, original price=${item.originalPrice}, isDiscounted=${isDiscounted}`);
         
         const saleItem: SaleItem = {
           productName: item.name,
           category: product.category || 'Unknown',
           quantity: item.quantity,
           price: item.price,
-          originalPrice: product.price,
-          costPrice: item.costPrice || product.price * 0.7,
+          originalPrice: item.originalPrice,
+          costPrice: item.costPrice || item.originalPrice * 0.7,
           isDiscounted: isDiscounted,
-          profit: (item.price - (item.costPrice || product.price * 0.7)) * item.quantity
+          profit: (item.price - (item.costPrice || item.originalPrice * 0.7)) * item.quantity
         };
         
         console.log(`Sale item for ${item.name}:`, saleItem);
@@ -968,7 +982,7 @@ export function POSView({ cabinet, username }: POSViewProps) {
                             <MapPin size={14} className="text-gray-500" /> Cabinet: {cabinet}
                           </p>
                           <p className="text-xs text-gray-600 flex items-center gap-1">
-                            <Calendar size={14} className="text-gray-500" /> {receiptTime ? receiptTime.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : currentTime.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} • {receiptTime ? receiptTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                            <Calendar size={14} className="text-gray-500" /> {receiptTime?.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) || currentTime.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} • {receiptTime?.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) || currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                           </p>
                           <p className="text-xs text-gray-600 flex items-center gap-1">
                             <User size={14} className="text-gray-500" /> Staff: {username}
@@ -997,16 +1011,16 @@ export function POSView({ cabinet, username }: POSViewProps) {
                                       {item.quantity} × 
                                       {item.isDiscounted ? (
                                         <span>
-                                          <span className="line-through text-gray-400">₱{item.originalPrice?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                                          <span className="text-orange-600 font-medium ml-1">₱{item.unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                          <span className="line-through text-gray-400">₱{item.originalPrice?.toLocaleString()}</span>
+                                          <span className="text-orange-600 font-medium ml-1">₱{item.unitPrice.toLocaleString()}</span>
                                         </span>
                                       ) : (
-                                        <span>₱{item.unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                        <span>₱{item.unitPrice.toLocaleString()}</span>
                                       )}
                                     </div>
                                   </div>
                                   <div className="text-right font-semibold text-xs sm:text-sm text-gray-900 min-w-16 sm:min-w-20">
-                                    ₱{item.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    ₱{item.totalPrice.toLocaleString()}
                                   </div>
                                 </div>
                               ))
@@ -1028,17 +1042,17 @@ export function POSView({ cabinet, username }: POSViewProps) {
                                         {item.quantity} × 
                                         {item.isDiscounted ? (
                                           <span>
-                                            <span className="line-through text-gray-400">₱{item.originalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                                            <span className="text-orange-600 font-medium ml-1">₱{item.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                                            <span className="text-green-600 ml-1">(Save ₱{((item.originalPrice - item.price) * item.quantity).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</span>
+                                            <span className="line-through text-gray-400">₱{item.originalPrice.toLocaleString()}</span>
+                                            <span className="text-orange-600 font-medium ml-1">₱{item.price.toLocaleString()}</span>
+                                            <span className="text-green-600 ml-1">(Save ₱{((item.originalPrice - item.price) * item.quantity).toLocaleString()})</span>
                                           </span>
                                         ) : (
-                                          <span>₱{item.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                          <span>₱{item.price.toLocaleString()}</span>
                                         )}
                                       </div>
                                     </div>
                                     <div className="text-right font-semibold text-xs sm:text-sm text-gray-900 min-w-16 sm:min-w-20">
-                                      ₱{itemTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      ₱{itemTotal.toLocaleString()}
                                     </div>
                                   </div>
                                 );
@@ -1054,21 +1068,21 @@ export function POSView({ cabinet, username }: POSViewProps) {
                           <div className="flex justify-between text-xs sm:text-sm">
                             <span className="text-gray-700">Subtotal:</span>
                             <span className="text-gray-900">
-                              ₱{(showReceipt && currentSaleData ? currentSaleData.subtotal : total).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              ₱{(showReceipt && currentSaleData ? currentSaleData.subtotal : total).toLocaleString()}
                             </span>
                           </div>
                           {(taxEnabled || (showReceipt && currentSaleData && currentSaleData.tax > 0)) && (
                             <div className="flex justify-between text-xs sm:text-sm">
                               <span className="text-gray-700">Tax ({showReceipt && currentSaleData ? (currentSaleData.tax / currentSaleData.subtotal * 100).toFixed(1) : taxRate}%):</span>
                               <span className="text-gray-900">
-                                ₱{(showReceipt && currentSaleData ? currentSaleData.tax : Math.round(total * taxRate / 100)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                ₱{(showReceipt && currentSaleData ? currentSaleData.tax : Math.round(total * taxRate / 100)).toLocaleString()}
                               </span>
                             </div>
                           )}
                           <div className="flex justify-between text-sm sm:text-lg font-bold">
                             <span className="text-gray-900">TOTAL:</span>
                             <span className="text-gray-900">
-                              ₱{(showReceipt && currentSaleData ? currentSaleData.total : Math.round(total * (1 + (taxEnabled ? taxRate / 100 : 0)))).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              ₱{(showReceipt && currentSaleData ? currentSaleData.total : Math.round(total * (1 + (taxEnabled ? taxRate / 100 : 0)))).toLocaleString()}
                             </span>
                           </div>
                         </div>
@@ -1214,11 +1228,21 @@ export function POSView({ cabinet, username }: POSViewProps) {
           >
             {showOutOfStock ? "Hide Out of Stock" : "Show Out of Stock"}
           </Button>
+          <Select value={sortAlpha} onValueChange={(v) => setSortAlpha(v as any)}>
+            <SelectTrigger className="w-full sm:w-28 whitespace-nowrap">
+              <SelectValue placeholder="Sort" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Default</SelectItem>
+              <SelectItem value="az">A–Z</SelectItem>
+              <SelectItem value="za">Z–A</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Product Grid - Responsive for all devices */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4">
-          {filteredProducts.map((product) => (
+          {visibleProducts.map((product) => (
             <Card
               key={product.id}
               className={`relative overflow-hidden border-2 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer ${
@@ -1282,11 +1306,15 @@ export function POSView({ cabinet, username }: POSViewProps) {
 
                 {/* Price and Add Button */}
                 <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-white/25">
-                  <p className={`text-lg sm:text-xl font-bold drop-shadow-sm ${
+                  <div className={`text-lg sm:text-xl font-bold drop-shadow-sm ${
                     product.stock > 0 ? 'text-white' : 'text-gray-600'
                   }`}>
-                    ₱{product.price.toLocaleString()}
-                  </p>
+                    <BatchPriceDisplay 
+                      productId={String(product.id)} 
+                      cabinet={cabinet}
+                      className="text-white"
+                    />
+                  </div>
                   <Button
                     size="sm"
                     className={`h-9 w-9 sm:h-10 sm:w-10 rounded-full flex-shrink-0 shadow-lg ${
@@ -1442,7 +1470,13 @@ export function POSView({ cabinet, username }: POSViewProps) {
               Cancel
             </Button>
             <Button
-              onClick={processSale}
+              onClick={() => {
+                if (paymentMethod === 'qrph') {
+                  setShowQrphConfirmDialog(true);
+                  return;
+                }
+                processSale();
+              }}
               className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground"
               disabled={cart.length === 0 || isProcessingSale}
             >
@@ -1461,6 +1495,61 @@ export function POSView({ cabinet, username }: POSViewProps) {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* QRPH Confirmation Dialog (reduce misinput) */}
+      <Dialog open={showQrphConfirmDialog} onOpenChange={(open) => {
+        // Prevent closing while processing
+        if (!open && isProcessingSale) return;
+        setShowQrphConfirmDialog(open);
+      }}>
+        <DialogContent className="max-w-md mx-4">
+          <DialogHeader>
+            <DialogTitle>Confirm QRPH Payment</DialogTitle>
+            <DialogDescription>
+              Please double-check the reference number and amount before finalizing.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="rounded-lg border bg-muted/40 p-3">
+              <div className="text-xs text-muted-foreground">Reference Number</div>
+              <div className="mt-1 text-base font-semibold tracking-wide">
+                {referenceNumber?.trim() ? referenceNumber.trim() : <span className="text-destructive">Missing</span>}
+              </div>
+            </div>
+
+            <div className="rounded-lg border bg-muted/40 p-3 text-center">
+              <div className="text-xs text-muted-foreground">Total Amount</div>
+              <div className="mt-1 text-2xl font-bold text-primary">
+                ₱{Math.round(total * (1 + (taxEnabled ? taxRate / 100 : 0))).toLocaleString()}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => setShowQrphConfirmDialog(false)}
+              disabled={isProcessingSale}
+            >
+              Back
+            </Button>
+            <Button
+              className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground"
+              onClick={async () => {
+                // Close confirm, keep payment dialog open until success/failure inside processSale
+                setShowQrphConfirmDialog(false);
+                await processSale();
+              }}
+              disabled={cart.length === 0 || isProcessingSale || !referenceNumber.trim()}
+            >
+              Confirm & Process
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      </div>
 
       {/* Discount Confirmation Dialog */}
       <Dialog open={discountConfirmDialog} onOpenChange={setDiscountConfirmDialog}>
@@ -1493,7 +1582,6 @@ export function POSView({ cabinet, username }: POSViewProps) {
           </div>
         </DialogContent>
       </Dialog>
-      </div>
     </>
   )
 }

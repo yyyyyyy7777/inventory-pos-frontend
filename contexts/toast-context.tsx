@@ -23,7 +23,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
 
   const addToast = useCallback((message: string, type: ToastType = "info", duration?: number) => {
-    const id = Date.now().toString()
+    const id =
+      (typeof crypto !== "undefined" && "randomUUID" in crypto)
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(16).slice(2)}`
     // Use longer duration for error messages to ensure users notice them
     const defaultDuration = type === "error" ? 6000 : type === "warning" ? 5000 : 3000
     const finalDuration = duration !== undefined ? duration : defaultDuration

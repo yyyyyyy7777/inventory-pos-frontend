@@ -119,7 +119,9 @@ export function StaffDashboard({ username, onLogout }: StaffDashboardProps) {
             </div>
           </div>
 
-          {currentView === "dashboard" && <EnhancedStaffAnalytics cabinet={selectedCabinet} username={username} onViewChange={handleViewChange} />}
+          {currentView === "dashboard" && (
+            <EnhancedStaffAnalytics cabinet={selectedCabinet} username={username} onViewChange={handleViewChange} />
+          )}
           {currentView === "inventory" && <InventoryView isAdmin={false} cabinet={selectedCabinet} username={username} />}
           {currentView === "sales" && <SalesView isAdmin={true} cabinet={selectedCabinet} onNewSale={() => handleViewChange("pos")} />}
           {currentView === "pos" && <POSView cabinet={selectedCabinet} username={username} />}

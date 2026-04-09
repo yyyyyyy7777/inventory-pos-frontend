@@ -1,4 +1,4 @@
-import { query } from './mysql-direct';
+import { query } from './pg-direct';
 
 export interface StockBatch {
   id: string;

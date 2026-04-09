@@ -13,8 +13,29 @@ export async function GET(request: NextRequest) {
     console.log('Limit:', limit);
     console.log('Offset:', offset);
 
+    // Ensure archived_activities table exists
+    try {
+      await query(`
+        CREATE TABLE IF NOT EXISTS archived_activities (
+          id VARCHAR(50) PRIMARY KEY,
+          timestamp TIMESTAMP NOT NULL,
+          username VARCHAR(100) NOT NULL,
+          activity TEXT NOT NULL,
+          details TEXT NOT NULL,
+          category VARCHAR(20) NOT NULL CHECK (category IN ('product', 'sale', 'employee', 'system', 'inventory')),
+          cabinet VARCHAR(50),
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          archived_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          original_id VARCHAR(50)
+        )
+      `);
+    } catch (err) {
+      console.log('Table creation error (might already exist):', err);
+    }
+
     const rows = await query(
       `SELECT * FROM activities 
+       WHERE id NOT IN (SELECT original_id FROM archived_activities WHERE original_id IS NOT NULL)
        ORDER BY timestamp DESC 
        LIMIT $1 OFFSET $2`,
       [limit, offset]

@@ -61,11 +61,13 @@ export function AdminSidebar({ currentView, onViewChange, onLogout, username }: 
       `}>
         <div className="p-6 border-b border-sidebar-border">
         <div className="flex items-center gap-3 mb-4">
+          {typeof window !== 'undefined' && navigator.onLine && (
           <img 
             src="/Wheezard logo.png" 
             alt="The Wheezard PH Logo" 
             className="w-10 h-10 object-contain"
           />
+        )}
           <div>
             <h2 className="font-bold text-sidebar-foreground">The Wheezard PH</h2>
             <p className="text-xs text-sidebar-accent-foreground/60">Admin Panel</p>

@@ -11,17 +11,27 @@ export async function GET(request: NextRequest) {
 
     // Batch mode: get on-shelf stock for all products in cabinet
     if (batchMode === 'all') {
-      const result = await query(`
+      let queryStr = `
         SELECT 
           p.id as product_id,
           COALESCE(SUM(sb.quantity), 0) as on_shelf_stock
         FROM product p
         LEFT JOIN stockbatch sb ON p.id = sb."productId" 
-          AND sb.cabinet = $1 
           AND sb.status = 'on-shelf'
-        ${cabinet === 'all' ? '' : 'WHERE p.cabinet = $1'}
-        GROUP BY p.id
-      `, cabinet === 'all' ? [] : [cabinet]);
+      `;
+      
+      let queryParams: any[] = [];
+      
+      if (cabinet !== 'all') {
+        queryStr += ` WHERE p.cabinet = $1 AND sb.cabinet = $1`;
+        queryParams = [cabinet];
+      } else {
+        queryStr += ` WHERE sb.cabinet IS NOT NULL`;
+      }
+      
+      queryStr += ` GROUP BY p.id`;
+      
+      const result = await query(queryStr, queryParams);
 
       const stockMap: Record<string, number> = {};
       result.forEach((row: any) => {
