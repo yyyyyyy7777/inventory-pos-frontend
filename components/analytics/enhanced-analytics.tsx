@@ -39,7 +39,7 @@ import { useProducts } from "@/contexts/products-context"
 import { useSales, SaleItem } from "@/contexts/sales-context"
 import { db } from "@/lib/indexeddb"
 import { countUnitsInSale } from "@/lib/sale-metrics"
-import { summarizeSalesForPeriod, type SalesPeriodFilter } from "@/lib/analytics-from-sales"
+import { summarizeSalesForPeriod, parseSaleDate, type SalesPeriodFilter } from "@/lib/analytics-from-sales"
 
 interface AnalyticsData {
   summary: {
@@ -75,6 +75,7 @@ interface EnhancedAnalyticsProps {
 }
 
 const COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444'];
+const PH_TIMEZONE = 'Asia/Manila';
 
 const formatCurrency = (amount: number | null | undefined) => {
   const num = typeof amount === 'number' ? amount : parseFloat(amount as any) || 0;
@@ -84,6 +85,28 @@ const formatCurrency = (amount: number | null | undefined) => {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(num);
+};
+
+const getPhilippineDayBounds = (baseDate: Date = new Date()) => {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: PH_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(baseDate);
+
+  const year = Number(parts.find((p) => p.type === 'year')?.value || 0);
+  const month = Number(parts.find((p) => p.type === 'month')?.value || 1);
+  const day = Number(parts.find((p) => p.type === 'day')?.value || 1);
+
+  // PH midnight is UTC-8 hours.
+  const startUtcMs = Date.UTC(year, month - 1, day, -8, 0, 0, 0);
+  const endUtcMs = startUtcMs + 24 * 60 * 60 * 1000;
+
+  return {
+    start: new Date(startUtcMs),
+    end: new Date(endUtcMs),
+  };
 };
 
 const MetricCard = ({ 
@@ -190,6 +213,9 @@ const MetricCard = ({
 };
 
 export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps) {
+  const isSaleArchived = (value: unknown) =>
+    value === true || value === "true" || value === 1 || value === "1";
+
   // Ensure cabinet has a stable default value to prevent useEffect dependency issues
   const cabinetValue = cabinet || 'all';
   
@@ -211,15 +237,15 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
       
       // Use same data source as sales tab for consistency
       const filteredSales = cabinetValue === 'all' 
-        ? sales.filter((sale) => !sale.archived)
-        : sales.filter((sale) => sale.cabinet === cabinetValue && !sale.archived);
+        ? sales.filter((sale) => !isSaleArchived((sale as any).archived))
+        : sales.filter((sale) => sale.cabinet === cabinetValue && !isSaleArchived((sale as any).archived));
       
       // Filter by date range if provided
       let finalSales = filteredSales;
       if (dateRange) {
         finalSales = filteredSales.filter(sale => {
           try {
-            const saleDate = new Date(sale.date || sale.createdAt || sale.soldAt);
+            const saleDate = parseSaleDate(sale.date || sale.createdAt || sale.soldAt);
             return saleDate >= dateRange.start && saleDate <= dateRange.end;
           } catch {
             return false;
@@ -243,8 +269,8 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
       
       // Use same data source as sales tab for consistency
       const filteredSales = cabinetValue === 'all' 
-        ? sales.filter((sale) => !sale.archived)
-        : sales.filter((sale) => sale.cabinet === cabinetValue && !sale.archived);
+        ? sales.filter((sale) => !isSaleArchived((sale as any).archived))
+        : sales.filter((sale) => sale.cabinet === cabinetValue && !isSaleArchived((sale as any).archived));
       
       const {
         revenue: totalRevenue,
@@ -445,10 +471,7 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
     setTodaySalesLoading(true);
     console.log('Starting Today sales calculation with unified data source...');
     try {
-      const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // Start of today (00:00:00)
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1); // Start of tomorrow (00:00:00)
+      const { start: today, end: tomorrow } = getPhilippineDayBounds(new Date());
 
       console.log('Date range:', { today: today.toISOString(), tomorrow: tomorrow.toISOString() });
       console.log('Cabinet filter:', cabinetValue);
@@ -457,17 +480,10 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
       // Use unified data source for consistency
       const todaySales = await getUnifiedTransactions({ start: today, end: tomorrow });
 
-      // Calculate metrics from filtered sales data
+      // Use persisted sale.amount so dashboard matches Sales tab totals exactly
+      // (includes VAT when VAT is enabled at checkout).
       const todayRevenue = todaySales.reduce((sum: number, sale: any) => {
-        // Calculate from items for accuracy
-        if (sale.items && sale.items.length > 0) {
-          const itemRevenue = sale.items.reduce((itemSum: number, item: SaleItem) => {
-            return itemSum + ((item.price || 0) * (item.quantity || 0));
-          }, 0);
-          return sum + itemRevenue;
-        }
-        // Fallback to sale.amount
-        const saleAmount = typeof sale.amount === 'number' ? sale.amount : parseFloat(sale.amount) || 0;
+        const saleAmount = typeof sale.amount === 'number' ? sale.amount : parseFloat(String(sale.amount)) || 0;
         return sum + saleAmount;
       }, 0);
       const todayTransactions = todaySales.length;
@@ -582,6 +598,45 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
     .filter(product => product.stock < 20)
     .sort((a, b) => a.stock - b.stock);
 
+  // Derive today's metrics directly from current sales context so "Today's Sales"
+  // card stays accurate even when chart buckets are empty or delayed.
+  const todayMetrics = useMemo(() => {
+    const { start: startOfToday, end: startOfTomorrow } = getPhilippineDayBounds(new Date());
+    const normalizedCabinet = String(cabinetValue || '').trim().toLowerCase();
+
+    const filteredByCabinetToday = sales.filter((sale) => {
+      if (isSaleArchived((sale as any).archived)) return false;
+      const saleCabinet = String(sale.cabinet || '').trim().toLowerCase();
+      if (normalizedCabinet !== 'all' && saleCabinet !== normalizedCabinet) return false;
+
+      const saleDate = parseSaleDate(sale.date || sale.createdAt || '');
+      if (Number.isNaN(saleDate.getTime())) return false;
+      return saleDate >= startOfToday && saleDate < startOfTomorrow;
+    });
+
+    // Match staff dashboard behavior: if cabinet-matched today sales are empty,
+    // fall back to all today's sales to avoid false zeros from cabinet mismatch data.
+    const todaysSales = filteredByCabinetToday.length > 0 || normalizedCabinet === 'all'
+      ? filteredByCabinetToday
+      : sales.filter((sale) => {
+          if (isSaleArchived((sale as any).archived)) return false;
+          const saleDate = parseSaleDate(sale.date || sale.createdAt || '');
+          if (Number.isNaN(saleDate.getTime())) return false;
+          return saleDate >= startOfToday && saleDate < startOfTomorrow;
+        });
+
+    const revenue = todaysSales.reduce((sum, sale) => {
+      const amount = typeof sale.amount === 'number' ? sale.amount : parseFloat(String(sale.amount)) || 0;
+      return sum + amount;
+    }, 0);
+
+    return {
+      revenue,
+      transactions: todaysSales.length,
+      items: todaysSales.reduce((sum, sale) => sum + countUnitsInSale(sale), 0)
+    };
+  }, [sales, cabinetValue]);
+
   const getLowStockColor = (stock: number) => {
     if (stock <= 5) return { bg: "bg-red-100", badge: "bg-red-600", text: "text-red-900", label: "CRITICAL" };
     return { bg: "bg-orange-100", badge: "bg-orange-600", text: "text-orange-900", label: "LOW" };
@@ -666,9 +721,9 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
         {/* Today's Sales Card */}
         <MetricCard
           title="Today's Sales"
-          value={analyticsLoading ? "..." : formatCurrency(todayRevenueFromGraph || todaySalesData.revenue)}
+          value={analyticsLoading ? "..." : formatCurrency(todaySalesData.revenue)}
           icon={<TrendingUp className="h-6 w-6" />}
-          description={analyticsLoading ? "Loading..." : `${todayTransactionsFromGraph || todaySalesData.transactions} transactions today`}
+          description={analyticsLoading ? "Loading..." : `${todaySalesData.transactions} transactions today`}
           color="blue"
         />
         

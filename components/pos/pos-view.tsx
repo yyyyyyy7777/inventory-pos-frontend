@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -68,7 +68,7 @@ const categories = [
 ]
 
 export function POSView({ cabinet, username }: POSViewProps) {
-  const { getProductsByCabinet, updateProduct, refetch, getOnShelfStock } = useProducts()
+  const { getProductsByCabinet, decrementProductStockLocally, getOnShelfStock } = useProducts()
   const products = getProductsByCabinet(cabinet)
   const { addSale, refreshSales } = useSales()
   const { addToast } = useToast()
@@ -98,6 +98,8 @@ export function POSView({ cabinet, username }: POSViewProps) {
   const [discountTimeouts, setDiscountTimeouts] = useState<Map<string, NodeJS.Timeout>>(new Map())
   const [onShelfStock, setOnShelfStock] = useState<Record<string, number>>({})
   const [isProcessingSale, setIsProcessingSale] = useState(false)
+  const saleSubmitLockRef = useRef(false)
+  const saleLockKey = `pos-sale-lock-${cabinet}`
 
   // Autosave cart state
   const { showRestorePrompt, acceptRestore, rejectRestore } = useFormAutosave(
@@ -166,8 +168,11 @@ export function POSView({ cabinet, username }: POSViewProps) {
     const matchesCategory = selectedCategory === "All Categories" || product.category === selectedCategory;
     
     // Check if product has on-shelf stock
+    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine
     const onShelfQty = onShelfStock[product.id] || 0
-    const hasOnShelfStock = onShelfQty > 0
+    // Offline fallback: if on-shelf API is unavailable, use product stock
+    // so POS cards remain visible and usable offline.
+    const hasOnShelfStock = isOffline ? product.stock > 0 : onShelfQty > 0
     
     // If showing out of stock items, include all matching products
     if (showOutOfStock) {
@@ -194,7 +199,8 @@ export function POSView({ cabinet, username }: POSViewProps) {
     }
 
     // Check if product has on-shelf stock available
-    const availableOnShelf = onShelfStock[product.id] || 0
+    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine
+    const availableOnShelf = isOffline ? (product.stock || 0) : (onShelfStock[product.id] || 0)
     if (availableOnShelf <= 0) {
       addToast(`${product.name} is not available on shelf. Please transfer from storage first.`, "error");
       return;
@@ -606,9 +612,30 @@ export function POSView({ cabinet, username }: POSViewProps) {
   }
 
   const processSale = async () => {
-    // Prevent double-clicking
-    if (isProcessingSale) return;
-    
+    // Prevent duplicate submits even before React state updates finish.
+    if (saleSubmitLockRef.current) {
+      addToast("A sale is already being processed. Please wait.", "warning");
+      return;
+    }
+
+    // Cross-reload lock with short TTL to avoid accidental duplicate sale creation
+    // when staff refreshes while an in-flight request is still processing.
+    const nowMs = Date.now();
+    try {
+      const existingLock = localStorage.getItem(saleLockKey);
+      if (existingLock) {
+        const lockTime = Number(existingLock);
+        if (!Number.isNaN(lockTime) && nowMs - lockTime < 45000) {
+          addToast("Previous sale is still processing. Please wait a few seconds.", "warning");
+          return;
+        }
+      }
+      localStorage.setItem(saleLockKey, String(nowMs));
+    } catch {
+      // Ignore localStorage failures; in-memory lock still protects current tab.
+    }
+
+    saleSubmitLockRef.current = true;
     setIsProcessingSale(true);
     
     try {
@@ -706,17 +733,11 @@ export function POSView({ cabinet, username }: POSViewProps) {
         return saleItem;
       });
       
-      // Calculate total amount from items
-      const totalAmount = total;
+      // Persist the final payable amount (VAT-inclusive when enabled).
+      const totalAmount = finalTotal;
       
-      // Generate client timestamp with explicit local timezone (same format as activities)
-      const now = new Date();
-      const hours = now.getHours();
-      const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
-      const ampm = hours >= 12 ? 'PM' : 'AM';
-      const tzOffset = -now.getTimezoneOffset() / 60;
-      const tzSign = tzOffset >= 0 ? '+' : '-';
-      const saleTimestamp = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${displayHours}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${ampm} (UTC${tzSign}${Math.abs(tzOffset)})`;
+      // Use ISO timestamp for reliable timezone-safe storage/parsing.
+      const saleTimestamp = new Date().toISOString();
       
       // Add the sale to the database
       const saleDataToSend: Omit<SalesRecord, 'id' | 'createdAt' | 'updatedAt'> = {
@@ -727,34 +748,39 @@ export function POSView({ cabinet, username }: POSViewProps) {
         staffName: username,
         cabinet: cabinet,
         soldAt: saleLocation,
+        requestKey: `${cabinet}-${username}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
         referenceNumber: paymentMethod === 'qrph' ? referenceNumber : undefined,
       };
       
       console.log('Sending sale data:', JSON.stringify(saleDataToSend, null, 2));
       
-      // Process sale and activity in parallel for speed
-      const [saleResult] = await Promise.allSettled([
-        addSale(saleDataToSend),
-        // Log activity in parallel
-        (async () => {
+      // Wait only for sale creation. Activity logging runs in the background
+      // so cashier flow is not delayed by activity API latency.
+      await addSale(saleDataToSend);
+
+      // Deduct product stock in local state immediately.
+      // This keeps POS stock accurate even when background refresh/API sync is delayed.
+      await Promise.allSettled(
+        cart.map((item) => decrementProductStockLocally(item.id, item.quantity, cabinet))
+      );
+
+      void (async () => {
+        try {
           const activityItemsList = saleItems.map(item => `${item.productName} (${item.quantity}x @ ₱${item.price})`).join(', ');
           const activityDetails = paymentMethod === 'qrph' && referenceNumber
-            ? `Sold ${saleItems.length} item(s) in ${cabinet} cabinet - Items: ${activityItemsList} - Total: ₱${total.toFixed(2)} - Payment: QRPH - Reference: ${referenceNumber} - Location: ${saleLocation}`
-            : `Sold ${saleItems.length} item(s) in ${cabinet} cabinet - Items: ${activityItemsList} - Total: ₱${total.toFixed(2)} - Payment: ${paymentMethod.toUpperCase()} - Location: ${saleLocation}`;
-          
-          return addActivity({
+            ? `Sold ${saleItems.length} item(s) in ${cabinet} cabinet - Items: ${activityItemsList} - Total: ₱${totalAmount.toFixed(2)} - Payment: QRPH - Reference: ${referenceNumber} - Location: ${saleLocation}`
+            : `Sold ${saleItems.length} item(s) in ${cabinet} cabinet - Items: ${activityItemsList} - Total: ₱${totalAmount.toFixed(2)} - Payment: ${paymentMethod.toUpperCase()} - Location: ${saleLocation}`;
+
+          await addActivity({
             username: username,
             activity: "Processed sale",
             details: activityDetails,
             category: "sale"
           });
-        })()
-      ]);
-      
-      // Check if sale failed
-      if (saleResult.status === 'rejected') {
-        throw saleResult.reason;
-      }
+        } catch (activityError) {
+          console.error('Background activity logging failed:', activityError);
+        }
+      })();
       
       console.log('Sale added successfully!');
       
@@ -774,7 +800,6 @@ export function POSView({ cabinet, username }: POSViewProps) {
       // Refresh data in background (non-blocking)
       setTimeout(() => {
         refreshSales(cabinet).catch(err => console.error('Failed to refresh sales:', err));
-        refetch().catch(err => console.error('Failed to refresh products:', err));
       }, 100);
       
     } catch (error) {
@@ -782,6 +807,12 @@ export function POSView({ cabinet, username }: POSViewProps) {
       addToast("Failed to process sale. Please try again.", "error");
       // Keep dialog open on error so user can retry
     } finally {
+      saleSubmitLockRef.current = false;
+      try {
+        localStorage.removeItem(saleLockKey);
+      } catch {
+        // Ignore localStorage failures.
+      }
       setIsProcessingSale(false);
     }
   }

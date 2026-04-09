@@ -178,6 +178,22 @@ export class EnhancedSyncService {
       
       return true;
     });
+
+    // Process dependency order first:
+    // 1) product + stock updates
+    // 2) sales
+    // 3) everything else
+    const getPriority = (item: SyncQueueItem) => {
+      if (item.type === 'product' || item.type === 'product_update' || item.type === 'stock_update') return 1;
+      if (item.type === 'sale') return 2;
+      return 3;
+    };
+    validItems.sort((a, b) => {
+      const pa = getPriority(a);
+      const pb = getPriority(b);
+      if (pa !== pb) return pa - pb;
+      return (a.timestamp || 0) - (b.timestamp || 0);
+    });
     
     console.log(`Processing ${validItems.length} valid sync items out of ${pendingItems.length} total`);
     
@@ -407,11 +423,19 @@ export class EnhancedSyncService {
       
       // Remove the temporary ID and let the server assign a real one
       const { id, ...productToCreate } = data; // Destructure to exclude id
+      // IMPORTANT:
+      // For offline-created products, local stock batches already represent initial stock.
+      // Creating the product on server with non-zero stock AND then creating batches doubles stock.
+      // So force stock to 0 here; stock will be rebuilt from synced batches.
+      const productPayload = {
+        ...productToCreate,
+        stock: 0
+      } as any;
       
       const response = await fetch('/api/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(productToCreate),
+        body: JSON.stringify(productPayload),
       });
 
       if (!response.ok) {
@@ -575,24 +599,44 @@ export class EnhancedSyncService {
           
           if (batchResponse.ok) {
             console.log(`Created stock batch on server for product ${serverId}: ${batch.quantity}`);
+            // Update local batch with server product ID and mark as synced
+            await db.stockBatches.update(batch.id!, {
+              productId: serverId,
+              synced: true,
+              lastModified: Date.now()
+            });
           } else {
-            console.warn(`Failed to create stock batch on server: ${await batchResponse.text()}`);
+            const serverErr = await batchResponse.text();
+            console.warn(`Failed to create stock batch on server: ${serverErr}`);
+            // Keep it unsynced so it can retry via normal stock sync flow.
+            await db.stockBatches.update(batch.id!, {
+              productId: serverId,
+              synced: false,
+              lastModified: Date.now()
+            });
+            await this.queueChange('stock_update', 'create', {
+              productId: serverId,
+              quantity: batch.quantity,
+              costPerUnit: batch.costPerUnit || 0,
+              cabinet: batch.cabinet || cabinet,
+              batchDate: batch.addedDate || new Date().toISOString(),
+            }, batch.cabinet || cabinet);
           }
-          
-          // Update local batch with server ID and mark as synced
-          await db.stockBatches.update(batch.id!, {
-            productId: serverId,
-            synced: true,
-            lastModified: Date.now()
-          });
         } catch (batchError) {
           console.error(`Error creating stock batch for product ${serverId}:`, batchError);
-          // Still mark as synced to prevent infinite loops
+          // Keep unsynced and queue retry; do not mark synced on failure.
           await db.stockBatches.update(batch.id!, {
             productId: serverId,
-            synced: true,
+            synced: false,
             lastModified: Date.now()
           });
+          await this.queueChange('stock_update', 'create', {
+            productId: serverId,
+            quantity: batch.quantity,
+            costPerUnit: batch.costPerUnit || 0,
+            cabinet: batch.cabinet || cabinet,
+            batchDate: batch.addedDate || new Date().toISOString(),
+          }, batch.cabinet || cabinet);
         }
       }
       
@@ -1120,6 +1164,7 @@ export class EnhancedSyncService {
       staffName: data.staffName,
       cabinet: data.cabinet,
       soldAt: data.soldAt,
+      requestKey: (data as any).requestKey,
       referenceNumber: data.referenceNumber
     };
     

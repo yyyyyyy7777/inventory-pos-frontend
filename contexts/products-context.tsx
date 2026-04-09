@@ -45,6 +45,7 @@ export interface Product {
 interface ProductsContextType {
   products: Product[];
   getProductsByCabinet: (cabinet: string) => Product[];
+  decrementProductStockLocally: (productId: string, quantity: number, cabinet: string) => Promise<void>;
   addProduct: (product: Omit<Product, 'id'>, cabinet: string) => Promise<Product | { error: string; isSkuConflict: true } | undefined>;
   updateProduct: (id: string, updates: Partial<Product>, cabinet: string) => Promise<{ success: boolean; error: string; data?: undefined; } | { success: boolean; data: any; error?: undefined; }>;
   deleteProduct: (id: string, cabinet: string) => Promise<void>;
@@ -417,46 +418,10 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Smart refresh: only update when data actually changes
-  useEffect(() => {
-    const checkForUpdates = async () => {
-      // Skip if offline
-      if (!navigator.onLine) {
-        console.log('Offline mode - skipping background update');
-        return;
-      }
-      
-      try {
-        const response = await fetch('/api/products');
-        if (response.ok) {
-          const allProducts = await response.json();
-          
-          // Group products by cabinet
-          const productsByCabinet: Record<string, Product[]> = {};
-          allProducts.forEach((product: Product) => {
-            const cabinet = product.cabinet || 'main';
-            if (!productsByCabinet[cabinet]) {
-              productsByCabinet[cabinet] = [];
-            }
-            productsByCabinet[cabinet].push(product);
-          });
-          
-          // Only update if data has actually changed
-          if (JSON.stringify(productsByCabinet) !== JSON.stringify(products)) {
-            setProducts(productsByCabinet);
-          }
-        }
-      } catch (err) {
-        // Silent fail for background updates
-        console.log('Background products update check failed:', err);
-      }
-    };
-
-    // Check for updates every 15 seconds (faster but without loading states)
-    const intervalId = setInterval(checkForUpdates, 15000);
-    
-    return () => clearInterval(intervalId);
-  }, [products]);
+  // Note:
+  // We avoid periodic full product polling because realtime subscriptions already
+  // keep data synchronized across users. Removing this interval reduces repeated
+  // heavy requests and improves dashboard/POS responsiveness under concurrent use.
 
   const getProductsByCabinet = (cabinet: string) => {
     if (cabinet === 'all') {
@@ -467,6 +432,42 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
     return (products[cabinet] || []).filter(product => 
       !product.deleted && !product.markedForDelete
     );
+  };
+
+  // Immediate local stock deduction used by POS after confirmed sale creation.
+  // This prevents stock from appearing unchanged when background refresh fails.
+  const decrementProductStockLocally = async (productId: string, quantity: number, cabinet: string) => {
+    if (quantity <= 0) return;
+
+    setProducts(prev => ({
+      ...prev,
+      [cabinet]: (prev[cabinet] || []).map((product) => {
+        if (product.id !== productId) return product;
+        const nextStock = Math.max(0, (product.stock || 0) - quantity);
+        return {
+          ...product,
+          stock: nextStock,
+          quantity: nextStock,
+          lastModified: Date.now(),
+          synced: isOnline ? product.synced : false
+        };
+      }),
+    }));
+
+    try {
+      const existingProduct = await db.products.get(productId);
+      if (existingProduct) {
+        const nextStock = Math.max(0, (existingProduct.stock || 0) - quantity);
+        await db.products.update(productId, {
+          stock: nextStock,
+          quantity: nextStock,
+          lastModified: Date.now(),
+          synced: isOnline ? existingProduct.synced : false
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to persist local stock deduction:', err);
+    }
   };
 
   const addProduct = async (product: Omit<Product, 'id'>, cabinet: string): Promise<Product | { error: string; isSkuConflict: true } | undefined> => {
@@ -494,6 +495,21 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
         
         // Save to IndexedDB
         await db.products.add(tempProduct);
+
+        // Create initial local stock batch so stock history works offline.
+        if ((tempProduct.stock || 0) > 0) {
+          await db.stockBatches.add({
+            productId: tempProduct.id,
+            quantity: tempProduct.stock,
+            costPerUnit: tempProduct.costPrice || 0,
+            cabinet,
+            addedDate: new Date().toISOString(),
+            status: 'on-shelf',
+            synced: false,
+            lastModified: Date.now(),
+            notes: 'Initial stock (offline create)'
+          });
+        }
         
         // Queue for sync when online
         await enhancedSyncService.queueChange('product', 'create', tempProduct, cabinet);
@@ -558,6 +574,21 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
           
           // Save to IndexedDB
           await db.products.add(tempProduct);
+
+          // Create initial local stock batch so stock history works offline.
+          if ((tempProduct.stock || 0) > 0) {
+            await db.stockBatches.add({
+              productId: tempProduct.id,
+              quantity: tempProduct.stock,
+              costPerUnit: tempProduct.costPrice || 0,
+              cabinet,
+              addedDate: new Date().toISOString(),
+              status: 'on-shelf',
+              synced: false,
+              lastModified: Date.now(),
+              notes: 'Initial stock (offline fallback)'
+            });
+          }
           
           // Queue for sync when online
           await enhancedSyncService.queueChange('product', 'create', tempProduct, cabinet);
@@ -609,6 +640,21 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
         
         // Save to IndexedDB
         await db.products.add(tempProduct);
+
+        // Create initial local stock batch so stock history works offline.
+        if ((tempProduct.stock || 0) > 0) {
+          await db.stockBatches.add({
+            productId: tempProduct.id,
+            quantity: tempProduct.stock,
+            costPerUnit: tempProduct.costPrice || 0,
+            cabinet,
+            addedDate: new Date().toISOString(),
+            status: 'on-shelf',
+            synced: false,
+            lastModified: Date.now(),
+            notes: 'Initial stock (offline network fallback)'
+          });
+        }
         
         // Queue for sync when online
         await enhancedSyncService.queueChange('product', 'create', tempProduct, cabinet);
@@ -736,14 +782,29 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       // If offline, queue for later sync
       if (!isOnline) {
         console.log('Offline mode - queuing stock batch for sync');
+        const targetCabinet = cabinet || 'main';
+
+        // Persist stock batch locally immediately so stock history shows offline.
+        await db.stockBatches.add({
+          productId,
+          quantity,
+          costPerUnit: costPerUnit || 0,
+          cabinet: targetCabinet,
+          addedDate: new Date().toISOString(),
+          status: 'on-shelf',
+          synced: false,
+          lastModified: Date.now(),
+          notes: 'Restock (offline)'
+        });
+
         await enhancedSyncService.queueChange('stock_update', 'create', {
           productId,
           quantity,
           costPerUnit,
           expiryDate,
-          cabinet: cabinet || 'main',
+          cabinet: targetCabinet,
           batchDate: new Date().toISOString(),
-        }, cabinet || 'main');
+        }, targetCabinet);
         
         // Update local product stock
         const product = await db.products.get(productId);
@@ -757,7 +818,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
           // Update state
           setProducts(prev => ({
             ...prev,
-            [cabinet || 'main']: (prev[cabinet || 'main'] || []).map(p =>
+            [targetCabinet]: (prev[targetCabinet] || []).map(p =>
               p.id === productId ? { ...p, stock: p.stock + quantity } : p
             ),
           }));
@@ -838,6 +899,32 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
   const deleteProduct = async (id: string, cabinet: string) => {
     try {
       setError(null);
+      const isTempProductId = id.startsWith('temp_') || id.startsWith('temp-');
+      
+      // Temp products are local-only until synced: always delete locally,
+      // even if currently online.
+      if (isTempProductId) {
+        setProducts((prev) => ({
+          ...prev,
+          [cabinet]: (prev[cabinet] || []).filter((product) => product.id !== id),
+        }));
+
+        await db.products.delete(id);
+        await db.stockBatches.where({ productId: id, cabinet }).delete();
+
+        // Remove queued sync items related to this temp product.
+        await db.syncQueue
+          .filter((q: any) =>
+            q.cabinet === cabinet &&
+            (
+              q.data?.id === id ||
+              q.data?.productId === id ||
+              (q.type === 'product' && q.data?.id === id)
+            )
+          )
+          .delete();
+        return;
+      }
       
       // If offline, mark for deletion and queue for sync
       if (!isOnline) {
@@ -983,6 +1070,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       value={{ 
         products: getAllProducts(), 
         getProductsByCabinet, 
+        decrementProductStockLocally,
         addProduct, 
         updateProduct, 
         deleteProduct,

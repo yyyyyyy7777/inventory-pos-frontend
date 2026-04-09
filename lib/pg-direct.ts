@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 
 let pool: Pool | null = null;
+let saleIdempotencyReady: Promise<void> | null = null;
 
 export async function getConnection() {
   if (!pool) {
@@ -10,7 +11,7 @@ export async function getConnection() {
       pool = new Pool({
         connectionString: process.env.DATABASE_URL,
         ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-        max: 3, // Limit pool size for serverless environment
+        max: 10, // Better concurrency for multiple active users
         idleTimeoutMillis: 30000,
         connectionTimeoutMillis: 10000,
       });
@@ -37,6 +38,20 @@ export async function query(sql: string, params?: any[]) {
     console.error('Query execution failed:', { sql, params, error });
     throw error;
   }
+}
+
+async function ensureSaleIdempotencySchema(client: any) {
+  if (!saleIdempotencyReady) {
+    saleIdempotencyReady = (async () => {
+      await client.query(`ALTER TABLE sale ADD COLUMN IF NOT EXISTS "requestKey" TEXT`);
+      await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS sale_request_key_unique ON sale("requestKey")`);
+    })().catch((error) => {
+      saleIdempotencyReady = null;
+      throw error;
+    });
+  }
+
+  await saleIdempotencyReady;
 }
 
 export async function verifyEmployee(username: string, password: string) {
@@ -360,23 +375,28 @@ export async function getAllSales(cabinet: string = 'main') {
     
     console.log(`getAllSales: Found ${sales.length} active (non-archived) sales for cabinet '${cabinet}'`);
     
-    // Get items for each sale
+    if (sales.length === 0) {
+      return sales;
+    }
+
+    // Fetch all sale items in one query (avoid N+1 item queries under load).
+    const saleIds = sales.map(sale => sale.id);
+    const allItems = await query(
+      `SELECT * FROM "saleItem" WHERE "saleId" = ANY($1::text[])`,
+      [saleIds]
+    );
+    const itemsBySaleId = new Map<string, any[]>();
+    for (const item of allItems) {
+      const list = itemsBySaleId.get(item.saleId) || [];
+      list.push({
+        ...item,
+        isDiscounted: Boolean(item.isDiscounted)
+      });
+      itemsBySaleId.set(item.saleId, list);
+    }
+
     for (const sale of sales) {
-      try {
-        const items = await query(
-          `SELECT * FROM "saleItem" WHERE "saleId" = $1`,
-          [sale.id]
-        );
-        
-        // Convert database boolean values to actual booleans
-        sale.items = items.map(item => ({
-          ...item,
-          isDiscounted: Boolean(item.isDiscounted)
-        }));
-      } catch (itemError) {
-        console.error(`Failed to fetch items for sale ${sale.id}:`, itemError);
-        sale.items = [];
-      }
+      sale.items = itemsBySaleId.get(sale.id) || [];
     }
     
     return sales;
@@ -425,23 +445,28 @@ export async function getSalesByDateRange(startDate: Date, endDate: Date, cabine
     const sales = await query(sql, params);
     console.log(`getSalesByDateRange: Found ${sales.length} sales between ${startDate.toISOString()} and ${endDate.toISOString()}${cabinet ? ` for cabinet '${cabinet}'` : ' for all cabinets'}`);
     
-    // Get items for each sale
+    if (sales.length === 0) {
+      return sales;
+    }
+
+    // Fetch all sale items in one query (avoid N+1 item queries).
+    const saleIds = sales.map(sale => sale.id);
+    const allItems = await query(
+      `SELECT * FROM "saleItem" WHERE "saleId" = ANY($1::text[])`,
+      [saleIds]
+    );
+    const itemsBySaleId = new Map<string, any[]>();
+    for (const item of allItems) {
+      const list = itemsBySaleId.get(item.saleId) || [];
+      list.push({
+        ...item,
+        isDiscounted: Boolean(item.isDiscounted)
+      });
+      itemsBySaleId.set(item.saleId, list);
+    }
+
     for (const sale of sales) {
-      try {
-        const items = await query(
-          `SELECT * FROM "saleItem" WHERE "saleId" = $1`,
-          [sale.id]
-        );
-        
-        // Convert database boolean values to actual booleans
-        sale.items = items.map(item => ({
-          ...item,
-          isDiscounted: Boolean(item.isDiscounted)
-        }));
-      } catch (itemError) {
-        console.error(`Failed to fetch items for sale ${sale.id}:`, itemError);
-        sale.items = [];
-      }
+      sale.items = itemsBySaleId.get(sale.id) || [];
     }
     
     return sales;
@@ -449,6 +474,27 @@ export async function getSalesByDateRange(startDate: Date, endDate: Date, cabine
     console.error('Failed to fetch sales by date range:', error);
     throw new Error('Failed to fetch sales from database');
   }
+}
+
+async function getSaleById(saleId: string) {
+  const saleRows = await query(
+    `SELECT * FROM sale WHERE id = $1 LIMIT 1`,
+    [saleId]
+  );
+  if (saleRows.length === 0) return null;
+
+  const itemRows = await query(
+    `SELECT * FROM "saleItem" WHERE "saleId" = $1`,
+    [saleId]
+  );
+
+  return {
+    ...saleRows[0],
+    items: itemRows.map((item) => ({
+      ...item,
+      isDiscounted: Boolean(item.isDiscounted)
+    }))
+  };
 }
 
 // Helper function to get all sales including archived (for debugging)
@@ -473,11 +519,13 @@ export async function getAllSalesWithArchiveStatus(cabinet: string = 'main') {
 }
 
 export async function createSale(data: {
+  date?: string;
   amount: number;
   paymentMethod: string;
   staffName: string;
   cabinet: string;
   soldAt: string;
+  requestKey?: string;
   referenceNumber?: string;
   bypassStockCheck?: boolean;
   forceCreate?: boolean;
@@ -507,12 +555,34 @@ export async function createSale(data: {
       throw new Error('Sale amount must be greater than 0');
     }
     
+    // Ensure idempotency column/index exist before create/check.
+    await ensureSaleIdempotencySchema(client);
+
+    // If this request key was already processed, return existing sale immediately.
+    if (data.requestKey) {
+      const existingSaleRows = await client.query(
+        `SELECT id FROM sale WHERE "requestKey" = $1 LIMIT 1`,
+        [data.requestKey]
+      );
+
+      if (existingSaleRows.rows.length > 0) {
+        await client.query('ROLLBACK');
+        const existingSaleId = existingSaleRows.rows[0].id;
+        const existingSale = await getSaleById(existingSaleId);
+        if (existingSale) {
+          return existingSale;
+        }
+      }
+    }
+
     // Create the sale
     const saleId = randomUUID();
+    const parsedSaleDate = data.date ? new Date(data.date) : new Date();
+    const saleDate = Number.isNaN(parsedSaleDate.getTime()) ? new Date() : parsedSaleDate;
     await client.query(
-      `INSERT INTO sale (id, date, amount, "paymentMethod", "staffName", cabinet, "soldAt", "referenceNumber", "createdAt", "updatedAt") 
-       VALUES ($1, NOW(), $2, $3, $4, $5, $6, $7, NOW(), NOW())`,
-      [saleId, data.amount, data.paymentMethod, data.staffName, data.cabinet, data.soldAt, data.referenceNumber || null]
+      `INSERT INTO sale (id, date, amount, "paymentMethod", "staffName", cabinet, "soldAt", "referenceNumber", "requestKey", "createdAt", "updatedAt") 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())`,
+      [saleId, saleDate, data.amount, data.paymentMethod, data.staffName, data.cabinet, data.soldAt, data.referenceNumber || null, data.requestKey || null]
     );
     
     // Create sale items and update product stock with batch tracking
@@ -607,11 +677,25 @@ export async function createSale(data: {
     console.log(`Sale ${saleId} created successfully`);
     
     // Return the created sale with items
-    const [createdSale] = await getAllSales(data.cabinet).then(sales => sales.filter(s => s.id === saleId));
+    const createdSale = await getSaleById(saleId);
     return createdSale;
     
   } catch (error) {
     await client.query('ROLLBACK');
+    // Handle unique conflict on requestKey safely by returning the existing sale.
+    if (data.requestKey && (error as any)?.code === '23505') {
+      const existingRows = await query(
+        `SELECT id FROM sale WHERE "requestKey" = $1 LIMIT 1`,
+        [data.requestKey]
+      );
+      if (existingRows.length > 0) {
+        const existingSaleId = existingRows[0].id;
+        const existingSale = await getSaleById(existingSaleId);
+        if (existingSale) {
+          return existingSale;
+        }
+      }
+    }
     console.error('Error creating sale:', error);
     throw error;
   } finally {

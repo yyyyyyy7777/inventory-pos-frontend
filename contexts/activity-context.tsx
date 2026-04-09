@@ -160,17 +160,21 @@ export function ActivityProvider({ children }: ActivityProviderProps) {
     fetchActivities()
   }, [fetchActivities])
 
-  // Auto-refresh activities every 5 seconds (background polling)
+  // Auto-refresh activities less aggressively to reduce cross-user load.
   useEffect(() => {
     const intervalId = setInterval(() => {
-      // Only fetch if online
-      if (navigator.onLine) {
+      // Only fetch if online and tab is active
+      if (navigator.onLine && document.visibilityState === 'visible') {
+        // Avoid immediate refetch loops
+        if (lastFetchTime && Date.now() - lastFetchTime.getTime() < 15000) {
+          return;
+        }
         fetchActivities(false) // Don't show loading spinner for background updates
       }
-    }, 5000)
+    }, 30000)
 
     return () => clearInterval(intervalId)
-  }, [fetchActivities])
+  }, [fetchActivities, lastFetchTime])
 
   // Process queued archive operations when coming back online
   useEffect(() => {

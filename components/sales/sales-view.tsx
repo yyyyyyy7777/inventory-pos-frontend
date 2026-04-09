@@ -13,12 +13,19 @@ import { useToast } from "@/contexts/toast-context"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { EmptyState } from "@/components/ui/empty-state"
 import { countUnitsInSale } from "@/lib/sale-metrics"
+import { dedupeLikelyDuplicateSales, parseSaleDate } from "@/lib/analytics-from-sales"
 
 // Helper function to create short sale ID
 const createShortSaleId = (fullId: string): string => {
   const prefix = fullId.substring(0, 8).toUpperCase()
   const suffix = fullId.substring(fullId.length - 4).toUpperCase()
   return `${prefix}-${suffix}`
+}
+
+const formatSaleDate = (dateValue: string) => {
+  const d = parseSaleDate(dateValue);
+  if (Number.isNaN(d.getTime())) return dateValue;
+  return d.toLocaleDateString('en-US', { timeZone: 'Asia/Manila' });
 }
 
 interface SalesViewProps {
@@ -65,6 +72,7 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
   const [showSaleDetails, setShowSaleDetails] = useState(false)
 
   const sales = getSalesByCabinet(cabinet)
+
   
   // Debug logging removed (was too noisy and slowed down the app)
 
@@ -131,7 +139,7 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
             <tbody>
               ${filteredSales.map(sale => `
                 <tr>
-                  <td>${new Date(sale.date).toLocaleDateString()}</td>
+                  <td>${formatSaleDate(sale.date)}</td>
                   <td>${createShortSaleId(sale.id)}</td>
                   <td>${sale.items.map((item: any) => `${item.productName} (${item.quantity})`).join(', ')}</td>
                   <td>${sale.staffName}</td>
@@ -187,7 +195,7 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
   const handleExportExcel = () => {
     const headers = ['Date', 'Sale ID', 'Products', 'Staff', 'Payment Method', 'Amount', 'Sold At'];
     const data = filteredSales.map(sale => [
-      new Date(sale.date).toLocaleDateString(),
+      formatSaleDate(sale.date),
       createShortSaleId(sale.id),
       sale.items.map((item: any) => `${item.productName} (${item.quantity})`).join('; '),
       sale.staffName,
@@ -216,7 +224,7 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
     addToast(`Exported ${filteredSales.reduce((sum, sale) => sum + countUnitsInSale(sale), 0)} units sold to Excel`, "success");
   };
 
-  const filteredSales = sales
+  const filteredSales = dedupeLikelyDuplicateSales(sales as any)
     .filter((sale: any) => {
       const matchesSearch = searchQuery === "" || 
         sale.items.some((item: any) => 
@@ -889,7 +897,7 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
                     ) : (
                       filteredSales.map((sale: any) => (
                         <tr key={sale.id} className="hover:bg-muted/50 transition-colors">
-                          <td className="py-4 px-5 text-muted-foreground text-sm">{new Date(sale.date).toLocaleDateString()}</td>
+                          <td className="py-4 px-5 text-muted-foreground text-sm">{formatSaleDate(sale.date)}</td>
                           <td className="py-4 px-5 text-foreground font-medium">{createShortSaleId(sale.id)}</td>
                           <td className="py-4 px-5 text-muted-foreground text-sm">
                             <div className="max-w-md space-y-1">

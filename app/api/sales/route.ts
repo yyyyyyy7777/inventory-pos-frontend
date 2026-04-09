@@ -37,7 +37,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     console.log('Received sale request:', body);
     
-    const { items, amount, paymentMethod, staffName, cabinet, soldAt, referenceNumber, bypassStockCheck, forceCreate, emergencySync } = body;
+    const { date, items, amount, paymentMethod, staffName, cabinet, soldAt, requestKey, referenceNumber, bypassStockCheck, forceCreate, emergencySync } = body;
 
     // Validate input
     if (!items || items.length === 0) {
@@ -67,11 +67,13 @@ export async function POST(request: Request) {
     });
 
     const sale = await createSale({
+      date,
       amount,
       paymentMethod,
       staffName,
       cabinet,
       soldAt,
+      requestKey,
       referenceNumber,
       bypassStockCheck,
       forceCreate,

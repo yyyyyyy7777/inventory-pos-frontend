@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
@@ -33,7 +33,7 @@ import { useProducts } from "@/contexts/products-context"
 import { useSales } from "@/contexts/sales-context"
 import { db } from "@/lib/indexeddb"
 import { countUnitsInSale } from "@/lib/sale-metrics"
-import { mapStaffTimePeriodToSalesPeriod, summarizeSalesForPeriod } from "@/lib/analytics-from-sales"
+import { mapStaffTimePeriodToSalesPeriod, parseSaleDate, summarizeSalesForPeriod } from "@/lib/analytics-from-sales"
 
 interface StaffAnalyticsProps {
   cabinet: string
@@ -60,13 +60,40 @@ interface StaffAnalyticsData {
   }>;
 }
 
-const formatCurrency = (amount: number) => {
+const formatCurrency = (amount: number | string | null | undefined) => {
+  const parsed =
+    typeof amount === 'number'
+      ? amount
+      : parseFloat(String(amount ?? 0));
+  const safeAmount = Number.isFinite(parsed) ? parsed : 0;
+
   return new Intl.NumberFormat('en-PH', {
     style: 'currency',
     currency: 'PHP',
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
-  }).format(amount);
+  }).format(safeAmount);
+};
+
+const PH_TIMEZONE = 'Asia/Manila';
+
+const getPhilippineDayBounds = (baseDate: Date = new Date()) => {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: PH_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(baseDate);
+
+  const year = Number(parts.find((p) => p.type === 'year')?.value || 0);
+  const month = Number(parts.find((p) => p.type === 'month')?.value || 1);
+  const day = Number(parts.find((p) => p.type === 'day')?.value || 1);
+
+  const startUtcMs = Date.UTC(year, month - 1, day, -8, 0, 0, 0);
+  return {
+    start: new Date(startUtcMs),
+    end: new Date(startUtcMs + 24 * 60 * 60 * 1000),
+  };
 };
 
 const StaffMetricCard = ({ 
@@ -171,6 +198,38 @@ export function EnhancedStaffAnalytics({ cabinet, username, onViewChange }: Staf
   const { sales, loading: salesLoading } = useSales();
   const [todaySalesData, setTodaySalesData] = useState<{ revenue: number; transactions: number; items: number }>({ revenue: 0, transactions: 0, items: 0 });
   const [todaySalesLoading, setTodaySalesLoading] = useState(false);
+  const todayMetrics = useMemo(() => {
+    const { start, end } = getPhilippineDayBounds(new Date());
+    const normalizedCabinet = String(cabinet || '').trim().toLowerCase();
+
+    const filteredByCabinet = sales.filter((sale) => {
+      const saleCabinet = String(sale.cabinet || '').trim().toLowerCase();
+      if (normalizedCabinet !== 'all' && saleCabinet !== normalizedCabinet) return false;
+      const saleDate = parseSaleDate(sale.date || '');
+      if (Number.isNaN(saleDate.getTime())) return false;
+      return saleDate >= start && saleDate < end;
+    });
+
+    const todaysSales = filteredByCabinet.length > 0 || normalizedCabinet === 'all'
+      ? filteredByCabinet
+      : sales.filter((sale) => {
+          const saleDate = parseSaleDate(sale.date || '');
+          if (Number.isNaN(saleDate.getTime())) return false;
+          return saleDate >= start && saleDate < end;
+        });
+
+    const revenue = todaysSales.reduce((sum, sale) => {
+      const amount = typeof sale.amount === 'number' ? sale.amount : parseFloat(String(sale.amount)) || 0;
+      return sum + amount;
+    }, 0);
+
+    return {
+      revenue,
+      transactions: todaysSales.length,
+      items: todaysSales.reduce((sum, sale) => sum + countUnitsInSale(sale), 0),
+    };
+  }, [sales, cabinet]);
+
   const [periodSummaryData, setPeriodSummaryData] = useState<{ revenue: number; transactions: number; items: number }>({ revenue: 0, transactions: 0, items: 0 });
 
   useEffect(() => {
@@ -200,7 +259,7 @@ export function EnhancedStaffAnalytics({ cabinet, username, onViewChange }: Staf
       if (sales && sales.length > 0) {
         todaySales = sales.filter(sale => {
           try {
-            const saleDate = new Date(sale.date);
+            const saleDate = parseSaleDate(sale.date);
             const matchesCabinet = !cabinet || cabinet === 'all' || sale.cabinet === cabinet;
             const isToday = saleDate >= today && saleDate < tomorrow;
             return matchesCabinet && isToday;
@@ -216,7 +275,7 @@ export function EnhancedStaffAnalytics({ cabinet, username, onViewChange }: Staf
           const allSales = await db.sales.toArray();
           todaySales = allSales.filter(sale => {
             try {
-              const saleDate = new Date(sale.date);
+              const saleDate = parseSaleDate(sale.date);
               const matchesCabinet = !cabinet || cabinet === 'all' || sale.cabinet === cabinet;
               const isToday = saleDate >= today && saleDate < tomorrow;
               return matchesCabinet && isToday;
@@ -242,7 +301,10 @@ export function EnhancedStaffAnalytics({ cabinet, username, onViewChange }: Staf
         }
       }
 
-      const todayRevenue = todaySales.reduce((sum, sale) => sum + (sale.amount || 0), 0);
+      const todayRevenue = todaySales.reduce((sum, sale) => {
+        const amount = typeof sale.amount === 'number' ? sale.amount : parseFloat(String(sale.amount)) || 0;
+        return sum + amount;
+      }, 0);
       const todayTransactions = todaySales.length;
       const todayItems = todaySales.reduce((sum, sale) => sum + countUnitsInSale(sale), 0);
 
@@ -250,7 +312,7 @@ export function EnhancedStaffAnalytics({ cabinet, username, onViewChange }: Staf
       if (todaySales.length === 0 && sales && sales.length > 0) {
         const allTodaySales = sales.filter(sale => {
           try {
-            const saleDate = new Date(sale.date);
+            const saleDate = parseSaleDate(sale.date);
             const isToday = saleDate >= today && saleDate < tomorrow;
             return isToday;
           } catch (dateError) {
@@ -258,7 +320,10 @@ export function EnhancedStaffAnalytics({ cabinet, username, onViewChange }: Staf
           }
         });
         
-        const allTodayRevenue = allTodaySales.reduce((sum, sale) => sum + (sale.amount || 0), 0);
+        const allTodayRevenue = allTodaySales.reduce((sum, sale) => {
+          const amount = typeof sale.amount === 'number' ? sale.amount : parseFloat(String(sale.amount)) || 0;
+          return sum + amount;
+        }, 0);
         const allTodayTransactions = allTodaySales.length;
         const allTodayItems = allTodaySales.reduce((sum, sale) => sum + countUnitsInSale(sale), 0);
         
@@ -476,6 +541,14 @@ export function EnhancedStaffAnalytics({ cabinet, username, onViewChange }: Staf
           value={formatCurrency(periodSummaryData.revenue)}
           icon={<DollarSign className="h-6 w-6" />}
           description={`${periodSummaryData.transactions} transactions`}
+          color="green"
+        />
+        
+        <StaffMetricCard
+          title="Today's Sales"
+          value={formatCurrency(todayMetrics.revenue)}
+          icon={<TrendingUp className="h-6 w-6" />}
+          description={`${todayMetrics.transactions} transactions today`}
           color="blue"
         />
         
@@ -485,14 +558,6 @@ export function EnhancedStaffAnalytics({ cabinet, username, onViewChange }: Staf
           icon={<Package className="h-6 w-6" />}
           description="Units sold"
           color="orange"
-        />
-        
-        <StaffMetricCard
-          title={`${timePeriod === 'daily' ? "Today's" : timePeriod === 'weekly' ? "Weekly" : timePeriod === 'monthly' ? "Monthly" : timePeriod === 'quarterly' ? "Quarterly" : "Yearly"} Total`}
-          value={formatCurrency(periodSummaryData.revenue)}
-          icon={<TrendingUp className="h-6 w-6" />}
-          description={`${periodSummaryData.transactions} transactions this ${timePeriod}`}
-          color="green"
         />
         
         <StaffMetricCard

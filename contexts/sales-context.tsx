@@ -41,6 +41,7 @@ export interface SalesRecord {
   staffName: string;
   cabinet: string;
   soldAt: 'online' | 'physical';
+  requestKey?: string;
   referenceNumber?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -142,12 +143,21 @@ export function SalesProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      setLoading(true);
+      // Keep this refresh lightweight; avoid forcing global loading state
+      // for background sync checks.
       setError(null);
       const response = await fetch(`/api/sales?cabinet=${cabinet}`);
       
       if (!response.ok) {
-        throw new Error('Failed to fetch sales');
+        const errorText = await response.text().catch(() => '');
+        console.warn('refreshSales: API returned non-OK response', {
+          status: response.status,
+          statusText: response.statusText,
+          cabinet,
+          details: errorText
+        });
+        // Do not throw here; keep current data and fallback path below.
+        return;
       }
       
       const data = await response.json();
@@ -155,22 +165,19 @@ export function SalesProvider({ children }: { children: ReactNode }) {
       setSales(data);
       cacheSales(data);
     } catch (err) {
-      console.error('Error fetching sales:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load sales');
+      console.warn('refreshSales: fetch failed, using cached fallback when possible:', err);
       
       // If fetch fails and we have IndexedDB data, use that
       try {
         const allSales = await db.sales.toArray();
         if (allSales.length > 0) {
           setSales(allSales);
-          setError(null); // Clear error since we have IndexedDB data
+          setError(null);
           console.log('Fallback to IndexedDB:', allSales.length, 'sales');
         }
       } catch (cacheErr) {
-        console.error('Error loading from IndexedDB as fallback:', cacheErr);
+        console.warn('refreshSales: IndexedDB fallback failed:', cacheErr);
       }
-    } finally {
-      setLoading(false);
     }
   }, [isOnline]);
 
@@ -210,93 +217,12 @@ export function SalesProvider({ children }: { children: ReactNode }) {
     };
   }, [refreshSales]);
 
-  // Fetch all sales on mount (for all cabinets)
-  useEffect(() => {
-    const fetchAllSales = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        
-        // If offline, load from IndexedDB
-        if (!isOnline) {
-          const allSales = await db.sales.toArray();
-          console.log('📊 Offline mode - loaded from IndexedDB:', allSales.length, 'sales');
-          console.log('📋 Sample offline sales:', allSales.slice(0, 3).map(s => ({ id: s.id, date: s.date, amount: s.amount, cabinet: s.cabinet })));
-          setSales(allSales);
-          setLoading(false);
-          console.log('Offline mode - loaded from IndexedDB:', allSales.length);
-          return;
-        }
-        
-        const response = await fetch('/api/sales');
-        
-        if (!response.ok) {
-          throw new Error('Failed to fetch sales');
-        }
-        
-        const data = await response.json();
-        console.log('📊 Sales loaded from API:', data.length, 'sales');
-        console.log('📋 Sample sales:', data.slice(0, 3).map((s: SalesRecord) => ({ id: s.id, date: s.date, amount: s.amount, cabinet: s.cabinet })));
-        setSales(data);
-        await cacheSales(data);
-      } catch (err) {
-        console.error('Error fetching sales:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load sales');
-        
-        // Try to load from IndexedDB as fallback
-        try {
-          const allSales = await db.sales.toArray();
-          if (allSales.length > 0) {
-            console.log('📊 Sales loaded from IndexedDB fallback:', allSales.length, 'sales');
-            console.log('📋 Sample IndexedDB sales:', allSales.slice(0, 3).map((s: SalesRecord) => ({ id: s.id, date: s.date, amount: s.amount, cabinet: s.cabinet })));
-            setSales(allSales);
-            console.log('Fallback to IndexedDB:', allSales.length);
-          }
-        } catch (cacheErr) {
-          console.error('Error loading from IndexedDB:', cacheErr);
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchAllSales();
-  }, [isOnline]);
-
-  // Smart refresh: lightweight change detection (avoid JSON.stringify on large arrays)
-  useEffect(() => {
-    const checkForUpdates = async () => {
-      try {
-        // If offline, skip background fetch
-        if (!isOnline) {
-          return;
-        }
-        
-        const response = await fetch('/api/sales');
-        if (response.ok) {
-          const data = await response.json();
-          // Only update if data has actually changed (cheap signature)
-          const currentFirstId = sales?.[0]?.id;
-          const nextFirstId = data?.[0]?.id;
-          const currentLen = sales?.length || 0;
-          const nextLen = Array.isArray(data) ? data.length : 0;
-
-          if (nextLen !== currentLen || nextFirstId !== currentFirstId) {
-            setSales(data);
-            await cacheSales(data);
-          }
-        }
-      } catch (err) {
-        // Silent fail for background updates
-        console.log('Background update check failed:', err);
-      }
-    };
-
-    // Check for updates every 15 seconds (faster but without loading states)
-    const intervalId = setInterval(checkForUpdates, 15000);
-    
-    return () => clearInterval(intervalId);
-  }, [isOnline]);
+  // Note:
+  // We intentionally avoid periodic full-list polling here.
+  // Sales are already kept fresh by:
+  // 1) realtime subscriptions above, and
+  // 2) explicit refreshes after critical actions (e.g. processing a sale).
+  // This prevents multi-user request storms that slow down dashboard/POS loading.
 
   const updateBatchQuantitiesAfterSale = async (items: any[], cabinet: string) => {
   try {
@@ -454,34 +380,33 @@ const addSale = async (sale: Omit<SalesRecord, 'id' | 'createdAt' | 'updatedAt'>
       }
       
       if (isOnline) {
-        // Online: Try to save to server
-        try {
-          const response = await fetch('/api/sales', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(sale),
-          });
+        // Online: sync in background so POS "processing" is not blocked by network latency.
+        void (async () => {
+          try {
+            const response = await fetch('/api/sales', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(sale),
+            });
 
-          if (response.ok) {
-            const newSale = await response.json();
-            // Update with server response and mark as synced
-            await db.sales.update(saleId, { ...newSale, synced: true });
-            setSales(prev => prev.map(s => s.id === saleId ? { ...newSale, synced: true } : s));
-            console.log('✅ Sale synced to server successfully:', newSale.id);
-          } else {
-            const errorText = await response.text();
-            console.log('❌ Server failed to create sale, keeping locally:', errorText);
-            // Server failed, but keep the sale locally and queue for later sync
+            if (response.ok) {
+              const newSale = await response.json();
+              // Update with server response and mark as synced
+              await db.sales.update(saleId, { ...newSale, synced: true });
+              setSales(prev => prev.map(s => s.id === saleId ? { ...newSale, synced: true } : s));
+              console.log('✅ Sale synced to server successfully:', newSale.id);
+            } else {
+              const errorText = await response.text();
+              console.log('❌ Server failed to create sale, keeping locally:', errorText);
+              await enhancedSyncService.queueChange('sale', 'create', saleRecord, sale.cabinet);
+            }
+          } catch (error) {
+            console.log('❌ Server request failed, keeping sale locally:', error);
             await enhancedSyncService.queueChange('sale', 'create', saleRecord, sale.cabinet);
-            // Don't remove from local state - sale remains visible
           }
-        } catch (error) {
-          console.log('❌ Server request failed, keeping sale locally:', error);
-          await enhancedSyncService.queueChange('sale', 'create', saleRecord, sale.cabinet);
-          // Don't remove from local state - sale remains visible
-        }
+        })();
       } else {
         // Offline: Queue for later sync
         await enhancedSyncService.queueChange('sale', 'create', saleRecord, sale.cabinet);
