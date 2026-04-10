@@ -219,21 +219,14 @@ export function POSView({ cabinet, username }: POSViewProps) {
     const matchesCategory =
       selectedCategory === "All Categories" || product.category === selectedCategory
 
-    const isOffline = typeof navigator !== "undefined" && !navigator.onLine
-    const onShelfQty = onShelfStock[product.id] || 0
     const stockQty = Number(product.stock) || 0
-    const useStockUntilShelfHydrates =
-      isOffline ||
-       (typeof navigator !== "undefined" && navigator.onLine && !onShelfStockReady)
-    const hasOnShelfStock = useStockUntilShelfHydrates ? stockQty > 0 : onShelfQty > 0
-    
-    // If showing out of stock items, include all matching products
+
+    // List by product.stock so items are not hidden when batch API omits them or
+    // stock is only in non–on-shelf batches. On-shelf is enforced in addToCart when online.
     if (showOutOfStock) {
-      return matchesSearch && matchesCategory;
+      return matchesSearch && matchesCategory
     }
-    
-    // Otherwise, only include products with on-shelf stock
-    return matchesSearch && matchesCategory && hasOnShelfStock;
+    return matchesSearch && matchesCategory && stockQty > 0
   })
 
   const visibleProducts = React.useMemo(() => {
@@ -257,9 +250,10 @@ export function POSView({ cabinet, username }: POSViewProps) {
     const useStockUntilShelfHydrates =
       isOffline ||
        (typeof navigator !== "undefined" && navigator.onLine && !onShelfStockReady)
+    const shelfKey = String(product.id)
     const availableOnShelf = useStockUntilShelfHydrates
       ? product.stock || 0
-      : onShelfStock[product.id] || 0
+      : Number(onShelfStock[shelfKey]) || 0
     if (availableOnShelf <= 0) {
       addToast(`${product.name} is not available on shelf. Please transfer from storage first.`, "error");
       return;

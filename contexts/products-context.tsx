@@ -379,8 +379,11 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
             .where({ productId: String(productId), cabinet })
             .delete();
 
-          await db.stockBatches.bulkAdd(
+          // Use bulkPut to avoid IndexedDB ConstraintError when records already exist.
+          await db.stockBatches.bulkPut(
             batches.map((b: any) => ({
+              // Prefer stable server id when present.
+              ...(b.id != null ? { id: b.id } : {}),
               productId: String(b.productId),
               quantity: Number(b.quantity) || 0,
               costPerUnit: b.costPerUnit ?? 0,

@@ -972,7 +972,7 @@ export async function addStockAddition(data: {
 }
 
 export async function getStockAdditions(productId: string, cabinet: string) {
-  const rows = await query(
+  let rows = await query(
     `SELECT * FROM stockbatch 
      WHERE "productId" = $1 AND cabinet = $2 
      ORDER BY 
@@ -986,6 +986,40 @@ export async function getStockAdditions(productId: string, cabinet: string) {
        "batchDate" ASC`,
     [productId, cabinet]
   );
+
+  // If product shows stock but has no batches (common after legacy data / failed sync),
+  // create a single on-shelf batch so "Stock History" matches displayed stock.
+  if (!rows || rows.length === 0) {
+    const productRows = await query(
+      'SELECT stock FROM product WHERE id = $1 AND cabinet = $2',
+      [productId, cabinet]
+    );
+    const stock = Number(productRows?.[0]?.stock ?? 0) || 0;
+    if (stock > 0) {
+      try {
+        await query(
+          'INSERT INTO stockbatch ("productId", quantity, "batchDate", cabinet, status, "createdAt", "updatedAt", notes) VALUES ($1, $2, NOW(), $3, $4, NOW(), NOW(), $5)',
+          [productId, stock, cabinet, 'on-shelf', 'Backfilled batch (missing history)']
+        );
+        rows = await query(
+          `SELECT * FROM stockbatch 
+           WHERE "productId" = $1 AND cabinet = $2 
+           ORDER BY 
+             CASE status 
+               WHEN 'on-shelf' THEN 1 
+               WHEN 'in-storage' THEN 2 
+               WHEN 'depleted' THEN 3 
+               ELSE 4 
+             END,
+             quantity DESC,
+             "batchDate" ASC`,
+          [productId, cabinet]
+        );
+      } catch {
+        // If backfill fails, fall through and return empty history.
+      }
+    }
+  }
   
   return rows.map((addition) => ({
     id: addition.id.toString(),
@@ -995,6 +1029,7 @@ export async function getStockAdditions(productId: string, cabinet: string) {
     addedDate: new Date(addition.batchDate).toISOString(),
     cabinet: addition.cabinet,
     status: addition.status || 'in-storage',
+    notes: addition.notes,
   }));
 }
 

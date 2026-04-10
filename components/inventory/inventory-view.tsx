@@ -678,7 +678,8 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                 synced: true,
                 lastModified: Date.now()
               }));
-              await db.stockBatches.bulkAdd(indexedDBBatches);
+              // bulkPut is idempotent and avoids ConstraintError on duplicates.
+              await db.stockBatches.bulkPut(indexedDBBatches);
             }
             
             console.log('Synced server batch data to IndexedDB, excluding offline deletions');
@@ -1160,11 +1161,27 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
     }
   }
 
+  /** Full calendar days since restock (floor). Used for color bands — NOT Math.ceil, or <24h shows as "1 day". */
   const getStockAge = (createdAt: string): number => {
-    const now = new Date()
     const created = new Date(createdAt)
-    const diffTime = Math.abs(now.getTime() - created.getTime())
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) // days
+    if (Number.isNaN(created.getTime())) return 0
+    const diffMs = Math.max(0, Date.now() - created.getTime())
+    return Math.floor(diffMs / (1000 * 60 * 60 * 24))
+  }
+
+  /** Human-readable relative time for stock history (avoids "1 day ago" right after restock). */
+  const getStockAgeLabel = (createdAt: string): string => {
+    const created = new Date(createdAt)
+    if (Number.isNaN(created.getTime())) return ""
+    const diffMs = Math.max(0, Date.now() - created.getTime())
+    const minutes = Math.floor(diffMs / (1000 * 60))
+    const hours = Math.floor(diffMs / (1000 * 60 * 60))
+    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+    if (minutes < 1) return "Just now"
+    if (minutes < 60) return `${minutes} min ago`
+    if (hours < 24) return `${hours} hr ago`
+    if (days === 1) return "1 day ago"
+    return `${days} days ago`
   }
 
   const getStockAgeColor = (createdAt: string): string => {
@@ -2265,8 +2282,9 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
               ) : (
                 <div className="space-y-3">
                   {stockAdditions.map((addition, index) => {
-                    const age = getStockAge(addition.addedDate);
+                    const age = getStockAge(addition.addedDate)
                     const ageColor = getStockAgeColor(addition.addedDate);
+                    const ageLabel = getStockAgeLabel(addition.addedDate)
                     const isGreen = age < 30;
                     const isYellow = age >= 30 && age <= 90;
                     const isRed = age > 90;
@@ -2387,7 +2405,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                           
                           {/* Age */}
                           <span className="text-sm text-gray-500">
-                            {age} {age === 1 ? 'day' : 'days'} ago
+                            {ageLabel}
                           </span>
                         </div>
                         

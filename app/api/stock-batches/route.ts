@@ -11,26 +11,36 @@ export async function GET(request: NextRequest) {
 
     // Batch mode: get on-shelf stock for all products in cabinet
     if (batchMode === 'all') {
-      let queryStr = `
+      // Cabinet must be constrained on the JOIN, not WHERE sb.cabinet — otherwise
+      // LEFT JOIN rows with no matching batch are dropped (sb.* NULL) and products
+      // vanish from the map even when product.stock > 0.
+      let queryStr: string;
+      let queryParams: any[];
+
+      if (cabinet !== 'all') {
+        queryStr = `
         SELECT 
           p.id as product_id,
           COALESCE(SUM(sb.quantity), 0) as on_shelf_stock
         FROM product p
         LEFT JOIN stockbatch sb ON p.id = sb."productId" 
           AND sb.status = 'on-shelf'
-      `;
-      
-      let queryParams: any[] = [];
-      
-      if (cabinet !== 'all') {
-        queryStr += ` WHERE p.cabinet = $1 AND sb.cabinet = $1`;
+          AND sb.cabinet = $1
+        WHERE p.cabinet = $1
+        GROUP BY p.id`;
         queryParams = [cabinet];
       } else {
-        queryStr += ` WHERE sb.cabinet IS NOT NULL`;
+        queryStr = `
+        SELECT 
+          p.id as product_id,
+          COALESCE(SUM(sb.quantity), 0) as on_shelf_stock
+        FROM product p
+        LEFT JOIN stockbatch sb ON p.id = sb."productId" 
+          AND sb.status = 'on-shelf'
+        GROUP BY p.id`;
+        queryParams = [];
       }
-      
-      queryStr += ` GROUP BY p.id`;
-      
+
       const result = await query(queryStr, queryParams);
 
       const stockMap: Record<string, number> = {};
