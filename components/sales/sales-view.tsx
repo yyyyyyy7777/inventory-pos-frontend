@@ -28,6 +28,27 @@ const formatSaleDate = (dateValue: string) => {
   return d.toLocaleDateString('en-US', { timeZone: 'Asia/Manila' });
 }
 
+const PH_TIMEZONE = "Asia/Manila";
+const getPhilippineDayBounds = (baseDate: Date = new Date()) => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: PH_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(baseDate);
+
+  const year = Number(parts.find((p) => p.type === "year")?.value || 0);
+  const month = Number(parts.find((p) => p.type === "month")?.value || 1);
+  const day = Number(parts.find((p) => p.type === "day")?.value || 1);
+
+  // PH midnight corresponds to UTC-8h.
+  const startUtcMs = Date.UTC(year, month - 1, day, -8, 0, 0, 0);
+  return {
+    start: new Date(startUtcMs),
+    end: new Date(startUtcMs + 24 * 60 * 60 * 1000),
+  };
+}
+
 interface SalesViewProps {
   isAdmin: boolean
   cabinet: string
@@ -262,7 +283,8 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
       }
 
       let matchesDate = true;
-      const saleDate = new Date(sale.date);
+      const saleDate = parseSaleDate(sale.date || sale.createdAt || sale.soldAt || "");
+      if (Number.isNaN(saleDate.getTime())) return false;
       
       // Apply time period filtering (same logic as dashboard)
       const now = new Date();
@@ -270,8 +292,8 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
       
       switch (timePeriod) {
         case "today":
-          const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-          matchesDate = saleDate.toDateString() === today.toDateString();
+          const { start: phStart, end: phEnd } = getPhilippineDayBounds(now);
+          matchesDate = saleDate >= phStart && saleDate < phEnd;
           break;
         case "weekly":
           startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);

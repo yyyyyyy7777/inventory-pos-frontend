@@ -193,7 +193,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
         if (!response.ok) {
           const errorText = await response.text();
           console.log('API Response error text:', errorText);
-          throw new Error('Failed to fetch products');
+          throw new Error(`Failed to fetch products (${response.status})`);
         }
         
         const allProducts = await response.json();
@@ -283,14 +283,10 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
         
         console.log('Merged server and local products, preserving offline stock changes');
       } catch (err) {
-        // Only set error state for non-SKU related errors
         const errorMessage = err instanceof Error ? err.message : 'Failed to fetch products';
-        if (!errorMessage.includes('SKU') && !errorMessage.includes('already exists')) {
-          setError(errorMessage);
-        }
-        console.error('Error fetching products:', err);
-        
-        // If fetch fails and we have IndexedDB data, use that
+        let usedIndexedDbFallback = false;
+
+        // If fetch fails and we have IndexedDB data, use that quietly.
         try {
           const allProducts = await db.products.toArray();
           if (allProducts.length > 0) {
@@ -303,11 +299,22 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
               productsByCabinet[cabinet].push(product);
             });
             setProducts(productsByCabinet);
-            setError(null); // Clear error since we have IndexedDB data
-            console.log('Fallback to IndexedDB:', allProducts.length, 'products');
+            setError(null); // keep UI healthy when fallback data exists
+            usedIndexedDbFallback = true;
+            console.log('Using IndexedDB fallback for products:', allProducts.length);
           }
         } catch (cacheErr) {
           console.error('Error loading from IndexedDB as fallback:', cacheErr);
+        }
+
+        // Only surface hard error if there is no fallback data.
+        if (!usedIndexedDbFallback) {
+          if (!errorMessage.includes('SKU') && !errorMessage.includes('already exists')) {
+            setError(errorMessage);
+          }
+          console.error('Error fetching products:', err);
+        } else {
+          console.warn('Products API unavailable; continued with cached products.');
         }
       } finally {
         setLoading(false);

@@ -231,13 +231,14 @@ export function useFormAutosave<T>(
     shouldOfferRestore?: (data: T) => boolean
   }
 ) {
-  const { registerForm, unregisterForm, restoreData, clearData, hasRestorableData } = useAutosave()
+  const { registerForm, unregisterForm, clearData, hasRestorableData } = useAutosave()
   const [showRestorePrompt, setShowRestorePrompt] = useState(false)
   const [pendingRestoreData, setPendingRestoreData] = useState<T | null>(null)
   const onRestoreRef = useRef(onRestore)
   const shouldOfferRef = useRef(options?.shouldOfferRestore)
   /** After accept/reject, do not auto-open again for this formKey (autosave map can refill from periodic save). */
   const restorePromptHandledRef = useRef(false)
+  const dismissSessionKey = `autosave_dismissed_${formKey}`
   onRestoreRef.current = onRestore
   shouldOfferRef.current = options?.shouldOfferRestore
 
@@ -251,21 +252,37 @@ export function useFormAutosave<T>(
     restorePromptHandledRef.current = false
   }, [formKey])
 
-  // Offer restore once when autosave map has data for this key (after localStorage hydrate).
+  // Offer restore only from persisted snapshot from a previous session.
+  // Do NOT react to in-session autosave updates (prevents random popup while adding to cart).
   useEffect(() => {
+    if (typeof window === "undefined") return
     if (restorePromptHandledRef.current) return
-    if (!hasRestorableData(formKey)) return
-    const saved = restoreData(formKey)
+    if (sessionStorage.getItem(dismissSessionKey) === "1") return
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return
+    let parsed: Record<string, AutosaveData>
+    try {
+      parsed = JSON.parse(raw)
+    } catch {
+      return
+    }
+    const entry = parsed?.[formKey]
+    if (!entry) return
+    if (!entry.timestamp || Date.now() - entry.timestamp > 24 * 60 * 60 * 1000) return
+    const saved = entry.data as T
     if (saved == null || !onRestoreRef.current) return
     const offer =
-      shouldOfferRef.current != null ? shouldOfferRef.current(saved as T) : true
+      shouldOfferRef.current != null ? shouldOfferRef.current(saved) : true
     if (!offer) return
-    setPendingRestoreData(saved as T)
+    setPendingRestoreData(saved)
     setShowRestorePrompt(true)
-  }, [formKey, hasRestorableData, restoreData])
+  }, [formKey, dismissSessionKey])
 
   const acceptRestore = useCallback(() => {
     restorePromptHandledRef.current = true
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem(dismissSessionKey, "1")
+    }
     const data = pendingRestoreData
     if (data != null) {
       onRestoreRef.current?.(data)
@@ -273,14 +290,17 @@ export function useFormAutosave<T>(
     clearData(formKey)
     setShowRestorePrompt(false)
     setPendingRestoreData(null)
-  }, [pendingRestoreData, clearData, formKey])
+  }, [pendingRestoreData, clearData, formKey, dismissSessionKey])
 
   const rejectRestore = useCallback(() => {
     restorePromptHandledRef.current = true
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem(dismissSessionKey, "1")
+    }
     clearData(formKey)
     setShowRestorePrompt(false)
     setPendingRestoreData(null)
-  }, [clearData, formKey])
+  }, [clearData, formKey, dismissSessionKey])
 
   return {
     showRestorePrompt,
