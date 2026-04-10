@@ -5,6 +5,7 @@ import { StaffSidebar } from "@/components/navigation/staff-sidebar"
 import { InventoryView } from "@/components/inventory/inventory-view"
 import { SalesView } from "@/components/sales/sales-view"
 import { POSView } from "@/components/pos/pos-view"
+import { ErrorBoundary } from "@/components/ui/error-boundary"
 import { EnhancedStaffAnalytics } from "@/components/analytics/enhanced-staff-analytics"
 import { CabinetSelector } from "@/components/cabinet/cabinet-selector"
 import { LayoutDashboard, Package, ShoppingCart, CreditCard, ChevronLeft } from "lucide-react"
@@ -119,12 +120,25 @@ export function StaffDashboard({ username, onLogout }: StaffDashboardProps) {
             </div>
           </div>
 
-          {currentView === "dashboard" && (
-            <EnhancedStaffAnalytics cabinet={selectedCabinet} username={username} onViewChange={handleViewChange} />
-          )}
+          {/* Keep dashboard mounted so switching tabs does not remount analytics (no repeat loading skeletons). */}
+          <div
+            id="staff-tab-dashboard"
+            className={currentView === "dashboard" ? "block" : "hidden"}
+            aria-hidden={currentView !== "dashboard"}
+          >
+            <EnhancedStaffAnalytics
+              cabinet={selectedCabinet}
+              username={username}
+              onViewChange={handleViewChange}
+            />
+          </div>
           {currentView === "inventory" && <InventoryView isAdmin={false} cabinet={selectedCabinet} username={username} />}
           {currentView === "sales" && <SalesView isAdmin={true} cabinet={selectedCabinet} onNewSale={() => handleViewChange("pos")} />}
-          {currentView === "pos" && <POSView cabinet={selectedCabinet} username={username} />}
+          {currentView === "pos" && (
+            <ErrorBoundary variant="section" sectionTitle="Point of Sale hit an error">
+              <POSView cabinet={selectedCabinet} username={username} />
+            </ErrorBoundary>
+          )}
         </div>
       </div>
     </div>

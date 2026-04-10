@@ -15,7 +15,6 @@ import { HydrationFix } from "@/components/hydration-fix"
 import { ServiceWorkerRegister } from "@/components/pwa-service-worker"
 import { BeforeUnloadWarning } from "@/components/before-unload-warning"
 import { AutosaveProvider } from "@/contexts/autosave-context"
-import { AutosaveRestoreDialog } from "@/components/autosave-restore-dialog"
 import { SyncStatusIndicator } from "@/components/sync-status-indicator"
 
 // <CHANGE> Removed unused @vercel/analytics/next import that was causing error
@@ -64,7 +63,6 @@ export default function RootLayout({
                           {children}
                           <ToastContainer />
                           <ServiceWorkerRegister />
-                          <AutosaveRestoreDialog />
                           <div className="fixed bottom-4 right-4 z-50">
                             <SyncStatusIndicator />
                           </div>

@@ -157,6 +157,10 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       }
       
       const data = await response.json();
+      if (!Array.isArray(data)) {
+        console.warn('fetchProducts: API returned non-array, ignoring update');
+        return;
+      }
       setProducts(prev => ({
         ...prev,
         [cabinet]: data,
@@ -193,9 +197,14 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
         }
         
         const allProducts = await response.json();
+
+        if (!Array.isArray(allProducts)) {
+          console.warn('fetchAllProducts: API returned non-array, keeping local data');
+          return;
+        }
         
         // Only update if we got products from API
-        if (!allProducts || allProducts.length === 0) {
+        if (allProducts.length === 0) {
           console.log('API returned no products, keeping IndexedDB data');
           return;
         }
@@ -424,13 +433,22 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
   // heavy requests and improves dashboard/POS responsiveness under concurrent use.
 
   const getProductsByCabinet = (cabinet: string) => {
-    if (cabinet === 'all') {
-      return Object.values(products).flat().filter(product => 
-        !product.deleted && !product.markedForDelete
-      );
-    }
-    return (products[cabinet] || []).filter(product => 
-      !product.deleted && !product.markedForDelete
+    const asArray = (value: unknown): Product[] =>
+      Array.isArray(value) ? (value as Product[]) : [];
+
+    const rawList =
+      cabinet === 'all'
+        ? Object.values(products).flatMap(asArray)
+        : asArray(products[cabinet]);
+
+    return rawList.filter(
+      (product) =>
+        product &&
+        typeof product === 'object' &&
+        typeof product.id === 'string' &&
+        product.id.length > 0 &&
+        !product.deleted &&
+        !product.markedForDelete
     );
   };
 
@@ -984,7 +1002,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
 
   // Helper function to get all products across all cabinets
   const getAllProducts = () => {
-    return Object.values(products).flat();
+    return Object.values(products).flatMap((x) => (Array.isArray(x) ? x : []));
   };
 
   // Refetch function to refresh all products
@@ -1006,6 +1024,11 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       }
       
       const allProducts = await response.json();
+
+      if (!Array.isArray(allProducts)) {
+        console.warn('refetch: API returned non-array products');
+        throw new Error('Invalid products response');
+      }
       
       // Group products by cabinet
       const productsByCabinet: Record<string, Product[]> = {};

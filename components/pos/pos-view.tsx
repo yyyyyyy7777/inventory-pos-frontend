@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useRef } from "react"
+import React, { useState, useEffect, useRef, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -13,6 +13,7 @@ import { useFormAutosave } from "@/contexts/autosave-context"
 import { useToast } from "@/contexts/toast-context"
 import { useActivity } from "@/contexts/activity-context"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Skeleton } from "@/components/ui/skeleton"
 import { BatchPriceDisplay } from "@/components/shared/batch-price-display"
 import { getCurrentPriceFromBatches } from "@/lib/batch-price"
 
@@ -68,7 +69,7 @@ const categories = [
 ]
 
 export function POSView({ cabinet, username }: POSViewProps) {
-  const { getProductsByCabinet, decrementProductStockLocally, getOnShelfStock } = useProducts()
+  const { getProductsByCabinet, decrementProductStockLocally, getOnShelfStock, loading: productsLoading } = useProducts()
   const products = getProductsByCabinet(cabinet)
   const { addSale, refreshSales } = useSales()
   const { addToast } = useToast()
@@ -97,23 +98,43 @@ export function POSView({ cabinet, username }: POSViewProps) {
   const [discountConfirmDialog, setDiscountConfirmDialog] = useState(false)
   const [discountTimeouts, setDiscountTimeouts] = useState<Map<string, NodeJS.Timeout>>(new Map())
   const [onShelfStock, setOnShelfStock] = useState<Record<string, number>>({})
+  /** Online: false until first /api/stock-batches response for this mount/catalog (avoids empty flash). */
+  const [onShelfStockReady, setOnShelfStockReady] = useState(false)
   const [isProcessingSale, setIsProcessingSale] = useState(false)
   const saleSubmitLockRef = useRef(false)
   const saleLockKey = `pos-sale-lock-${cabinet}`
 
-  // Autosave cart state
+  type PosCartAutosave = {
+    cart?: CartItem[]
+    searchQuery?: string
+    selectedCategory?: string
+    saleLocation?: string
+    paymentMethod?: string
+  }
+
+  const restorePosCartFromAutosave = useCallback(
+    (restoredData: PosCartAutosave) => {
+      if (Array.isArray(restoredData.cart)) {
+        setCart(restoredData.cart)
+      }
+      setSearchQuery(restoredData.searchQuery ?? "")
+      setSelectedCategory(restoredData.selectedCategory ?? "All Categories")
+      const loc = restoredData.saleLocation
+      setSaleLocation(loc === "online" || loc === "physical" ? loc : "physical")
+      const pm = restoredData.paymentMethod
+      setPaymentMethod(pm === "qrph" || pm === "cash" ? pm : "cash")
+      addToast("Restored your previous cart session", "info")
+    },
+    [addToast]
+  )
+
   const { showRestorePrompt, acceptRestore, rejectRestore } = useFormAutosave(
     `pos-cart-${cabinet}`,
     { cart, searchQuery, selectedCategory, saleLocation, paymentMethod },
-    (restoredData) => {
-      if (restoredData.cart && restoredData.cart.length > 0) {
-        setCart(restoredData.cart)
-        setSearchQuery(restoredData.searchQuery || "")
-        setSelectedCategory(restoredData.selectedCategory || "All Categories")
-        setSaleLocation(restoredData.saleLocation || 'physical')
-        setPaymentMethod(restoredData.paymentMethod || 'cash')
-        addToast("Restored your previous cart session", "info")
-      }
+    restorePosCartFromAutosave,
+    {
+      shouldOfferRestore: (data) =>
+        Array.isArray(data.cart) && data.cart.length > 0,
     }
   )
 
@@ -139,40 +160,72 @@ export function POSView({ cabinet, username }: POSViewProps) {
     console.log('Current cabinet:', cabinet);
   }, [products, cabinet])
 
-  // Fetch on-shelf stock for all products in a single batched request
+  // Radix Select throws if value is not present in items; keep category in sync.
   useEffect(() => {
-    const fetchOnShelfStock = async () => {
-      try {
-        const response = await fetch(`/api/stock-batches?batch=all&cabinet=${cabinet}`);
-        if (response.ok) {
-          const stockMap = await response.json();
-          setOnShelfStock(stockMap);
-        }
-      } catch (err) {
-        console.error('Error fetching on-shelf stock:', err);
+    if (!categories.includes(selectedCategory)) {
+      setSelectedCategory("All Categories")
+    }
+  }, [selectedCategory])
+
+  const productIdsKey =
+    products.length === 0
+      ? ""
+      : products
+          .map((p) => String(p.id))
+          .sort()
+          .join("|")
+
+  // Fetch on-shelf stock (deps stable via productIdsKey, not new products[] each render)
+  useEffect(() => {
+    let cancelled = false
+
+    if (products.length === 0) {
+      setOnShelfStockReady(true)
+      return () => {
+        cancelled = true
       }
     }
-    
-    if (products.length > 0) {
-      fetchOnShelfStock();
+
+    setOnShelfStockReady(false)
+
+    const fetchOnShelfStock = async () => {
+      try {
+        const response = await fetch(`/api/stock-batches?batch=all&cabinet=${cabinet}`)
+        if (cancelled) return
+        if (response.ok) {
+          const stockMap = await response.json()
+          setOnShelfStock(stockMap)
+        }
+      } catch (err) {
+        console.error("Error fetching on-shelf stock:", err)
+      } finally {
+        if (!cancelled) setOnShelfStockReady(true)
+      }
     }
-  }, [products, cabinet])
+
+    void fetchOnShelfStock()
+    return () => {
+      cancelled = true
+    }
+  }, [cabinet, productIdsKey])
 
   const filteredProducts = products.filter((product) => {
-    // Check if product matches search query
-    const matchesSearch = 
-      product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      product.sku.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    // Check if product matches selected category
-    const matchesCategory = selectedCategory === "All Categories" || product.category === selectedCategory;
-    
-    // Check if product has on-shelf stock
-    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine
+    const nameStr = String(product.name ?? "")
+    const skuStr = String(product.sku ?? "")
+    const q = searchQuery.toLowerCase()
+    const matchesSearch =
+      nameStr.toLowerCase().includes(q) || skuStr.toLowerCase().includes(q)
+
+    const matchesCategory =
+      selectedCategory === "All Categories" || product.category === selectedCategory
+
+    const isOffline = typeof navigator !== "undefined" && !navigator.onLine
     const onShelfQty = onShelfStock[product.id] || 0
-    // Offline fallback: if on-shelf API is unavailable, use product stock
-    // so POS cards remain visible and usable offline.
-    const hasOnShelfStock = isOffline ? product.stock > 0 : onShelfQty > 0
+    const stockQty = Number(product.stock) || 0
+    const useStockUntilShelfHydrates =
+      isOffline ||
+       (typeof navigator !== "undefined" && navigator.onLine && !onShelfStockReady)
+    const hasOnShelfStock = useStockUntilShelfHydrates ? stockQty > 0 : onShelfQty > 0
     
     // If showing out of stock items, include all matching products
     if (showOutOfStock) {
@@ -186,7 +239,9 @@ export function POSView({ cabinet, username }: POSViewProps) {
   const visibleProducts = React.useMemo(() => {
     if (sortAlpha === "none") return filteredProducts
     const dir = sortAlpha === "az" ? 1 : -1
-    return [...filteredProducts].sort((a, b) => dir * a.name.localeCompare(b.name))
+    return [...filteredProducts].sort(
+      (a, b) => dir * String(a.name ?? "").localeCompare(String(b.name ?? ""))
+    )
   }, [filteredProducts, sortAlpha])
 
   
@@ -198,9 +253,13 @@ export function POSView({ cabinet, username }: POSViewProps) {
       return;
     }
 
-    // Check if product has on-shelf stock available
-    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine
-    const availableOnShelf = isOffline ? (product.stock || 0) : (onShelfStock[product.id] || 0)
+    const isOffline = typeof navigator !== "undefined" && !navigator.onLine
+    const useStockUntilShelfHydrates =
+      isOffline ||
+       (typeof navigator !== "undefined" && navigator.onLine && !onShelfStockReady)
+    const availableOnShelf = useStockUntilShelfHydrates
+      ? product.stock || 0
+      : onShelfStock[product.id] || 0
     if (availableOnShelf <= 0) {
       addToast(`${product.name} is not available on shelf. Please transfer from storage first.`, "error");
       return;
@@ -677,61 +736,73 @@ export function POSView({ cabinet, username }: POSViewProps) {
         return;
       }
       
-      // Create sale data for receipt
-      const saleData: ReceiptData = {
-        cabinet,
-        date: currentTime.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
-        time: currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-        staff: username,
-        paymentMethod: paymentMethod === 'cash' ? 'Cash' : 'QRPH',
-        location: saleLocation === 'online' ? 'Online' : 'Physical',
-        referenceNumber: paymentMethod === 'qrph' ? referenceNumber : undefined,
-        items: cart.map((item: CartItem): ReceiptItem => {
-          const product = products.find(p => p.id === item.id);
-          return {
-            name: item.name,
-            quantity: item.quantity,
-            unitPrice: product?.price || 0,
-            totalPrice: (product?.price || 0) * item.quantity
-          };
-        }),
-        subtotal: total,
-        tax: tax,
-        total: finalTotal,
-        cashReceived: paymentMethod === 'cash' ? `₱${cashReceived.toLocaleString()}` : 'N/A',
-        change: paymentMethod === 'cash' ? `₱${calculatedChange.toLocaleString()}` : 'N/A'
-      };
-      
-      setCurrentSaleData(saleData);
-      setChange(calculatedChange);
-      // Keep dialog open during processing - only close on success
-      
-      // Prepare sale items with proper SaleItem type
-      const saleItems: SaleItem[] = cart.map((item): SaleItem => {
-        const product = products.find(p => p.id === item.id);
+      // Prepare sale items first so we never leave receipt state half-updated on validation failure.
+      const saleItems: SaleItem[] = [];
+      for (const item of cart) {
+        const product = products.find((p) => p.id === item.id);
         if (!product) {
-          throw new Error(`Product not found: ${item.id}`);
+          addToast(
+            `Product not found (try refreshing inventory): ${item.name || item.id}`,
+            "error"
+          );
+          return;
         }
-        
-        // Always compare against original price for discount detection (item.originalPrice is set when added to cart)
         const isDiscounted = item.price < item.originalPrice;
-        console.log(`Discount check for ${item.name}: sale price=${item.price}, original price=${item.originalPrice}, isDiscounted=${isDiscounted}`);
-        
-        const saleItem: SaleItem = {
+        console.log(
+          `Discount check for ${item.name}: sale price=${item.price}, original price=${item.originalPrice}, isDiscounted=${isDiscounted}`
+        );
+        const costBasis = item.costPrice || item.originalPrice * 0.7;
+        saleItems.push({
           productName: item.name,
-          category: product.category || 'Unknown',
+          category: product.category || "Unknown",
           quantity: item.quantity,
           price: item.price,
           originalPrice: item.originalPrice,
-          costPrice: item.costPrice || item.originalPrice * 0.7,
-          isDiscounted: isDiscounted,
-          profit: (item.price - (item.costPrice || item.originalPrice * 0.7)) * item.quantity
-        };
-        
-        console.log(`Sale item for ${item.name}:`, saleItem);
-        
-        return saleItem;
-      });
+          costPrice: costBasis,
+          isDiscounted,
+          profit: (item.price - costBasis) * item.quantity,
+        });
+        console.log(`Sale item for ${item.name}:`, saleItems[saleItems.length - 1]);
+      }
+
+      const saleData: ReceiptData = {
+        cabinet,
+        date: currentTime.toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        }),
+        time: currentTime.toLocaleTimeString("en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        staff: username,
+        paymentMethod: paymentMethod === "cash" ? "Cash" : "QRPH",
+        location: saleLocation === "online" ? "Online" : "Physical",
+        referenceNumber: paymentMethod === "qrph" ? referenceNumber : undefined,
+        items: cart.map(
+          (item: CartItem): ReceiptItem => ({
+            name: item.name,
+            quantity: item.quantity,
+            unitPrice: item.price,
+            originalPrice: item.originalPrice,
+            totalPrice: item.price * item.quantity,
+            isDiscounted: item.isDiscounted,
+          })
+        ),
+        subtotal: total,
+        tax: tax,
+        total: finalTotal,
+        cashReceived:
+          paymentMethod === "cash" ? `₱${cashReceived.toLocaleString()}` : "N/A",
+        change:
+          paymentMethod === "cash"
+            ? `₱${calculatedChange.toLocaleString()}`
+            : "N/A",
+      };
+
+      setCurrentSaleData(saleData);
+      setChange(calculatedChange);
       
       // Persist the final payable amount (VAT-inclusive when enabled).
       const totalAmount = finalTotal;
@@ -1042,16 +1113,16 @@ export function POSView({ cabinet, username }: POSViewProps) {
                                       {item.quantity} × 
                                       {item.isDiscounted ? (
                                         <span>
-                                          <span className="line-through text-gray-400">₱{item.originalPrice?.toLocaleString()}</span>
-                                          <span className="text-orange-600 font-medium ml-1">₱{item.unitPrice.toLocaleString()}</span>
+                                          <span className="line-through text-gray-400">₱{Number(item.originalPrice ?? 0).toLocaleString()}</span>
+                                          <span className="text-orange-600 font-medium ml-1">₱{Number(item.unitPrice ?? 0).toLocaleString()}</span>
                                         </span>
                                       ) : (
-                                        <span>₱{item.unitPrice.toLocaleString()}</span>
+                                        <span>₱{Number(item.unitPrice ?? 0).toLocaleString()}</span>
                                       )}
                                     </div>
                                   </div>
                                   <div className="text-right font-semibold text-xs sm:text-sm text-gray-900 min-w-16 sm:min-w-20">
-                                    ₱{item.totalPrice.toLocaleString()}
+                                    ₱{Number(item.totalPrice ?? 0).toLocaleString()}
                                   </div>
                                 </div>
                               ))
@@ -1104,7 +1175,9 @@ export function POSView({ cabinet, username }: POSViewProps) {
                           </div>
                           {(taxEnabled || (showReceipt && currentSaleData && currentSaleData.tax > 0)) && (
                             <div className="flex justify-between text-xs sm:text-sm">
-                              <span className="text-gray-700">Tax ({showReceipt && currentSaleData ? (currentSaleData.tax / currentSaleData.subtotal * 100).toFixed(1) : taxRate}%):</span>
+                              <span className="text-gray-700">Tax ({showReceipt && currentSaleData && Number(currentSaleData.subtotal) > 0
+                                ? ((Number(currentSaleData.tax) / Number(currentSaleData.subtotal)) * 100).toFixed(1)
+                                : taxRate}%):</span>
                               <span className="text-gray-900">
                                 ₱{(showReceipt && currentSaleData ? currentSaleData.tax : Math.round(total * taxRate / 100)).toLocaleString()}
                               </span>
@@ -1272,102 +1345,122 @@ export function POSView({ cabinet, username }: POSViewProps) {
         </div>
 
         {/* Product Grid - Responsive for all devices */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4">
-          {visibleProducts.map((product) => (
-            <Card
-              key={product.id}
-              className={`relative overflow-hidden border-2 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer ${
-                product.stock > 0 
-                  ? 'bg-gradient-to-br from-[oklch(0.55_0.15_280)] to-[oklch(0.65_0.20_280)] border-[oklch(0.6_0.18_280)]' 
-                  : 'bg-gradient-to-br from-gray-100 to-gray-200 border-gray-300 opacity-60'
-              }`}
-              onClick={() => addToCart(product)}
-            >
-              {/* Glossy overlay */}
-              <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-white/20 to-transparent rounded-bl-full" />
-              
-              <CardContent className="p-3 sm:p-4 relative">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="space-y-1.5 flex-1 min-w-0">
-                    {/* Category - small, italic, muted */}
-                    <p className={`text-[10px] sm:text-[11px] italic truncate ${
-                      product.stock > 0 ? 'text-white/60' : 'text-gray-400'
-                    }`}>
-                      {product.category}
-                    </p>
-                    
-                    {/* Product Name - large, distinctive color */}
-                    <p className={`text-base sm:text-lg font-bold leading-snug truncate drop-shadow-md ${
-                      product.stock > 0 ? 'text-yellow-300' : 'text-gray-600'
-                    }`}>
-                      {product.name}
-                    </p>
-                    
-                    {/* SKU - small, mono */}
-                    <p className={`text-[10px] font-mono truncate ${
-                      product.stock > 0 ? 'text-white/50' : 'text-gray-400'
-                    }`}>
-                      SKU: {product.sku}
-                    </p>
-                    
-                    {/* Stock info */}
-                    <div className="flex items-center gap-1.5 pt-1">
-                      <span className={`text-[10px] sm:text-xs ${
-                        product.stock > 0 ? 'text-white/70' : 'text-gray-400'
+        {productsLoading && products.length === 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Card key={i} className="overflow-hidden">
+                <CardContent className="p-4 space-y-3">
+                  <Skeleton className="h-4 w-2/3" />
+                  <Skeleton className="h-6 w-full" />
+                  <Skeleton className="h-24 w-full rounded-lg" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : visibleProducts.length === 0 ? (
+          <div className="flex flex-col items-center justify-center min-h-[min(50vh,280px)] rounded-xl border border-dashed border-border bg-muted/25 px-6 py-12 text-center">
+            <Package className="h-12 w-12 text-muted-foreground/45 mb-3" aria-hidden />
+            <p className="text-base font-medium text-foreground">No products found</p>
+            <p className="text-sm text-muted-foreground mt-1.5">Nothing matches your filters.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4">
+            {visibleProducts.map((product) => (
+              <Card
+                key={product.id}
+                className={`relative overflow-hidden border-2 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer ${
+                  product.stock > 0 
+                    ? 'bg-gradient-to-br from-[oklch(0.55_0.15_280)] to-[oklch(0.65_0.20_280)] border-[oklch(0.6_0.18_280)]' 
+                    : 'bg-gradient-to-br from-gray-100 to-gray-200 border-gray-300 opacity-60'
+                }`}
+                onClick={() => addToCart(product)}
+              >
+                {/* Glossy overlay */}
+                <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-white/20 to-transparent rounded-bl-full" />
+                
+                <CardContent className="p-3 sm:p-4 relative">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="space-y-1.5 flex-1 min-w-0">
+                      {/* Category - small, italic, muted */}
+                      <p className={`text-[10px] sm:text-[11px] italic truncate ${
+                        product.stock > 0 ? 'text-white/60' : 'text-gray-400'
                       }`}>
-                        Stock:
-                      </span>
-                      <span className={`text-[10px] sm:text-xs font-bold ${
-                        product.stock > 0 ? 'text-green-300 drop-shadow-sm' : 'text-red-400'
+                        {product.category}
+                      </p>
+                      
+                      {/* Product Name - large, distinctive color */}
+                      <p className={`text-base sm:text-lg font-bold leading-snug truncate drop-shadow-md ${
+                        product.stock > 0 ? 'text-yellow-300' : 'text-gray-600'
                       }`}>
-                        {product.stock}
-                      </span>
+                        {product.name}
+                      </p>
+                      
+                      {/* SKU - small, mono */}
+                      <p className={`text-[10px] font-mono truncate ${
+                        product.stock > 0 ? 'text-white/50' : 'text-gray-400'
+                      }`}>
+                        SKU: {product.sku}
+                      </p>
+                      
+                      {/* Stock info */}
+                      <div className="flex items-center gap-1.5 pt-1">
+                        <span className={`text-[10px] sm:text-xs ${
+                          product.stock > 0 ? 'text-white/70' : 'text-gray-400'
+                        }`}>
+                          Stock:
+                        </span>
+                        <span className={`text-[10px] sm:text-xs font-bold ${
+                          product.stock > 0 ? 'text-green-300 drop-shadow-sm' : 'text-red-400'
+                        }`}>
+                          {product.stock}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {/* Icon */}
+                    <div className={`rounded-full p-2 sm:p-2.5 flex-shrink-0 shadow-md ${
+                      product.stock > 0 
+                        ? 'bg-[oklch(0.75_0.25_280)]' 
+                        : 'bg-gray-300'
+                    }`}>
+                      <Package size={18} className={product.stock > 0 ? 'text-[oklch(0.25_0.05_280)]' : 'text-gray-500'} />
                     </div>
                   </div>
-                  
-                  {/* Icon */}
-                  <div className={`rounded-full p-2 sm:p-2.5 flex-shrink-0 shadow-md ${
-                    product.stock > 0 
-                      ? 'bg-[oklch(0.75_0.25_280)]' 
-                      : 'bg-gray-300'
-                  }`}>
-                    <Package size={18} className={product.stock > 0 ? 'text-[oklch(0.25_0.05_280)]' : 'text-gray-500'} />
-                  </div>
-                </div>
 
-                {/* Price and Add Button */}
-                <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-white/25">
-                  <div className={`text-lg sm:text-xl font-bold drop-shadow-sm ${
-                    product.stock > 0 ? 'text-white' : 'text-gray-600'
-                  }`}>
-                    <BatchPriceDisplay 
-                      productId={String(product.id)} 
-                      cabinet={cabinet}
-                      className="text-white"
-                    />
+                  {/* Price and Add Button */}
+                  <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-white/25">
+                    <div className={`text-lg sm:text-xl font-bold drop-shadow-sm ${
+                      product.stock > 0 ? 'text-white' : 'text-gray-600'
+                    }`}>
+                      <BatchPriceDisplay 
+                        productId={String(product.id)} 
+                        cabinet={cabinet}
+                        className="text-white"
+                      />
+                    </div>
+                    <Button
+                      size="sm"
+                      className={`h-9 w-9 sm:h-10 sm:w-10 rounded-full flex-shrink-0 shadow-lg ${
+                        product.stock > 0 
+                          ? 'bg-emerald-600 hover:bg-emerald-700 text-white' 
+                          : 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                      }`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (product.stock > 0) {
+                          addToCart(product);
+                        }
+                      }}
+                      disabled={product.stock <= 0}
+                    >
+                      <Plus size={20} />
+                    </Button>
                   </div>
-                  <Button
-                    size="sm"
-                    className={`h-9 w-9 sm:h-10 sm:w-10 rounded-full flex-shrink-0 shadow-lg ${
-                      product.stock > 0 
-                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white' 
-                        : 'bg-gray-400 text-gray-200 cursor-not-allowed'
-                    }`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (product.stock > 0) {
-                        addToCart(product);
-                      }
-                    }}
-                    disabled={product.stock <= 0}
-                  >
-                    <Plus size={20} />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Payment Method Selection Dialog */}

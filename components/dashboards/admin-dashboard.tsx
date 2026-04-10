@@ -5,6 +5,7 @@ import { AdminSidebar } from "@/components/navigation/admin-sidebar"
 import { InventoryView } from "@/components/inventory/inventory-view"
 import { SalesView } from "@/components/sales/sales-view"
 import { POSView } from "@/components/pos/pos-view"
+import { ErrorBoundary } from "@/components/ui/error-boundary"
 import { EmployeeManagement } from "@/components/employees/employee-management"
 import { ActivityLogView } from "@/components/activity/activity-log-new"
 import { CabinetSelector } from "@/components/cabinet/cabinet-selector"
@@ -133,10 +134,21 @@ export function AdminDashboard({ username, onLogout }: AdminDashboardProps) {
             </div>
           </div>
 
-          {currentView === "dashboard" && <EnhancedAnalytics cabinet={selectedCabinet} username={username} />}
+          {/* Keep dashboard mounted so switching tabs does not remount analytics (no repeat loading skeletons). */}
+          <div
+            id="admin-tab-dashboard"
+            className={currentView === "dashboard" ? "block" : "hidden"}
+            aria-hidden={currentView !== "dashboard"}
+          >
+            <EnhancedAnalytics cabinet={selectedCabinet} username={username} />
+          </div>
           {currentView === "inventory" && <InventoryView isAdmin={true} cabinet={selectedCabinet} username={username} />}
           {currentView === "sales" && <SalesView isAdmin={true} cabinet={selectedCabinet} onNewSale={() => handleViewChange("pos")} />}
-          {currentView === "pos" && <POSView cabinet={selectedCabinet} username={username} />}
+          {currentView === "pos" && (
+            <ErrorBoundary variant="section" sectionTitle="Point of Sale hit an error">
+              <POSView cabinet={selectedCabinet} username={username} />
+            </ErrorBoundary>
+          )}
           {currentView === "employees" && <EmployeeManagement username={username} cabinet={selectedCabinet} />}
           {currentView === "activity" && <ActivityLogView isAdmin={true} />}
         </div>

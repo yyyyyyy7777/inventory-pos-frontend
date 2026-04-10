@@ -55,28 +55,94 @@ export function AutosaveProvider({ children }: { children: ReactNode }) {
 
   const saveAllData = useCallback(() => {
     const dataToSave: Record<string, AutosaveData> = {}
-    
+
     formsRef.current.forEach((getData, key) => {
       try {
         const data = getData()
-        if (data && Object.keys(data).length > 0) {
-          dataToSave[key] = {
-            key,
-            data,
-            timestamp: Date.now()
+        if (!data || typeof data !== "object" || Object.keys(data).length === 0) {
+          return
+        }
+        // POS cart: only persist when there is something to restore (avoids junk + stale keys).
+        if (key.startsWith("pos-cart-")) {
+          const cart = (data as { cart?: unknown }).cart
+          if (!Array.isArray(cart) || cart.length === 0) {
+            return
           }
+        }
+        dataToSave[key] = {
+          key,
+          data,
+          timestamp: Date.now(),
         }
       } catch (e) {
         console.error(`Failed to autosave ${key}:`, e)
       }
     })
 
-    // Merge with existing saved data
     try {
       const existing = localStorage.getItem(STORAGE_KEY)
       const existingData = existing ? JSON.parse(existing) : {}
-      const merged = { ...existingData, ...dataToSave }
+      const merged: Record<string, AutosaveData> = { ...existingData, ...dataToSave }
+
+      // Drop pos-cart-* snapshots when the live form currently has an empty cart,
+      // so we do not keep re-offering restore after the cart was cleared.
+      formsRef.current.forEach((getData, key) => {
+        if (!key.startsWith("pos-cart-")) return
+        try {
+          const data = getData() as { cart?: unknown } | null
+          const cart = data?.cart
+          if (!Array.isArray(cart) || cart.length === 0) {
+            delete merged[key]
+          }
+        } catch {
+          /* ignore */
+        }
+      })
+
       localStorage.setItem(STORAGE_KEY, JSON.stringify(merged))
+
+      // Keep in-memory restore map aligned with disk without pointless rerenders.
+      setRestoredData((prev) => {
+        const next = new Map(prev)
+        let changed = false
+
+        Object.keys(dataToSave).forEach((k) => {
+          const payload = dataToSave[k].data
+          const prevVal = next.get(k)
+          const same =
+            prevVal !== undefined &&
+            JSON.stringify(prevVal) === JSON.stringify(payload)
+          if (!same) {
+            next.set(k, payload)
+            changed = true
+          }
+        })
+
+        formsRef.current.forEach((getData, key) => {
+          if (!key.startsWith("pos-cart-")) return
+          try {
+            const data = getData() as { cart?: unknown } | null
+            const cart = data?.cart
+            if (!Array.isArray(cart) || cart.length === 0) {
+              if (next.has(key)) {
+                next.delete(key)
+                changed = true
+              }
+            }
+          } catch {
+            /* ignore */
+          }
+        })
+
+        Array.from(next.keys()).forEach((k) => {
+          if (!(k in merged)) {
+            next.delete(k)
+            changed = true
+          }
+        })
+
+        return changed ? next : prev
+      })
     } catch (e) {
       console.error("Failed to save autosave data:", e)
     }
@@ -159,11 +225,21 @@ export function useAutosave() {
 export function useFormAutosave<T>(
   formKey: string,
   currentData: T,
-  onRestore?: (data: T) => void
+  onRestore?: (data: T) => void,
+  options?: {
+    /** If set, restore dialog only when this returns true (e.g. non-empty cart). */
+    shouldOfferRestore?: (data: T) => boolean
+  }
 ) {
   const { registerForm, unregisterForm, restoreData, clearData, hasRestorableData } = useAutosave()
   const [showRestorePrompt, setShowRestorePrompt] = useState(false)
   const [pendingRestoreData, setPendingRestoreData] = useState<T | null>(null)
+  const onRestoreRef = useRef(onRestore)
+  const shouldOfferRef = useRef(options?.shouldOfferRestore)
+  /** After accept/reject, do not auto-open again for this formKey (autosave map can refill from periodic save). */
+  const restorePromptHandledRef = useRef(false)
+  onRestoreRef.current = onRestore
+  shouldOfferRef.current = options?.shouldOfferRestore
 
   // Register form for autosaving
   useEffect(() => {
@@ -171,27 +247,36 @@ export function useFormAutosave<T>(
     return () => unregisterForm(formKey)
   }, [formKey, currentData, registerForm, unregisterForm])
 
-  // Check for restorable data on mount
   useEffect(() => {
-    if (hasRestorableData(formKey)) {
-      const saved = restoreData(formKey)
-      if (saved && onRestore) {
-        setPendingRestoreData(saved)
-        setShowRestorePrompt(true)
-      }
-    }
-  }, [formKey, hasRestorableData, restoreData, onRestore])
+    restorePromptHandledRef.current = false
+  }, [formKey])
+
+  // Offer restore once when autosave map has data for this key (after localStorage hydrate).
+  useEffect(() => {
+    if (restorePromptHandledRef.current) return
+    if (!hasRestorableData(formKey)) return
+    const saved = restoreData(formKey)
+    if (saved == null || !onRestoreRef.current) return
+    const offer =
+      shouldOfferRef.current != null ? shouldOfferRef.current(saved as T) : true
+    if (!offer) return
+    setPendingRestoreData(saved as T)
+    setShowRestorePrompt(true)
+  }, [formKey, hasRestorableData, restoreData])
 
   const acceptRestore = useCallback(() => {
-    if (pendingRestoreData && onRestore) {
-      onRestore(pendingRestoreData)
+    restorePromptHandledRef.current = true
+    const data = pendingRestoreData
+    if (data != null) {
+      onRestoreRef.current?.(data)
     }
     clearData(formKey)
     setShowRestorePrompt(false)
     setPendingRestoreData(null)
-  }, [pendingRestoreData, onRestore, clearData, formKey])
+  }, [pendingRestoreData, clearData, formKey])
 
   const rejectRestore = useCallback(() => {
+    restorePromptHandledRef.current = true
     clearData(formKey)
     setShowRestorePrompt(false)
     setPendingRestoreData(null)
