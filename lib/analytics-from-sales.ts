@@ -147,7 +147,20 @@ export function parseSaleDate(dateValue: string | Date): Date {
 
   // Try native parsing first (covers ISO and many browser-parsable values).
   const native = new Date(raw);
-  if (!Number.isNaN(native.getTime())) return native;
+  if (!Number.isNaN(native.getTime())) {
+    // Check if the timestamp is corrupted into the future. 
+    // This happens frequently when 'timestamp without time zone' columns 
+    // are written by a local machine running in Asia/Manila (+08:00) 
+    // and read by a serverless Vercel function running in UTC (+00:00).
+    const ms = native.getTime();
+    if (ms > Date.now() + 1000 * 60) {
+      // The sale mathematically appears to have happened in the future (by up to 8 hours). 
+      // This is a direct artifact of UTC 'node-postgres' treating a Manila literal string as a UTC string.
+      // E.g., '23:15:20' stored in DB -> parsed by Vercel as `23:15:20 UTC` -> renders as '07:15 (+1 day) Manila Time'.
+      return new Date(ms - 8 * 60 * 60 * 1000);
+    }
+    return native;
+  }
 
   // Fallback for custom format with timezone suffix.
   const withTz = raw.match(

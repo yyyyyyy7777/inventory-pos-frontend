@@ -1219,7 +1219,7 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
                         soldAtFilter !== "all" ||
                         paymentMethodFilter !== "all" ||
                         negotiationFilter !== "all" ||
-                        timePeriod !== "weekly") && (
+                        timePeriod !== "today") && (
                         <span className="w-2 h-2 bg-[#3B18DA] rounded-full animate-pulse"></span>
                       )}
                     </div>
@@ -1331,7 +1331,7 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
                             <PesoIcon size={48} className="text-gray-400 mb-4" />
                             <h3 className="text-lg font-semibold text-gray-900 mb-2">No sales found</h3>
                             <p className="text-sm text-gray-500 mb-6">
-                              {searchQuery || selectedCategory !== "all" || amountFilter !== "all" || soldAtFilter !== "all" || paymentMethodFilter !== "all" || negotiationFilter !== "all" || timePeriod !== "weekly" || dateFilter.startDate || dateFilter.endDate 
+                              {searchQuery || selectedCategory !== "all" || amountFilter !== "all" || soldAtFilter !== "all" || paymentMethodFilter !== "all" || negotiationFilter !== "all" || timePeriod !== "today" || dateFilter.startDate || dateFilter.endDate 
                                 ? "No sales match your current filters. Try adjusting or clearing them." 
                                 : "Start by making your first sale"}
                             </p>
@@ -1340,7 +1340,7 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
                                 <Plus size={16} className="mr-2" />
                                 New Sale
                               </Button>
-                              {(searchQuery || selectedCategory !== "all" || amountFilter !== "all" || soldAtFilter !== "all" || paymentMethodFilter !== "all" || negotiationFilter !== "all" || timePeriod !== "weekly" || dateFilter.startDate || dateFilter.endDate) && (
+                              {(searchQuery || selectedCategory !== "all" || amountFilter !== "all" || soldAtFilter !== "all" || paymentMethodFilter !== "all" || negotiationFilter !== "all" || timePeriod !== "today" || dateFilter.startDate || dateFilter.endDate) && (
                                 <Button 
                                   variant="outline" 
                                   onClick={() => { 
