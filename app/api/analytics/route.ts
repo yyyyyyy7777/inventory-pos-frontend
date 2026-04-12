@@ -57,6 +57,9 @@ async function generateAnalyticsFromDB(cabinet: string, period: string) {
   let startDate: Date;
   
   switch (period) {
+    case 'all':
+      startDate = new Date(0);
+      break;
     case 'weekly':
       startDate = startOfWeek(now);
       break;
@@ -174,6 +177,20 @@ async function generateAnalyticsFromDB(cabinet: string, period: string) {
         GROUP BY TO_CHAR(s.date, 'YYYY')
         ORDER BY MIN(s.date)
       `, cabinet === 'all' ? [startDate] : [startDate, cabinet]);
+    } else if (period === 'all') {
+      revenueDataQuery = await query(`
+        SELECT 
+          TO_CHAR(DATE_TRUNC('month', s.date), 'Mon YYYY') as period,
+          COALESCE(SUM(s.amount), 0) as revenue,
+          COUNT(*) as transactions,
+          COALESCE(SUM(si.quantity), 0) as items
+        FROM sale s
+        LEFT JOIN "saleItem" si ON s.id = si."saleId"
+        WHERE s.archived = false
+          ${cabinet !== 'all' ? 'AND s.cabinet = $1' : ''}
+        GROUP BY DATE_TRUNC('month', s.date)
+        ORDER BY MIN(s.date)
+      `, cabinet === 'all' ? [] : [cabinet]);
     } else {
       // Default to monthly for any other case
       revenueDataQuery = await query(`

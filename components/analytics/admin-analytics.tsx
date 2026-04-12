@@ -17,7 +17,8 @@ import {
 } from "recharts"
 import { useRemittance } from "@/contexts/remittance-context"
 import { useProducts } from "@/contexts/products-context"
-import { DollarSign, BarChart3, Package, ArrowUp, AlertTriangle, CheckCircle2 } from "lucide-react"
+import { BarChart3, Package, ArrowUp, AlertTriangle, CheckCircle2 } from "lucide-react"
+import { PesoIcon } from "@/components/ui/peso-icon"
 
 interface AdminAnalyticsProps {
   cabinet: string
@@ -93,7 +94,7 @@ export function AdminAnalytics({ cabinet }: AdminAnalyticsProps) {
                   <span>Up 12% vs last week</span>
                 </p>
               </div>
-              <span className="text-3xl"><DollarSign size={32} /></span>
+              <span className="text-3xl"><PesoIcon size={32} /></span>
             </div>
           </CardContent>
         </Card>

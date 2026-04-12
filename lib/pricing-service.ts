@@ -62,8 +62,8 @@ export class PricingService {
     return totalQuantity > 0 ? totalCost / totalQuantity : 0;
   }
 
-  // Get the cost of goods sold for a sale using FIFO
-  static async getCOGS(productId: string, quantity: number, cabinet: string): Promise<{
+  /** FIFO allocation of inventory cost for a quantity sold (Cost of Goods Sold). */
+  static async getCostOfGoodsSold(productId: string, quantity: number, cabinet: string): Promise<{
     cost: number;
     batchesUsed: Array<{ batchId: string; quantity: number; costPerUnit: number }>;
   }> {
@@ -120,15 +120,15 @@ export class PricingService {
   // Calculate profit margin for a sale
   static async calculateProfitMargin(productId: string, sellingPrice: number, quantity: number, cabinet: string): Promise<{
     revenue: number;
-    cogs: number;
+    costOfGoodsSold: number;
     profit: number;
     margin: number;
   }> {
-    const { cost } = await this.getCOGS(productId, quantity, cabinet);
+    const { cost } = await this.getCostOfGoodsSold(productId, quantity, cabinet);
     const revenue = sellingPrice * quantity;
     const profit = revenue - cost;
     const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
     
-    return { revenue, cogs: cost, profit, margin };
+    return { revenue, costOfGoodsSold: cost, profit, margin };
   }
 }

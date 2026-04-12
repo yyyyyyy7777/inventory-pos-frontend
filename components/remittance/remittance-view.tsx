@@ -4,7 +4,8 @@ import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Search, Download, Edit2, Trash2, Plus, Check, Users, AlertTriangle, Clock, DollarSign } from "lucide-react"
+import { Search, Download, Edit2, Trash2, Plus, Check, Users, AlertTriangle, Clock } from "lucide-react"
+import { PesoIcon } from "@/components/ui/peso-icon"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
@@ -218,7 +219,7 @@ export function RemittanceView({ isAdmin, cabinet }: RemittanceViewProps) {
                 </p>
                 <p className="mt-2 text-xs text-emerald-600">Pending + Released</p>
               </div>
-              <span className="rounded-full bg-emerald-100 px-3 py-2 text-2xl"><DollarSign size={24} /></span>
+              <span className="rounded-full bg-emerald-100 px-3 py-2 text-2xl"><PesoIcon size={24} /></span>
             </div>
           </CardContent>
         </Card>

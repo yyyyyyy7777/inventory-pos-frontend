@@ -40,6 +40,96 @@ export async function query(sql: string, params?: any[]) {
   }
 }
 
+/** Adds optional inventory / POS columns (idempotent). */
+async function ensureProductExtendedColumns(): Promise<void> {
+  const stmts = [
+    `ALTER TABLE product ADD COLUMN IF NOT EXISTS cost_price NUMERIC(14,2)`,
+    `ALTER TABLE product ADD COLUMN IF NOT EXISTS purchase_date DATE`,
+    `ALTER TABLE product ADD COLUMN IF NOT EXISTS purchase_place TEXT`,
+    `ALTER TABLE product ADD COLUMN IF NOT EXISTS supplier_name TEXT`,
+    `ALTER TABLE product ADD COLUMN IF NOT EXISTS dim_length_cm NUMERIC(12,3)`,
+    `ALTER TABLE product ADD COLUMN IF NOT EXISTS dim_width_cm NUMERIC(12,3)`,
+    `ALTER TABLE product ADD COLUMN IF NOT EXISTS dim_height_cm NUMERIC(12,3)`,
+    `ALTER TABLE product ADD COLUMN IF NOT EXISTS weight_kg NUMERIC(12,3)`,
+    `ALTER TABLE product ADD COLUMN IF NOT EXISTS image_url TEXT`,
+    `ALTER TABLE product ADD COLUMN IF NOT EXISTS "lastRestockDate" TIMESTAMP`,
+    `ALTER TABLE product ADD COLUMN IF NOT EXISTS created_by TEXT`,
+    `ALTER TABLE product ADD COLUMN IF NOT EXISTS updated_by TEXT`,
+  ];
+  for (const sql of stmts) {
+    try {
+      await query(sql);
+    } catch (e) {
+      console.warn('[ensureProductExtendedColumns]', sql, e);
+    }
+  }
+}
+
+function mapProductFromDbRow(product: any, lastRestockDate: string | null): Record<string, unknown> {
+  // Prefer calculatedStock from stockbatch SUM, but fall back to product.stock for freshly
+  // created products whose stock batch hasn't been committed yet.
+  const calcStock = parseInt(String(product.calculatedStock ?? 0), 10) || 0;
+  const dbStock = parseInt(String(product.stock ?? 0), 10) || 0;
+  const stockValue = Math.max(calcStock, dbStock);
+  const costRaw = product.cost_price;
+  const costNum = costRaw != null && costRaw !== '' ? Number(costRaw) : NaN;
+  const pd = product.purchase_date;
+  const purchaseDateStr =
+    pd == null
+      ? undefined
+      : typeof pd === 'string'
+        ? pd.slice(0, 10)
+        : pd instanceof Date
+          ? pd.toISOString().slice(0, 10)
+          : String(pd).slice(0, 10);
+
+  const formatAuditDateTime = (v: unknown): string | undefined => {
+    if (v == null || v === '') return undefined;
+    const d = v instanceof Date ? v : new Date(String(v));
+    if (Number.isNaN(d.getTime())) return undefined;
+    return d.toLocaleString('en-PH', { dateStyle: 'short', timeStyle: 'short' });
+  };
+
+  return {
+    id: String(product.id),
+    name: product.name,
+    sku: product.sku || `SKU-${product.id}`,
+    quantity: stockValue,
+    price: Number(product.price) || 0,
+    costPrice: Number.isFinite(costNum) ? costNum : undefined,
+    category: product.categoryName || 'Others',
+    categoryId: product.categoryId,
+    stock: stockValue,
+    location: 'physical' as const,
+    cabinet: product.cabinet,
+    lastUpdated: product.updatedAt ? new Date(product.updatedAt).toLocaleDateString('en-CA') : '',
+    createdBy: product.created_by || undefined,
+    lastUpdatedBy: product.updated_by || undefined,
+    dateCreated: formatAuditDateTime(product.createdAt),
+    lastModifiedDate: formatAuditDateTime(product.updatedAt),
+    lastRestockDate: lastRestockDate || undefined,
+    description: product.description || undefined,
+    purchaseDate: purchaseDateStr,
+    purchasePlace: product.purchase_place || undefined,
+    supplierName: product.supplier_name || undefined,
+    dimLengthCm:
+      product.dim_length_cm != null && product.dim_length_cm !== ''
+        ? Number(product.dim_length_cm)
+        : undefined,
+    dimWidthCm:
+      product.dim_width_cm != null && product.dim_width_cm !== ''
+        ? Number(product.dim_width_cm)
+        : undefined,
+    dimHeightCm:
+      product.dim_height_cm != null && product.dim_height_cm !== ''
+        ? Number(product.dim_height_cm)
+        : undefined,
+    weightKg:
+      product.weight_kg != null && product.weight_kg !== '' ? Number(product.weight_kg) : undefined,
+    imageUrl: product.image_url || undefined,
+  };
+}
+
 async function ensureSaleIdempotencySchema(client: any) {
   if (!saleIdempotencyReady) {
     saleIdempotencyReady = (async () => {
@@ -203,7 +293,7 @@ export async function getAllEmployees() {
 }
 
 export async function getAllProducts(cabinet: string = 'main') {
-  // Get products with calculated stock from batches
+  await ensureProductExtendedColumns();
   const productRows = await query(
     `SELECT p.*, c.name as "categoryName", 
             COALESCE(SUM(sb.quantity), 0) as "calculatedStock"
@@ -211,13 +301,11 @@ export async function getAllProducts(cabinet: string = 'main') {
      LEFT JOIN category c ON p."categoryId" = c.id 
      LEFT JOIN stockbatch sb ON p.id = sb."productId" AND sb.cabinet = $1
      WHERE p.cabinet = $2 
-     GROUP BY p.id, p.name, p.sku, p.description, p.price, p.stock, p.cabinet, 
-              p."categoryId", p."createdAt", p."updatedAt", c.name
+     GROUP BY p.id, c.name
      ORDER BY p."createdAt" DESC`,
     [cabinet, cabinet]
   );
-  
-  // Get last restock dates separately
+
   const restockRows = await query(
     `SELECT "productId", MAX("batchDate") as "lastRestockDate"
      FROM stockbatch 
@@ -225,29 +313,40 @@ export async function getAllProducts(cabinet: string = 'main') {
      GROUP BY "productId"`,
     [cabinet]
   );
-  
-  // Combine the data
-  return productRows.map(product => {
-    const restockInfo = restockRows.find(r => r.productId === product.id);
-    const lastRestockDate = restockInfo?.lastRestockDate ? new Date(restockInfo.lastRestockDate).toLocaleDateString('en-CA') : null;
-    
-    // Convert calculatedStock to number to avoid string concatenation issues
-    const stockValue = parseInt(product.calculatedStock) || 0;
-    
-    return {
-      id: product.id.toString(),
-      name: product.name,
-      sku: product.sku || `SKU-${product.id}`,
-      quantity: stockValue,
-      price: product.price,
-      category: product.categoryName || 'Others',
-      stock: stockValue,
-      location: 'physical' as const,
-      cabinet: product.cabinet,
-      lastUpdated: new Date(product.updatedAt).toLocaleDateString('en-CA'),
-      lastRestockDate: lastRestockDate,
-      description: product.description,
-    };
+
+  return productRows.map((product) => {
+    const restockInfo = restockRows.find((r) => r.productId === product.id);
+    const lastRestockDate = restockInfo?.lastRestockDate
+      ? new Date(restockInfo.lastRestockDate).toLocaleDateString('en-CA')
+      : null;
+    return mapProductFromDbRow(product, lastRestockDate);
+  });
+}
+
+export async function getAllProductsAllCabinets() {
+  await ensureProductExtendedColumns();
+  const productRows = await query(
+    `SELECT p.*, c.name as "categoryName", 
+            COALESCE(SUM(sb.quantity), 0) as "calculatedStock"
+     FROM product p 
+     LEFT JOIN category c ON p."categoryId" = c.id 
+     LEFT JOIN stockbatch sb ON p.id = sb."productId" AND sb.cabinet = p.cabinet
+     GROUP BY p.id, c.name
+     ORDER BY p."createdAt" DESC`
+  );
+
+  const restockRows = await query(
+    `SELECT "productId", MAX("batchDate") as "lastRestockDate"
+     FROM stockbatch 
+     GROUP BY "productId"`
+  );
+
+  return productRows.map((product) => {
+    const restockInfo = restockRows.find((r) => r.productId === product.id);
+    const lastRestockDate = restockInfo?.lastRestockDate
+      ? new Date(restockInfo.lastRestockDate).toLocaleDateString('en-CA')
+      : null;
+    return mapProductFromDbRow(product, lastRestockDate);
   });
 }
 
@@ -293,56 +392,89 @@ export async function createProduct(data: {
   cabinet: string;
   categoryId: number;
   description?: string;
+  costPrice?: number | null;
+  purchaseDate?: string | null;
+  purchasePlace?: string | null;
+  supplierName?: string | null;
+  dimLengthCm?: number | null;
+  dimWidthCm?: number | null;
+  dimHeightCm?: number | null;
+  weightKg?: number | null;
+  imageUrl?: string | null;
+  createdBy?: string | null;
+  updatedBy?: string | null;
 }) {
   const client = await (await getConnection()).connect();
-  
+
   try {
     await client.query('BEGIN');
-    
-    console.log('Creating product with data:', data); // Debug log
-    
-    // Validate SKU uniqueness
+    await ensureProductExtendedColumns();
+
+    console.log('Creating product with data:', data);
+
     if (data.sku) {
       const skuExists = await checkSkuExists(data.sku, data.cabinet);
       if (skuExists) {
         throw new Error(`SKU '${data.sku}' already exists in cabinet '${data.cabinet}'. Please use a different SKU.`);
       }
     }
-    
-    // Check if product table exists first
-    const tableCheck = await client.query('SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = \'product\')');
+
+    const tableCheck = await client.query(
+      "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'product')"
+    );
     if (!tableCheck.rows[0].exists) {
       throw new Error('Product table does not exist');
     }
-    
-    // Create the product (include stock field for backward compatibility)
-    // Use COALESCE to help PostgreSQL infer types for nullable parameters
+
+    const auditUser =
+      (data.createdBy && String(data.createdBy).trim()) ||
+      (data.updatedBy && String(data.updatedBy).trim()) ||
+      null;
+
     const result = await client.query(
-      `INSERT INTO product (name, sku, description, price, stock, cabinet, "categoryId", "createdAt", "updatedAt") 
-       VALUES ($1, COALESCE($2, NULL::varchar), COALESCE($3, NULL::text), $4, $5, $6, $7, NOW(), NOW()) 
-       RETURNING id`,
-      [data.name, data.sku, data.description, data.price, data.stock, data.cabinet, data.categoryId]
+      `INSERT INTO product (
+        name, sku, description, price, stock, cabinet, "categoryId",
+        cost_price, purchase_date, purchase_place, supplier_name,
+        dim_length_cm, dim_width_cm, dim_height_cm, weight_kg, image_url,
+        created_by, updated_by,
+        "createdAt", "updatedAt"
+      ) VALUES (
+        $1, COALESCE($2, NULL::varchar), COALESCE($3, NULL::text), $4, $5, $6, $7,
+        $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW(), NOW()
+      ) RETURNING id`,
+      [
+        data.name,
+        data.sku,
+        data.description ?? null,
+        data.price,
+        data.stock,
+        data.cabinet,
+        data.categoryId,
+        data.costPrice ?? null,
+        data.purchaseDate || null,
+        data.purchasePlace ?? null,
+        data.supplierName ?? null,
+        data.dimLengthCm ?? null,
+        data.dimWidthCm ?? null,
+        data.dimHeightCm ?? null,
+        data.weightKg ?? null,
+        data.imageUrl ?? null,
+        auditUser,
+        auditUser,
+      ]
     );
-    
-    console.log('INSERT result:', result); // Debug log
-    
+
     const productId = result.rows[0].id;
-    
-    console.log('Product ID retrieved:', productId); // Debug log
-    
     if (!productId) {
       throw new Error('Failed to insert product - no ID returned from database');
     }
-    
+
     await client.query('COMMIT');
-    
-    const createdProduct = {
-      id: productId,
-      ...data
-    };
-    
-    console.log('Product created successfully:', createdProduct); // Debug log
-    return createdProduct;
+
+    const full = await getProductById(String(productId));
+    if (!full) throw new Error('Failed to load product after create');
+    console.log('Product created successfully:', full.id);
+    return full as any;
     
   } catch (error: any) {
     await client.query('ROLLBACK');
@@ -368,12 +500,19 @@ export async function getAllSales(cabinet: string = 'main') {
       // Ignore errors if column already exists
     }
     
-    const sales = await query(
-      `SELECT * FROM sale WHERE cabinet = $1 AND archived = false ORDER BY "createdAt" DESC`,
-      [cabinet]
+    const sales =
+      cabinet === "all"
+        ? await query(
+            `SELECT * FROM sale WHERE COALESCE(archived, false) = false ORDER BY "createdAt" DESC`
+          )
+        : await query(
+            `SELECT * FROM sale WHERE cabinet = $1 AND COALESCE(archived, false) = false ORDER BY "createdAt" DESC`,
+            [cabinet]
+          );
+
+    console.log(
+      `getAllSales: Found ${sales.length} active (non-archived) sales for cabinet '${cabinet}'`
     );
-    
-    console.log(`getAllSales: Found ${sales.length} active (non-archived) sales for cabinet '${cabinet}'`);
     
     if (sales.length === 0) {
       return sales;
@@ -592,9 +731,9 @@ export async function createSale(data: {
       }
       
       await client.query(
-        `INSERT INTO "saleItem" ("saleId", "productName", category, quantity, price, "originalPrice", "costPrice", "isDiscounted", profit) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [saleId, item.productName, item.category, item.quantity, item.price, item.originalPrice || null, item.costPrice || null, item.isDiscounted || false, item.profit || null]
+        `INSERT INTO "saleItem" ("saleId", "productName", category, quantity, price, "originalPrice", "costPrice", "unitCost", "isDiscounted", profit) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [saleId, item.productName, item.category, item.quantity, item.price, item.originalPrice || null, item.costPrice || null, item.costPrice || 0, item.isDiscounted || false, item.profit || null]
       );
       
       // Get product ID by name
@@ -704,6 +843,7 @@ export async function createSale(data: {
 }
 
 export async function getProductById(id: string) {
+  await ensureProductExtendedColumns();
   const rows = await query(
     `SELECT p.*, c.name as "categoryName", 
             COALESCE(SUM(sb.quantity), 0) as "calculatedStock"
@@ -711,75 +851,141 @@ export async function getProductById(id: string) {
      LEFT JOIN category c ON p."categoryId" = c.id 
      LEFT JOIN stockbatch sb ON p.id = sb."productId"
      WHERE p.id = $1
-     GROUP BY p.id, p.name, p.sku, p.description, p.price, p.stock, p.cabinet, 
-              p."categoryId", p."createdAt", p."updatedAt", c.name`,
+     GROUP BY p.id, c.name`,
     [id]
   );
-  
+
   if (rows.length === 0) return null;
-  
+
   const product = rows[0];
-  return {
-    id: product.id.toString(),
-    name: product.name,
-    sku: product.sku || `SKU-${product.id}`, // Use custom SKU or fallback
-    quantity: product.calculatedStock || 0,
-    price: product.price,
-    category: product.categoryName || 'Others',
-    stock: product.calculatedStock || 0,
-    location: 'physical' as const,
-    cabinet: product.cabinet,
-    lastUpdated: new Date(product.updatedAt).toLocaleDateString('en-CA'),
-    description: product.description,
-  };
+  const lastRestockRows = await query(
+    `SELECT MAX("batchDate") as "lastRestockDate" FROM stockbatch WHERE "productId" = $1`,
+    [id]
+  );
+  const lr = lastRestockRows[0]?.lastRestockDate;
+  const lastRestockDate = lr ? new Date(lr).toLocaleDateString('en-CA') : null;
+  return mapProductFromDbRow(product, lastRestockDate) as any;
 }
 
-export async function updateProduct(id: string, data: {
+export type ProductUpdatePayload = Partial<{
   name: string;
-  sku?: string;
+  sku: string | null;
   price: number;
   stock: number;
   cabinet: string;
   categoryId: number;
-  description?: string;
-  lastRestockDate?: string;
-}) {
+  description: string | null;
+  lastRestockDate: string | null;
+  costPrice: number | null;
+  purchaseDate: string | null;
+  purchasePlace: string | null;
+  supplierName: string | null;
+  dimLengthCm: number | null;
+  dimWidthCm: number | null;
+  dimHeightCm: number | null;
+  weightKg: number | null;
+  imageUrl: string | null;
+  updatedBy: string | null;
+}>;
+
+export async function updateProduct(id: string, data: ProductUpdatePayload) {
   const client = await (await getConnection()).connect();
-  
+
   try {
     await client.query('BEGIN');
-    
-    // Validate SKU uniqueness (exclude current product from check)
-    if (data.sku) {
-      const skuExists = await checkSkuExists(data.sku, data.cabinet, parseInt(id));
+    await ensureProductExtendedColumns();
+
+    const idNum = parseInt(id, 10);
+    const curRes = await client.query('SELECT * FROM product WHERE id = $1', [idNum]);
+    if (curRes.rows.length === 0) {
+      throw new Error('Product not found');
+    }
+    const cur = curRes.rows[0];
+
+    const name = data.name !== undefined ? data.name : cur.name;
+    const sku = data.sku !== undefined ? data.sku : cur.sku;
+    const price = data.price !== undefined ? Number(data.price) : Number(cur.price);
+    const stock = data.stock !== undefined ? Number(data.stock) : Number(cur.stock);
+    const cabinetVal = data.cabinet !== undefined ? data.cabinet : cur.cabinet;
+    const categoryId = data.categoryId !== undefined ? data.categoryId : cur.categoryId;
+    const description = data.description !== undefined ? data.description : cur.description;
+    const cost_price = data.costPrice !== undefined ? data.costPrice : cur.cost_price;
+    const purchase_date =
+      data.purchaseDate !== undefined ? data.purchaseDate || null : cur.purchase_date;
+    const purchase_place =
+      data.purchasePlace !== undefined ? data.purchasePlace : cur.purchase_place;
+    const supplier_name =
+      data.supplierName !== undefined ? data.supplierName : cur.supplier_name;
+    const dim_length_cm =
+      data.dimLengthCm !== undefined ? data.dimLengthCm : cur.dim_length_cm;
+    const dim_width_cm = data.dimWidthCm !== undefined ? data.dimWidthCm : cur.dim_width_cm;
+    const dim_height_cm =
+      data.dimHeightCm !== undefined ? data.dimHeightCm : cur.dim_height_cm;
+    const weight_kg = data.weightKg !== undefined ? data.weightKg : cur.weight_kg;
+    const image_url = data.imageUrl !== undefined ? data.imageUrl : cur.image_url;
+    const lastRestockDateVal =
+      data.lastRestockDate !== undefined ? data.lastRestockDate : cur.lastRestockDate;
+    const updated_by =
+      data.updatedBy !== undefined
+        ? data.updatedBy && String(data.updatedBy).trim()
+          ? String(data.updatedBy).trim()
+          : null
+        : cur.updated_by;
+
+    if (sku) {
+      const skuExists = await checkSkuExists(sku, cabinetVal, idNum);
       if (skuExists) {
-        throw new Error(`SKU '${data.sku}' already exists in cabinet '${data.cabinet}'. Please use a different SKU.`);
+        throw new Error(`SKU '${sku}' already exists in cabinet '${cabinetVal}'. Please use a different SKU.`);
       }
     }
-    
-    // Build the UPDATE query dynamically to handle optional lastRestockDate
-    let updateFields = ['name = $1', 'sku = $2', 'price = $3', 'stock = $4', '"categoryId" = $5', 'description = $6'];
-    let queryParams = [data.name, data.sku || null, data.price, data.stock, data.categoryId, data.description || null];
-    let paramIndex = 7;
-
-    // Add lastRestockDate if provided
-    if (data.lastRestockDate !== undefined) {
-      updateFields.push(`"lastRestockDate" = $${paramIndex}`);
-      queryParams.push(data.lastRestockDate);
-      paramIndex++;
-    }
-
-    updateFields.push('"updatedAt" = NOW()');
-    updateFields.push(`WHERE id = $${paramIndex}`);
-    queryParams.push(parseInt(id));
 
     await client.query(
-      `UPDATE product SET ${updateFields.join(', ')}`,
-      queryParams
+      `UPDATE product SET
+        name = $1,
+        sku = $2,
+        price = $3,
+        stock = $4,
+        cabinet = $5,
+        "categoryId" = $6,
+        description = $7,
+        cost_price = $8,
+        purchase_date = $9,
+        purchase_place = $10,
+        supplier_name = $11,
+        dim_length_cm = $12,
+        dim_width_cm = $13,
+        dim_height_cm = $14,
+        weight_kg = $15,
+        image_url = $16,
+        "lastRestockDate" = $17,
+        updated_by = $18,
+        "updatedAt" = NOW()
+      WHERE id = $19`,
+      [
+        name,
+        sku || null,
+        price,
+        stock,
+        cabinetVal,
+        categoryId,
+        description ?? null,
+        cost_price ?? null,
+        purchase_date,
+        purchase_place ?? null,
+        supplier_name ?? null,
+        dim_length_cm ?? null,
+        dim_width_cm ?? null,
+        dim_height_cm ?? null,
+        weight_kg ?? null,
+        image_url ?? null,
+        lastRestockDateVal ?? null,
+        updated_by ?? null,
+        idNum,
+      ]
     );
-    
+
     await client.query('COMMIT');
-    
+
     return await getProductById(id);
   } catch (error) {
     await client.query('ROLLBACK');
@@ -949,6 +1155,7 @@ export async function addStockAddition(data: {
   quantity: number;
   cabinet: string;
   costPerUnit?: number;
+  sellingPrice?: number;
 }) {
   // Validate input to prevent negative batches
   if (!data.quantity || data.quantity <= 0) {
@@ -959,9 +1166,16 @@ export async function addStockAddition(data: {
     throw new Error('Cost per unit cannot be negative');
   }
 
+  // Dynamically determine appropriate status using FIFO principles
+  const existingBatches = await query(
+    `SELECT id FROM stockbatch WHERE "productId" = $1 AND cabinet = $2 AND status = 'on-shelf' AND quantity > 0 LIMIT 1`,
+    [data.productId, data.cabinet]
+  );
+  const determineStatus = existingBatches.length > 0 ? 'in-storage' : 'on-shelf';
+
   const result = await query(
-    'INSERT INTO stockbatch ("productId", quantity, "costPerUnit", "batchDate", cabinet, status, "createdAt", "updatedAt") VALUES ($1, $2, $3, NOW(), $4, $5, NOW(), NOW()) RETURNING id',
-    [data.productId, data.quantity, data.costPerUnit || null, data.cabinet, 'on-shelf']
+    'INSERT INTO stockbatch ("productId", quantity, "initialQuantity", "costPerUnit", "sellingPrice", "batchDate", cabinet, status, "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, $5, NOW(), $6, $7, NOW(), NOW()) RETURNING id',
+    [data.productId, data.quantity, data.quantity, data.costPerUnit || null, data.sellingPrice || null, data.cabinet, determineStatus]
   );
   
   return {
@@ -998,8 +1212,8 @@ export async function getStockAdditions(productId: string, cabinet: string) {
     if (stock > 0) {
       try {
         await query(
-          'INSERT INTO stockbatch ("productId", quantity, "batchDate", cabinet, status, "createdAt", "updatedAt", notes) VALUES ($1, $2, NOW(), $3, $4, NOW(), NOW(), $5)',
-          [productId, stock, cabinet, 'on-shelf', 'Backfilled batch (missing history)']
+          'INSERT INTO stockbatch ("productId", quantity, "initialQuantity", "batchDate", cabinet, status, "createdAt", "updatedAt", notes) VALUES ($1, $2, $3, NOW(), $4, $5, NOW(), NOW(), $6)',
+          [productId, stock, stock, cabinet, 'on-shelf', 'Backfilled batch (missing history)']
         );
         rows = await query(
           `SELECT * FROM stockbatch 
@@ -1025,6 +1239,7 @@ export async function getStockAdditions(productId: string, cabinet: string) {
     id: addition.id.toString(),
     productId: addition.productId.toString(),
     quantity: addition.quantity,
+    initialQuantity: addition.initialQuantity,
     costPerUnit: addition.costPerUnit,
     addedDate: new Date(addition.batchDate).toISOString(),
     cabinet: addition.cabinet,

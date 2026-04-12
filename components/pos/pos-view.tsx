@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton"
 import { BatchPriceDisplay } from "@/components/shared/batch-price-display"
 import { getCurrentPriceFromBatches } from "@/lib/batch-price"
+import { formatSaleLineItemLabel } from "@/lib/sale-metrics"
 
 // Type for receipt display (different from SaleItem)
 interface ReceiptItem {
@@ -56,6 +57,7 @@ interface CartItem {
   costPrice: number
   quantity: number
   isDiscounted: boolean
+  imageUrl?: string
 }
 
 const categories = [
@@ -71,7 +73,7 @@ const categories = [
 export function POSView({ cabinet, username }: POSViewProps) {
   const { getProductsByCabinet, decrementProductStockLocally, getOnShelfStock, loading: productsLoading } = useProducts()
   const products = getProductsByCabinet(cabinet)
-  const { addSale, refreshSales } = useSales()
+  const { addSale } = useSales()
   const { addToast } = useToast()
   const { addActivity } = useActivity()
   const [cart, setCart] = useState<CartItem[]>([])
@@ -276,8 +278,8 @@ export function POSView({ cabinet, username }: POSViewProps) {
       return;
     }
     
-    // Get current batch price
-    const { price: batchPrice } = await getCurrentPriceFromBatches(String(product.id), cabinet);
+    // Get current batch price and unit cost
+    const { price: batchPrice, unitCost: batchUnitCost } = await getCurrentPriceFromBatches(String(product.id), cabinet);
     
     // Update or add the item to the cart
     setCart(prevCart => {
@@ -295,14 +297,22 @@ export function POSView({ cabinet, username }: POSViewProps) {
             : item
         );
       } else {
+        // Prefer the batch's unit cost, fallback to product's base cost price
+        const unitCost =
+          batchUnitCost != null && Number.isFinite(Number(batchUnitCost)) && Number(batchUnitCost) > 0
+            ? Number(batchUnitCost)
+            : (product.costPrice != null && Number.isFinite(Number(product.costPrice)) && Number(product.costPrice) >= 0
+                ? Number(product.costPrice)
+                : 0);
         const newItem: CartItem = {
           id: product.id,
           name: product.name,
           price: batchPrice,
           originalPrice: batchPrice,
-          costPrice: product.costPrice || batchPrice * 0.7, // Default to 70% of selling price if no cost price
+          costPrice: unitCost,
           quantity: 1,
           isDiscounted: false,
+          imageUrl: product.imageUrl,
         };
         return [...prevCart, newItem];
       }
@@ -354,7 +364,7 @@ export function POSView({ cabinet, username }: POSViewProps) {
       addToast("Price cannot be increased above original price. Only discounts are allowed.", "error");
       return;
     }
-    
+
     // Clear any existing timeout for this item
     const existingTimeout = discountTimeouts.get(id);
     if (existingTimeout) {
@@ -364,9 +374,15 @@ export function POSView({ cabinet, username }: POSViewProps) {
     // Set a new timeout to show discount toast after user stops typing
     const timeout = setTimeout(() => {
       const currentItem = cart.find(item => item.id === id);
-      if (currentItem && newPrice < currentItem.originalPrice && newPrice !== currentItem.price) {
-        const discountAmount = (currentItem.originalPrice - newPrice) * currentItem.quantity;
-        addToast(`Discount applied: ₱${discountAmount.toLocaleString()} saved on ${currentItem.name}`, "success");
+      if (currentItem) {
+        if (currentItem.costPrice && newPrice < currentItem.costPrice) {
+          addToast(`Warning: Price is below the acquired cost (₱${currentItem.costPrice.toLocaleString()}).`, "error");
+        } else if (newPrice < currentItem.originalPrice && newPrice !== currentItem.price) {
+          const discountAmount = (currentItem.originalPrice - newPrice) * currentItem.quantity;
+          if (discountAmount > 0) {
+            addToast(`Discount applied: ₱${discountAmount.toLocaleString()} saved on ${currentItem.name}`, "success");
+          }
+        }
       }
       // Remove timeout from map
       setDiscountTimeouts(prev => {
@@ -376,24 +392,24 @@ export function POSView({ cabinet, username }: POSViewProps) {
       });
     }, 1000); // Wait 1 second after user stops typing
   
-  // Add timeout to map
-  setDiscountTimeouts(prev => {
-    const newMap = new Map(prev);
-    newMap.set(id, timeout);
-    return newMap;
-  });
-  
-  setCart(cart.map(item => {
-    if (item.id === id) {
-      const isDiscounted = newPrice < item.originalPrice;
-      return { 
-        ...item, 
-        price: Math.max(0, newPrice), 
-        isDiscounted 
-      };
-    }
-    return item;
-  }));
+    // Add timeout to map
+    setDiscountTimeouts(prev => {
+      const newMap = new Map(prev);
+      newMap.set(id, timeout);
+      return newMap;
+    });
+    
+    setCart(cart.map(item => {
+      if (item.id === id) {
+        const isDiscounted = newPrice < item.originalPrice;
+        return { 
+          ...item, 
+          price: Math.max(0, newPrice), 
+          isDiscounted 
+        };
+      }
+      return item;
+    }));
   };
 
   const total = cart.reduce((sum, item) => {
@@ -402,6 +418,14 @@ export function POSView({ cabinet, username }: POSViewProps) {
 
   const handleCompleteSale = () => {
     if (cart.length === 0) return;
+
+    // Validate that no item is priced below cost
+    const invalidItems = cart.filter(item => item.costPrice && item.price < item.costPrice);
+    if (invalidItems.length > 0) {
+      addToast(`Cannot complete sale: ${invalidItems[0].name} is priced below its acquired cost (₱${invalidItems[0].costPrice.toLocaleString()}).`, "error");
+      return;
+    }
+
     setShowPaymentDialog(true);
   }
 
@@ -446,7 +470,7 @@ export function POSView({ cabinet, username }: POSViewProps) {
     csvContent += saleData.location + '\n';
     
     // Create blob and download
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
@@ -455,6 +479,13 @@ export function POSView({ cabinet, username }: POSViewProps) {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    addToast(
+      `Receipt CSV: ${saleData.items.length} line(s), total ₱${saleData.total.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · ${saleData.paymentMethod === "Cash" ? "Cash" : "QRPH"}.`,
+      "success",
+      9500
+    );
   }
 
   const printReceipt = (saleData: ReceiptData) => {
@@ -745,16 +776,21 @@ export function POSView({ cabinet, username }: POSViewProps) {
         console.log(
           `Discount check for ${item.name}: sale price=${item.price}, original price=${item.originalPrice}, isDiscounted=${isDiscounted}`
         );
-        const costBasis = item.costPrice || item.originalPrice * 0.7;
+        const unitCost =
+          item.costPrice != null && Number.isFinite(item.costPrice) && item.costPrice >= 0
+            ? item.costPrice
+            : (product.costPrice != null && Number.isFinite(Number(product.costPrice))
+                ? Number(product.costPrice)
+                : 0)
         saleItems.push({
           productName: item.name,
           category: product.category || "Unknown",
           quantity: item.quantity,
           price: item.price,
           originalPrice: item.originalPrice,
-          costPrice: costBasis,
+          costPrice: unitCost,
           isDiscounted,
-          profit: (item.price - costBasis) * item.quantity,
+          profit: (item.price - unitCost) * item.quantity,
         });
         console.log(`Sale item for ${item.name}:`, saleItems[saleItems.length - 1]);
       }
@@ -803,6 +839,12 @@ export function POSView({ cabinet, username }: POSViewProps) {
       
       // Use ISO timestamp for reliable timezone-safe storage/parsing.
       const saleTimestamp = new Date().toISOString();
+
+      // One idempotency key per checkout attempt — server + IndexedDB reject duplicates with the same key.
+      const saleRequestKey =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `${cabinet}-${username}-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
       
       // Add the sale to the database
       const saleDataToSend: Omit<SalesRecord, 'id' | 'createdAt' | 'updatedAt'> = {
@@ -813,7 +855,8 @@ export function POSView({ cabinet, username }: POSViewProps) {
         staffName: username,
         cabinet: cabinet,
         soldAt: saleLocation,
-        requestKey: `${cabinet}-${username}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+        tax: tax,
+        requestKey: saleRequestKey,
         referenceNumber: paymentMethod === 'qrph' ? referenceNumber : undefined,
       };
       
@@ -831,7 +874,12 @@ export function POSView({ cabinet, username }: POSViewProps) {
 
       void (async () => {
         try {
-          const activityItemsList = saleItems.map(item => `${item.productName} (${item.quantity}x @ ₱${item.price})`).join(', ');
+          const activityItemsList = saleItems
+            .map(
+              (item) =>
+                `${formatSaleLineItemLabel(item.productName, item.quantity)} @ ₱${item.price}`
+            )
+            .join(", ")
           const activityDetails = paymentMethod === 'qrph' && referenceNumber
             ? `Sold ${saleItems.length} item(s) in ${cabinet} cabinet - Items: ${activityItemsList} - Total: ₱${totalAmount.toFixed(2)} - Payment: QRPH - Reference: ${referenceNumber} - Location: ${saleLocation}`
             : `Sold ${saleItems.length} item(s) in ${cabinet} cabinet - Items: ${activityItemsList} - Total: ₱${totalAmount.toFixed(2)} - Payment: ${paymentMethod.toUpperCase()} - Location: ${saleLocation}`;
@@ -861,11 +909,6 @@ export function POSView({ cabinet, username }: POSViewProps) {
       setCashAmount('');
       setChange(0);
       rejectRestore();
-      
-      // Refresh data in background (non-blocking)
-      setTimeout(() => {
-        refreshSales(cabinet).catch(err => console.error('Failed to refresh sales:', err));
-      }, 100);
       
     } catch (error) {
       console.error('Error processing sale:', error);
@@ -934,8 +977,13 @@ export function POSView({ cabinet, username }: POSViewProps) {
                 <div className="space-y-3 max-h-96 overflow-y-auto">
                   {cart.map((item) => (
                     <div key={item.id} className="border border-border rounded-lg p-3 bg-muted/50">
-                      <div className="flex items-start justify-between mb-2">
-                        <h4 className="font-medium text-foreground text-sm">{item.name}</h4>
+                      <div className="flex items-start justify-between mb-2 gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          {item.imageUrl ? (
+                            <img src={item.imageUrl} alt="" className="h-16 w-16 rounded object-cover border border-border shrink-0 bg-white" />
+                          ) : null}
+                          <h4 className="font-medium text-foreground text-sm line-clamp-2 leading-tight">{item.name}</h4>
+                        </div>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -1362,7 +1410,7 @@ export function POSView({ cabinet, username }: POSViewProps) {
             {visibleProducts.map((product) => (
               <Card
                 key={product.id}
-                className={`relative overflow-hidden border-2 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer ${
+                className={`relative flex flex-col h-full overflow-hidden border-2 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer ${
                   product.stock > 0 
                     ? 'bg-gradient-to-br from-[oklch(0.55_0.15_280)] to-[oklch(0.65_0.20_280)] border-[oklch(0.6_0.18_280)]' 
                     : 'bg-gradient-to-br from-gray-100 to-gray-200 border-gray-300 opacity-60'
@@ -1372,9 +1420,9 @@ export function POSView({ cabinet, username }: POSViewProps) {
                 {/* Glossy overlay */}
                 <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-white/20 to-transparent rounded-bl-full" />
                 
-                <CardContent className="p-3 sm:p-4 relative">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="space-y-1.5 flex-1 min-w-0">
+                <CardContent className="p-3 sm:p-4 relative flex flex-col flex-1">
+                  <div className="flex items-start justify-between gap-2 flex-1">
+                    <div className="space-y-1 flex-1 min-w-0">
                       {/* Category - small, italic, muted */}
                       <p className={`text-[10px] sm:text-[11px] italic truncate ${
                         product.stock > 0 ? 'text-white/60' : 'text-gray-400'
@@ -1383,7 +1431,7 @@ export function POSView({ cabinet, username }: POSViewProps) {
                       </p>
                       
                       {/* Product Name - large, distinctive color */}
-                      <p className={`text-base sm:text-lg font-bold leading-snug truncate drop-shadow-md ${
+                      <p className={`text-base sm:text-lg font-bold leading-snug line-clamp-2 drop-shadow-md ${
                         product.stock > 0 ? 'text-yellow-300' : 'text-gray-600'
                       }`}>
                         {product.name}
@@ -1411,13 +1459,19 @@ export function POSView({ cabinet, username }: POSViewProps) {
                       </div>
                     </div>
                     
-                    {/* Icon */}
-                    <div className={`rounded-full p-2 sm:p-2.5 flex-shrink-0 shadow-md ${
+                    {/* Icon or Thumbnail */}
+                    <div className={`rounded-lg shadow-sm flex items-center justify-center overflow-hidden flex-shrink-0 h-16 w-16 sm:h-20 sm:w-20 transition-all ${
+                      !product.imageUrl ? 'p-2 sm:p-2.5' : 'p-0'
+                    } ${
                       product.stock > 0 
-                        ? 'bg-[oklch(0.75_0.25_280)]' 
+                        ? (product.imageUrl ? 'border border-white/20 bg-black/10' : 'bg-[oklch(0.75_0.25_280)]') 
                         : 'bg-gray-300'
                     }`}>
-                      <Package size={18} className={product.stock > 0 ? 'text-[oklch(0.25_0.05_280)]' : 'text-gray-500'} />
+                      {product.imageUrl ? (
+                        <img src={product.imageUrl} alt="" className="h-full w-full object-cover bg-white" loading="lazy" />
+                      ) : (
+                        <Package size={20} className={product.stock > 0 ? 'text-[oklch(0.25_0.05_280)]' : 'text-gray-500'} />
+                      )}
                     </div>
                   </div>
 

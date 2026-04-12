@@ -6,17 +6,21 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ArrowUp, ArrowDown, Plus, Search, Package, Clock, Trash2, Edit2, Filter, X, Calendar, DollarSign, ArrowUpDown, Zap, Check, AlertTriangle, XCircle, Printer, Download, RefreshCw, Globe, FileText, BarChart3, Folder } from "lucide-react"
+import { ArrowUp, ArrowDown, Plus, Search, Package, Clock, Trash2, Edit2, Filter, X, Calendar, ArrowUpDown, Zap, Check, AlertTriangle, XCircle, Printer, Download, RefreshCw, Globe, FileText, BarChart3, Folder, ImagePlus } from "lucide-react"
+import { PesoIcon } from "@/components/ui/peso-icon"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useProducts, type Product, type ProductLocation } from "@/contexts/products-context"
 import { useToast } from "@/contexts/toast-context"
 import { useActivity } from "@/contexts/activity-context"
 import { validateProductForm } from "@/utils/validation"
+import { parseLocalDayEnd, parseLocalDayStart } from "@/lib/date-range"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { BatchPriceDisplay } from "@/components/shared/batch-price-display"
 import { getCurrentPriceFromBatches, clearPriceCacheOnBatchUpdate } from "@/lib/batch-price"
+import { buildInventoryExcelBuffer } from "@/lib/inventory-excel-export"
 import { Spinner } from "@/components/ui/spinner"
 import { EmptyState } from "@/components/ui/empty-state"
+import { compressImageFileToDataUrl } from "@/lib/product-image"
 
 interface InventoryViewProps {
   isAdmin: boolean
@@ -25,6 +29,36 @@ interface InventoryViewProps {
 }
 
 type InventoryItem = Product;
+
+/** Display dates as MM/DD/YY for inventory tables. */
+function formatInventoryMMDDYY(value: string | undefined | null): string {
+  if (value == null || value === "") return "—"
+  const s = String(value).trim()
+  const d = new Date(s)
+  if (!Number.isNaN(d.getTime())) {
+    const mm = String(d.getMonth() + 1).padStart(2, "0")
+    const dd = String(d.getDate()).padStart(2, "0")
+    const yy = String(d.getFullYear()).slice(-2)
+    return `${mm}/${dd}/${yy}`
+  }
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s)
+  if (iso) {
+    const y = Number(iso[1])
+    const m = Number(iso[2])
+    const day = Number(iso[3])
+    const mm = String(m).padStart(2, "0")
+    const dd = String(day).padStart(2, "0")
+    const yy = String(y).slice(-2)
+    return `${mm}/${dd}/${yy}`
+  }
+  return s.length > 12 ? `${s.slice(0, 12)}…` : s
+}
+
+const INV_TH =
+  "py-3.5 px-4 text-xs font-bold uppercase tracking-wider text-muted-foreground whitespace-normal leading-tight"
+
+const ADD_PRODUCT_FIELD_CLASS =
+  "h-10 w-full rounded-md border-2 border-blue-200/80 bg-background shadow-sm transition-colors focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:outline-none"
 
 const categories = [
   "APEX", "Bag", "Banpresto", "Blokees", "Boardgame", "Book", "Cardgame", "Cards",
@@ -123,14 +157,29 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
         .toArray();
       const filteredBatches = allBatches.filter(batch => !deletedBatchIds.has(String(batch.id)));
       
-      // Proper FIFO sorting with 0-stock batch handling:
-      // 1. Current batch is the oldest 'on-shelf' batch with stock > 0
-      // 2. Batches with stock > 0 sorted by status and date
-      // 3. Batches with stock = 0 moved to bottom
+      // Proper FIFO sorting synchronization:
+      // 1. Rigorously identify the TRUE 'Current Batch' that the pricing engine uses (Oldest on-shelf with stock, or oldest in-storage with stock).
+      // 2. Force the Current Batch to index 0 so it correctly receives the "Current Batch" UI tag.
+      // 3. Sort remaining active batches newest-first for readable history.
+      // 4. Sort depleted batches newest-first at the bottom.
+      const activeBatchesForMath = filteredBatches.filter(b => b.quantity > 0);
+      let trueCurrentBatchId = null;
+      if (activeBatchesForMath.length > 0) {
+        const onShelf = activeBatchesForMath.filter(b => b.status === 'on-shelf');
+        if (onShelf.length > 0) {
+            trueCurrentBatchId = onShelf.sort((a,b) => new Date(a.addedDate || 0).getTime() - new Date(b.addedDate || 0).getTime())[0].id;
+        } else {
+            trueCurrentBatchId = activeBatchesForMath.sort((a,b) => new Date(a.addedDate || 0).getTime() - new Date(b.addedDate || 0).getTime())[0].id;
+        }
+      }
+
       const sortedBatches = filteredBatches.sort((a, b) => {
-        // Find the oldest on-shelf batch - this should be the current batch
         const aDate = new Date(a.addedDate || 0).getTime();
         const bDate = new Date(b.addedDate || 0).getTime();
+        
+        // Priority 0: True Current Batch is absolutely paramount
+        if (a.id === trueCurrentBatchId && b.id !== trueCurrentBatchId) return -1;
+        if (b.id === trueCurrentBatchId && a.id !== trueCurrentBatchId) return 1;
         
         // Priority 1: Separate by stock availability
         const aHasStock = a.quantity > 0;
@@ -143,20 +192,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
           return 1; // B has stock, comes first
         }
         
-        // Priority 2: If both have stock or both don't, sort by status
-        if (a.status === 'on-shelf' && b.status === 'on-shelf') {
-          return aDate - bDate; // Older on-shelf batch comes first (current)
-        }
-        
-        // If only one is on-shelf, it comes first
-        if (a.status === 'on-shelf' && b.status !== 'on-shelf') {
-          return -1;
-        }
-        if (b.status === 'on-shelf' && a.status !== 'on-shelf') {
-          return 1;
-        }
-        
-        // For non-on-shelf batches, sort by addedDate (newest first for display)
+        // Priority 2: Standard descending view for history layout readability
         return bDate - aDate;
       });
       
@@ -211,6 +247,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
   const [newStock, setNewStock] = useState({
     quantity: 1,
     costPerUnit: 0,
+    sellingPrice: 0,
     notes: "",
     addedDate: new Date().toISOString()
   })
@@ -225,62 +262,58 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
   const [isDeletingBatch, setIsDeletingBatch] = useState(false)
   const [isUpdatingStatus, setIsUpdatingStatus] = useState<string | null>(null)
   const [isLoadingStock, setIsLoadingStock] = useState(false)
+  const [isSavingProduct, setIsSavingProduct] = useState(false)
+  const [isUploadingImage, setIsUploadingImage] = useState(false)
   // Advanced filter states
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState("all")
   const [stockFilter, setStockFilter] = useState("all")
   const [priceRangeFilter, setPriceRangeFilter] = useState({ min: "", max: "" })
-  const [dateFilter, setDateFilter] = useState({ 
-    year: "all", 
-    month: "all", 
-    day: "all",
-    startDate: "", 
-    endDate: "" 
+  const [dateFilter, setDateFilter] = useState({
+    startDate: "",
+    endDate: "",
   })
-  const [tempDateFilter, setTempDateFilter] = useState({ 
-    startDate: "", 
-    endDate: "" 
+  const [tempDateFilter, setTempDateFilter] = useState({
+    startDate: "",
+    endDate: "",
   })
-    const [sortBy, setSortBy] = useState("name")
+  const [sortBy, setSortBy] = useState("name")
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc")
-  const [timePeriod, setTimePeriod] = useState("all")
-  
+
+  useEffect(() => {
+    if (!showAdvancedFilters) return
+    setTempDateFilter({ startDate: dateFilter.startDate, endDate: dateFilter.endDate })
+  }, [showAdvancedFilters])
+
   // Handle date filter confirmation with validation
   const applyDateFilter = () => {
-    // Validate date inputs
     if (tempDateFilter.startDate && tempDateFilter.endDate) {
-      const start = new Date(tempDateFilter.startDate);
-      const end = new Date(tempDateFilter.endDate);
-      
-      if (start > end) {
-        addToast("Start date cannot be after end date", "error");
-        return;
+      const start = parseLocalDayStart(tempDateFilter.startDate)
+      const end = parseLocalDayEnd(tempDateFilter.endDate)
+      if (start.getTime() > end.getTime()) {
+        addToast("From date cannot be after To date", "error")
+        return
       }
-      
-      // Check if date range is too large (more than 1 year)
-      const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-      if (daysDiff > 365) {
-        addToast("Date range cannot exceed 1 year", "error");
-        return;
+      const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
+      if (daysDiff > 366) {
+        addToast("Date range cannot exceed one year", "error")
+        return
       }
     }
-    
-    setDateFilter(prev => ({ 
-      ...prev, 
+
+    setDateFilter({
       startDate: tempDateFilter.startDate,
       endDate: tempDateFilter.endDate,
-      year: "all",
-      month: "all", 
-      day: "all"
-    }))
-    
+    })
+
     if (tempDateFilter.startDate || tempDateFilter.endDate) {
-      const message = tempDateFilter.startDate && tempDateFilter.endDate 
-        ? `Date filter applied: ${tempDateFilter.startDate} to ${tempDateFilter.endDate}`
-        : tempDateFilter.startDate 
-        ? `Date filter applied: From ${tempDateFilter.startDate}`
-        : `Date filter applied: Until ${tempDateFilter.endDate}`;
-      addToast(message, "success");
+      const message =
+        tempDateFilter.startDate && tempDateFilter.endDate
+          ? `Showing restocks from ${tempDateFilter.startDate} to ${tempDateFilter.endDate}`
+          : tempDateFilter.startDate
+            ? `Showing restocks on or after ${tempDateFilter.startDate}`
+            : `Showing restocks on or before ${tempDateFilter.endDate}`
+      addToast(message, "success")
     }
   }
 
@@ -289,10 +322,9 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
   
   const handleClearFilters = () => {
     // Check if any filters are actually applied
-    const hasFilters = selectedCategory !== "all" || 
-                      stockFilter !== "all" || 
-                      (dateFilter.startDate || dateFilter.endDate) || 
-                      dateFilter.year !== "all" || 
+    const hasFilters = selectedCategory !== "all" ||
+                      stockFilter !== "all" ||
+                      (dateFilter.startDate || dateFilter.endDate) ||
                       searchQuery !== "";
     
     if (!hasFilters) {
@@ -303,16 +335,13 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
     setClearConfirm(true);
   }
 
-  const confirmClearFilters = () => {
+  const confirmClearFilters = (showToast = true) => {
     setSelectedCategory("all")
     setStockFilter("all")
     setPriceRangeFilter({ min: "", max: "" })
-    setDateFilter({ 
-      year: "all", 
-      month: "all", 
-      day: "all",
-      startDate: "", 
-      endDate: "" 
+    setDateFilter({
+      startDate: "",
+      endDate: "",
     })
     setTempDateFilter({ 
       startDate: "", 
@@ -322,7 +351,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
     setSortDirection("asc")
     setSearchQuery("")
     setClearConfirm(false)
-    addToast("All filters cleared", "success")
+    if (showToast) addToast("All filters cleared", "success")
   }
 
   // Track if filters have been applied and results are empty
@@ -333,10 +362,19 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
     sku: "",
     quantity: 1,
     price: 0,
+    costPrice: 0,
     location: "physical" as const,
     category: "",
     stock: 0,
     description: "",
+    purchaseDate: "",
+    purchasePlace: "",
+    supplierName: "",
+    dimLengthCm: "" as string | number,
+    dimWidthCm: "" as string | number,
+    dimHeightCm: "" as string | number,
+    weightKg: "" as string | number,
+    imageUrl: "" as string,
   })
   const [initialStock, setInitialStock] = useState({
     quantity: 1,
@@ -344,6 +382,21 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
   })
   const [editingProduct, setEditingProduct] = useState<InventoryItem | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string | null }>({ open: false, id: null })
+
+  // Force reset loading states whenever a dialog is explicitly opened.
+  useEffect(() => {
+    if (showAddForm) {
+      setIsSavingProduct(false);
+      setIsUploadingImage(false);
+    }
+  }, [showAddForm]);
+
+  useEffect(() => {
+    if (editingId !== null) {
+      setIsSavingProduct(false);
+      setIsUploadingImage(false);
+    }
+  }, [editingId]);
 
   // Suppress hydration mismatch warnings caused by browser extensions
   useEffect(() => {
@@ -377,38 +430,88 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
   }, []);
 
   // Print inventory list
-  const handlePrint = () => {
+  const handlePrint = async () => {
+    addToast("Preparing print layout...", "info");
+    
+    // Open window immediately to bypass popup blockers
+    const printWindow = window.open('', '', 'width=1000,height=600');
+    if (!printWindow) {
+      addToast("Browser blocked the print popup. Please allow popups.", "error");
+      return;
+    }
+    printWindow.document.write("<html><body><h2 style='font-family: sans-serif; text-align: center; margin-top: 50px;'>Gathering latest prices for print... Please wait.</h2></body></html>");
+
+    const printableRows = [];
+    let totalValue = 0;
+    
+    for (const item of filteredInventory) {
+      const batchStats = await getCurrentPriceFromBatches(String(item.id), cabinet);
+      const finalPrice = batchStats.price || Number(item.price) || 0;
+      const finalCost = batchStats.unitCost || Number(item.costPrice) || 0;
+      const stock = Number(item.stock) || 0;
+      const capital = stock * finalCost;
+      totalValue += capital;
+      
+      const dims = (item.dimLengthCm != null || item.dimWidthCm != null || item.dimHeightCm != null) 
+        ? `${item.dimLengthCm?item.dimLengthCm+"L":""} ${item.dimWidthCm?"× "+item.dimWidthCm+"W":""} ${item.dimHeightCm?"× "+item.dimHeightCm+"H":""}`.trim().replace(/^×\s*/, '')
+        : "—";
+
+      printableRows.push(`
+        <tr>
+          <td>${item.sku || "N/A"}</td>
+          <td>${item.name}</td>
+          <td>${item.description || "-"}</td>
+          <td>${item.category}</td>
+          <td class="${stock === 0 ? 'zero-stock' : stock < 20 ? 'low-stock' : ''}">${stock}</td>
+          <td class="amount">₱${finalCost.toLocaleString("en-US", { minimumFractionDigits: 2 })}</td>
+          <td class="amount">₱${finalPrice.toLocaleString("en-US", { minimumFractionDigits: 2 })}</td>
+          <td class="amount">₱${capital.toLocaleString("en-US", { minimumFractionDigits: 2 })}</td>
+          <td>${dims}</td>
+          <td>${item.weightKg != null ? item.weightKg + " kg" : "-"}</td>
+          <td>${item.purchasePlace || "-"}</td>
+          <td>${item.supplierName || "-"}</td>
+          <td>${item.createdBy || "-"}</td>
+          <td>${item.lastUpdatedBy || "-"}</td>
+          <td>${item.dateCreated ? new Date(item.dateCreated).toLocaleDateString() : "-"}</td>
+          <td>${item.lastModifiedDate ? new Date(item.lastModifiedDate).toLocaleDateString() : "-"}</td>
+          <td>${item.lastRestockDate ? new Date(item.lastRestockDate).toLocaleDateString() : "-"}</td>
+        </tr>
+      `);
+    }
+
     const printContent = `
       <html>
         <head>
           <title>Inventory List - ${new Date().toLocaleDateString()}</title>
           <style>
-            body { font-family: Arial, sans-serif; margin: 20px; }
-            h1 { color: #333; text-align: center; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background-color: #f5f5f5; font-weight: bold; }
-            tr:nth-child(even) { background-color: #f9f9f9; }
+            body { font-family: Arial, sans-serif; margin: 20px; color: #333; }
+            .logo-container { display: flex; align-items: center; justify-content: center; gap: 15px; margin-bottom: 20px; }
+            .logo-container img { max-height: 50px; }
+            h1 { color: #1e293b; margin: 0; font-size: 1.5rem; text-transform: uppercase; }
+            .meta { text-align: center; margin-bottom: 30px; font-size: 0.9em; color: #64748b; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.75rem; }
+            th, td { border: 1px solid #e2e8f0; padding: 6px 8px; text-align: left; word-break: break-word; }
+            th { background-color: #f1f5f9; font-weight: bold; color: #334155; }
+            tr:nth-child(even) { background-color: #f8fafc; }
             .low-stock { color: #dc2626; font-weight: bold; }
             .zero-stock { color: #dc2626; font-weight: bold; background-color: #fef2f2; }
-            .header-info { margin-bottom: 20px; color: #666; }
+            .amount { text-align: right; }
             @media print {
+              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              @page { size: landscape; margin: 10mm; }
               .no-print { display: none; }
             }
           </style>
         </head>
         <body>
-          <h1>Inventory List</h1>
-          <div class="header-info">
-            <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
-            <p><strong>Cabinet:</strong> ${cabinet}</p>
-            <p><strong>Total Products:</strong> ${filteredInventory.length}</p>
-            <p><strong>Filters Applied:</strong> ${[
-              selectedCategory !== "all" ? `Category: ${selectedCategory}` : null,
-              stockFilter !== "all" ? `Stock: ${stockFilter}` : null,
-              null, // Price filter disabled for batch-based pricing
-              searchQuery ? `Search: ${searchQuery}` : null
-            ].filter(Boolean).join(', ') || 'None'}</p>
+          <div class="logo-container">
+            <img src="/Wheezard logo.png" onerror="this.style.display='none'" alt="LOGO" />
+            <h1>INVENTORY LIST - THE WHEEZARD PH</h1>
+          </div>
+          <div class="meta">
+            Cabinet: <strong>${cabinet}</strong> | 
+            Total Products: <strong>${filteredInventory.length}</strong> | 
+            Total Capital: <strong>₱${totalValue.toLocaleString("en-US", { minimumFractionDigits: 2 })}</strong>
           </div>
           <table>
             <thead>
@@ -418,93 +521,51 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                 <th>Description</th>
                 <th>Category</th>
                 <th>Stock</th>
+                <th class="amount">Unit Cost</th>
+                <th class="amount">Selling Price</th>
+                <th class="amount">Capital</th>
+                <th>Dimensions</th>
+                <th>Weight (kg)</th>
+                <th>Place of Purchase</th>
+                <th>Supplier</th>
+                <th>Created By</th>
+                <th>Updated By</th>
+                <th>Date Added</th>
+                <th>Last Modified</th>
                 <th>Last Restock</th>
               </tr>
             </thead>
             <tbody>
-              ${filteredInventory.map(item => `
-                <tr>
-                  <td>${item.sku}</td>
-                  <td>${item.name}</td>
-                  <td>${item.description || '-'}</td>
-                  <td>${item.category}</td>
-                  <td class="${item.stock === 0 ? 'zero-stock' : item.stock < 20 ? 'low-stock' : ''}">${item.stock}</td>
-                  <td>${item.lastRestockDate || 'No restocks'}</td>
-                </tr>
-              `).join('')}
+              ${printableRows.join('')}
             </tbody>
           </table>
         </body>
       </html>
     `;
     
-    const printWindow = window.open('', '', 'width=800,height=600');
-    if (printWindow) {
-      printWindow.document.write(printContent);
-      printWindow.document.close();
-      
-      // Show message before triggering print dialog
-      addToast("Opening print dialog...", "info");
-      
-      // Trigger print dialog immediately
+    // Replace the loading screen with actual content
+    printWindow.document.open();
+    printWindow.document.write(printContent);
+    printWindow.document.close();
+    
+    // Allow images to load before printing
+    setTimeout(() => {
       printWindow.print();
       
-      // Handle print completion or cancellation
       let printHandled = false;
-      
       printWindow.onafterprint = () => {
         printHandled = true;
         printWindow.close();
-        addToast("Inventory report printed successfully!", "success");
+        addToast("Print dialog closed", "info");
       };
       
-      // Close window if user cancels or closes without printing
       setTimeout(() => {
         if (!printWindow.closed && !printHandled) {
           printWindow.close();
           addToast("Print cancelled", "info");
         }
-      }, 2000);
-      
-      // Fallback cleanup
-      setTimeout(() => {
-        if (!printWindow.closed) {
-          printWindow.close();
-        }
-      }, 10000);
-    }
-  };
-
-  // Export to Excel
-  const handleExportExcel = () => {
-    const headers = ['SKU', 'Product Name', 'Description', 'Category', 'Stock', 'Last Restock'];
-    const data = filteredInventory.map(item => [
-      item.sku,
-      item.name,
-      item.description || '',
-      item.category,
-      item.stock.toString(),
-      item.lastRestockDate || 'No restocks'
-    ]);
-
-    // Create CSV content
-    const csvContent = [
-      headers.join(','),
-      ...data.map(row => row.map(cell => `"${cell}"`).join(','))
-    ].join('\n');
-
-    // Create blob and download
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `inventory_${cabinet}_${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    addToast(`Exported ${filteredInventory.length} items to Excel`, "success");
+      }, 5000);
+    }, 500);
   };
 
   const filteredInventory = products.filter(item => {
@@ -537,57 +598,23 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
       }
     }
     
-    // Date filter
+    // Date filter: last restock (or last updated) within optional From / To (inclusive, local calendar days)
     let matchesDate = true;
     if (dateFilter.startDate || dateFilter.endDate) {
-      // Use lastRestockDate if available, otherwise lastUpdated
       const dateSource = item.lastRestockDate || item.lastUpdated;
       const itemDate = new Date(dateSource);
-      const startDate = dateFilter.startDate ? new Date(dateFilter.startDate) : null;
-      const endDate = dateFilter.endDate ? new Date(dateFilter.endDate) : null;
-      
-      // Normalize dates to midnight for comparison
-      if (startDate) startDate.setHours(0, 0, 0, 0);
-      if (endDate) endDate.setHours(23, 59, 59, 999);
-      itemDate.setHours(12, 0, 0, 0); // Set to noon to avoid timezone issues
-      
-      // Debug logging for today filter
-      if (dateFilter.startDate && dateFilter.endDate && dateFilter.startDate === dateFilter.endDate) {
-        console.log(`Today filter check for ${item.name}:`, {
-          dateSource,
-          itemDate: itemDate.toISOString(),
-          startDate: startDate?.toISOString(),
-          endDate: endDate?.toISOString(),
-          matchesDate: startDate && endDate ? itemDate >= startDate && itemDate <= endDate : false
-        });
+      if (Number.isNaN(itemDate.getTime())) {
+        matchesDate = false;
+      } else if (dateFilter.startDate && dateFilter.endDate) {
+        const from = parseLocalDayStart(dateFilter.startDate);
+        const to = parseLocalDayEnd(dateFilter.endDate);
+        matchesDate = itemDate >= from && itemDate <= to;
+      } else if (dateFilter.startDate) {
+        matchesDate = itemDate >= parseLocalDayStart(dateFilter.startDate);
+      } else if (dateFilter.endDate) {
+        matchesDate = itemDate <= parseLocalDayEnd(dateFilter.endDate);
       }
-      
-      if (startDate && endDate) {
-        matchesDate = itemDate >= startDate && itemDate <= endDate;
-      } else if (startDate) {
-        matchesDate = itemDate >= startDate;
-      } else if (endDate) {
-        // When only endDate is set (like "Today" button), show items up to that date
-        matchesDate = itemDate <= endDate;
-      }
-    } else if (dateFilter.year !== "all") {
-        // Use lastRestockDate if available, otherwise lastUpdated
-        const dateSource = item.lastRestockDate || item.lastUpdated;
-        const itemDate = new Date(dateSource);
-        const itemYear = itemDate.getFullYear();
-        const itemMonth = itemDate.getMonth() + 1; // JS months are 0-indexed
-        const itemDay = itemDate.getDate();
-        
-        matchesDate = itemYear === parseInt(dateFilter.year);
-        
-        if (matchesDate && dateFilter.month !== "all") {
-          matchesDate = itemMonth === parseInt(dateFilter.month);
-        }
-        
-        if (matchesDate && dateFilter.day !== "all") {
-          matchesDate = itemDay === parseInt(dateFilter.day);
-        }
-      }
+    }
       
       return matchesSearch && matchesCategory && matchesStock && matchesPrice && matchesDate;
     })
@@ -608,11 +635,104 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
       return sortDirection === "asc" ? comparison : -comparison;
     });
 
+  /** Generates a formatted Excel document for the current filtered view */
+  const handleExportExcel = async () => {
+    // Generate active filter descriptions
+    const filterParts: string[] = []
+    if (searchQuery.trim()) filterParts.push(`search "${searchQuery.trim()}"`)
+    if (selectedCategory !== "all") filterParts.push(`category ${selectedCategory}`)
+    if (stockFilter !== "all") filterParts.push(`stock ${stockFilter}`)
+    if (priceRangeFilter.min || priceRangeFilter.max) {
+      filterParts.push(`price ${priceRangeFilter.min || "…"}–${priceRangeFilter.max || "…"}`)
+    }
+    if (dateFilter.startDate || dateFilter.endDate) {
+      filterParts.push(`restock ${dateFilter.startDate || "…"}→${dateFilter.endDate || "…"}`)
+    }
+
+    try {
+      const detailRows = [];
+      let totalStockUnits = 0;
+      let totalInventoryCapital = 0;
+
+      // Asynchronously fetch current tracking data for each filtered row
+      for (const item of filteredInventory) {
+        const batchStats = await getCurrentPriceFromBatches(String(item.id), cabinet);
+        const finalPrice = batchStats.price || Number(item.price) || 0;
+        const finalCost = batchStats.unitCost || Number(item.costPrice) || 0;
+        const stock = Number(item.stock) || 0;
+        const capital = stock * finalCost;
+        
+        detailRows.push({
+          sku: item.sku || "N/A",
+          name: item.name,
+          description: item.description || "—",
+          category: item.category || "Uncategorized",
+          stock,
+          unitCost: finalCost,
+          sellingPrice: finalPrice,
+          capital,
+          dimensions: (item.dimLengthCm != null || item.dimWidthCm != null || item.dimHeightCm != null) 
+            ? `${item.dimLengthCm?item.dimLengthCm+"L":""} ${item.dimWidthCm?"× "+item.dimWidthCm+"W":""} ${item.dimHeightCm?"× "+item.dimHeightCm+"H":""}`.trim().replace(/^×\s*/, '')
+            : "—",
+          weight: item.weightKg != null ? `${item.weightKg}` : "—",
+          purchasePlace: item.purchasePlace || "—",
+          supplierName: item.supplierName || "—",
+          createdBy: item.createdBy || "—",
+          lastUpdatedBy: item.lastUpdatedBy || "—",
+          lastRestock: item.lastRestockDate ? new Date(item.lastRestockDate).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "No restocks",
+          dateCreated: item.dateCreated ? new Date(item.dateCreated).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "Unknown",
+          lastModified: item.lastModifiedDate ? new Date(item.lastModifiedDate).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "Unknown",
+        });
+
+        totalStockUnits += stock;
+        totalInventoryCapital += capital;
+      }
+
+      let logoBuffer: ArrayBuffer | undefined;
+      try {
+        const res = await fetch('/Wheezard logo.png');
+        if (res.ok) {
+          logoBuffer = await res.arrayBuffer();
+        }
+      } catch (err) {
+        console.warn('Could not fetch logo for excel export', err);
+      }
+
+      const bytes = await buildInventoryExcelBuffer({
+        cabinetLabel: cabinet === "all" ? "All Cabinets" : String(cabinet),
+        generatedAt: new Date().toLocaleString("en-US", { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" }),
+        filterLine: filterParts.length ? filterParts.join(" · ") : "None (All products in view rules)",
+        totalItems: filteredInventory.length,
+        totalStockUnits,
+        totalInventoryCapital,
+        detailRows,
+        logoBuffer
+      });
+
+      const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const safeCab = String(cabinet || "all").replace(/[^\w.-]+/g, "_");
+      const filename = `inventory_${safeCab}_${new Date().toISOString().split("T")[0]}.xlsx`;
+
+      const link = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+      link.setAttribute("href", url);
+      link.setAttribute("download", filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      addToast("Inventory exported successfully to modern Excel sheet!", "success");
+    } catch (err) {
+      console.error("Export error:", err);
+      addToast("Failed to compile Excel file.", "error");
+    }
+  }
+
   // Check if filters are applied and show toast if results are empty
-  const hasActiveFilters = selectedCategory !== "all" || 
-                          stockFilter !== "all" || 
-                          (dateFilter.startDate || dateFilter.endDate) || 
-                          dateFilter.year !== "all" || 
+  const hasActiveFilters = selectedCategory !== "all" ||
+                          stockFilter !== "all" ||
+                          (dateFilter.startDate || dateFilter.endDate) ||
                           searchQuery !== "";
   
   React.useEffect(() => {
@@ -632,11 +752,19 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
     }
   }
 
-  // Open stock dialog and fetch fresh data
   const openStockDialog = async (product: Product) => {
     try {
       setIsLoadingStock(true)
       setSelectedProductForStock(product)
+      
+      // Initialize stock form with current product base prices
+      setNewStock({
+        quantity: 1,
+        costPerUnit: product.costPrice || 0,
+        sellingPrice: product.price || 0,
+        notes: "",
+        addedDate: new Date().toISOString()
+      });
       
       // Check if offline
       const isOnline = navigator.onLine;
@@ -965,6 +1093,11 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
       return;
     }
 
+    if (Number(newStock.sellingPrice) < Number(newStock.costPerUnit)) {
+      addToast("Selling price cannot be lower than the acquired unit cost.", "error");
+      return;
+    }
+
     // Check if we're offline
     const isOnline = navigator.onLine;
     
@@ -1015,6 +1148,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
           productId: String(selectedProductForStock.id),
           quantity: newStock.quantity,
           costPerUnit: newStock.costPerUnit,
+          sellingPrice: newStock.sellingPrice,
           cabinet: selectedProductForStock.cabinet,
           addedDate: newStock.addedDate || new Date().toISOString(),
           notes: newStock.notes || 'Offline stock addition',
@@ -1030,6 +1164,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
           productId: selectedProductForStock.id,
           quantity: newStock.quantity,
           costPerUnit: newStock.costPerUnit,
+          sellingPrice: newStock.sellingPrice,
           cabinet: selectedProductForStock.cabinet
         }, selectedProductForStock.cabinet);
         
@@ -1043,7 +1178,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
         });
         
         // Reset form
-        setNewStock({ quantity: 1, costPerUnit: 0, notes: "", addedDate: new Date().toISOString() });
+        setNewStock({ quantity: 1, costPerUnit: 0, sellingPrice: 0, notes: "", addedDate: new Date().toISOString() });
         
         // Update selected product state
         setSelectedProductForStock(updatedProduct);
@@ -1079,6 +1214,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
           productId: selectedProductForStock.id,
           quantity: newStock.quantity,
           costPerUnit: newStock.costPerUnit || null,
+          sellingPrice: newStock.sellingPrice || null,
           cabinet: selectedProductForStock.cabinet,
         }),
       })
@@ -1108,6 +1244,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
           productId: String(selectedProductForStock.id),
           quantity: newStock.quantity,
           costPerUnit: newStock.costPerUnit,
+          sellingPrice: newStock.sellingPrice,
           cabinet: selectedProductForStock.cabinet,
           addedDate: newStock.addedDate || new Date().toISOString(),
           notes: newStock.notes || 'Stock addition',
@@ -1133,7 +1270,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
       })
       
       // Reset form and refresh
-      setNewStock({ quantity: 1, costPerUnit: 0, notes: "", addedDate: new Date().toISOString() })
+      setNewStock({ quantity: 1, costPerUnit: 0, sellingPrice: 0, notes: "", addedDate: new Date().toISOString() })
       
       // Update selected product state with new stock (single increment)
       setSelectedProductForStock({
@@ -1215,9 +1352,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
         setDeleteConfirm({ open: false, id: null })
         setConfirmProductName('')
         
-        // Clear any active filters that might be hiding the product list
-        handleClearFilters()
-        
+
         // Force refresh to ensure UI updates
         await refetch()
       } catch (error) {
@@ -1231,17 +1366,54 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
     console.log('Submitting product:', newProduct);
     console.log('Initial stock:', initialStock);
     
-    // Check if offline first
     const isOnline = navigator.onLine;
     console.log('Online status:', isOnline);
+
+    const skuTrim = String(newProduct.sku || "").trim()
+    if (!skuTrim) {
+      addToast("SKU is required.", "error")
+      return
+    }
+    if (!String(newProduct.name || "").trim()) {
+      addToast("Product name is required.", "error")
+      return
+    }
+    if (!newProduct.purchaseDate) {
+      addToast("Date of purchase is required.", "error")
+      return
+    }
+    if (!String(newProduct.purchasePlace || "").trim()) {
+      addToast("Place of purchase is required.", "error")
+      return
+    }
+    const acquiredNum = Number(newProduct.costPrice)
+    if (!Number.isFinite(acquiredNum) || acquiredNum <= 0) {
+      addToast("Acquired price is required (enter an amount greater than zero).", "error")
+      return
+    }
+    if (Number(newProduct.price) < acquiredNum) {
+      addToast("Selling price cannot be lower than the acquired price.", "error")
+      return
+    }
+    if (!String(newProduct.category || "").trim()) {
+      addToast("Category is required.", "error")
+      return
+    }
     
     // Validate form - now require price and quantity since we're creating initial batch
-    const validation = validateProductForm({
-      name: newProduct.name,
-      price: newProduct.price,
-      quantity: initialStock.quantity,
-      category: newProduct.category
-    }, false, true) // Don't require quantity for product but require price
+    const validation = validateProductForm(
+      {
+        name: newProduct.name,
+        price: newProduct.price,
+        quantity: initialStock.quantity,
+        category: newProduct.category,
+        costPrice: newProduct.costPrice,
+        description: newProduct.description,
+        imageUrl: newProduct.imageUrl || undefined,
+      },
+      true,
+      true
+    )
     
     console.log('Validation result:', validation);
     
@@ -1250,19 +1422,36 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
       return
     }
 
+    setIsSavingProduct(true);
+
     try {
       // First create the product
+      const numOrU = (v: string | number) => {
+        if (v === "" || v === undefined || v === null) return undefined
+        const n = typeof v === "number" ? v : parseFloat(String(v))
+        return Number.isFinite(n) ? n : undefined
+      }
       const productData = {
         name: newProduct.name,
-        sku: newProduct.sku,
-        quantity: initialStock.quantity, // Set initial quantity
-        price: newProduct.price, // Set selling price
+        sku: skuTrim.toUpperCase(),
+        quantity: initialStock.quantity,
+        price: newProduct.price,
         category: newProduct.category,
-        stock: initialStock.quantity, // Set initial stock
+        stock: initialStock.quantity,
         location: newProduct.location,
         lastUpdated: new Date().toLocaleDateString('en-CA'),
         cabinet: cabinet,
         description: newProduct.description,
+        costPrice: acquiredNum,
+        purchaseDate: newProduct.purchaseDate || undefined,
+        purchasePlace: newProduct.purchasePlace.trim(),
+        supplierName: newProduct.supplierName || undefined,
+        dimLengthCm: numOrU(newProduct.dimLengthCm),
+        dimWidthCm: numOrU(newProduct.dimWidthCm),
+        dimHeightCm: numOrU(newProduct.dimHeightCm),
+        weightKg: numOrU(newProduct.weightKg),
+        imageUrl: newProduct.imageUrl || undefined,
+        createdBy: (username && username.trim()) || "Unknown",
       };
       
       console.log('Product data being sent:', productData);
@@ -1291,6 +1480,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
       
       // At this point, TypeScript knows createdProduct is a Product (not an error object)
       const product = createdProduct as Product
+      const initialBatchUnitCost = acquiredNum
 
       // Only create stock batch if product was created successfully
       try {
@@ -1304,7 +1494,8 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
             await db.stockBatches.add({
               productId: String(product.id),
               quantity: initialStock.quantity,
-              costPerUnit: newProduct.price,
+              costPerUnit: initialBatchUnitCost,
+              sellingPrice: productData.price,
               cabinet: cabinet,
               addedDate: new Date().toISOString(),
               notes: 'Initial stock',
@@ -1325,8 +1516,10 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
             body: JSON.stringify({
               productId: product.id,
               quantity: initialStock.quantity,
-              costPerUnit: newProduct.price, // Use selling price as initial cost
+              costPerUnit: initialBatchUnitCost,
+              sellingPrice: productData.price,
               cabinet: cabinet,
+              isInitialBatch: true,
             }),
           });
 
@@ -1342,7 +1535,8 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
             await db.stockBatches.add({
               productId: String(product.id),
               quantity: initialStock.quantity,
-              costPerUnit: newProduct.price,
+              costPerUnit: initialBatchUnitCost,
+              sellingPrice: productData.price,
               cabinet: cabinet,
               addedDate: new Date().toISOString(),
               notes: 'Initial stock',
@@ -1370,7 +1564,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
       addToast(`Product added successfully! ${initialStock.quantity} units added to stock.`, "success")
       
       // Clear any active filters that might be hiding the new product
-      handleClearFilters()
+      confirmClearFilters(false)
       
       // Refresh products to ensure stock calculations are up to date
       await refetch()
@@ -1381,10 +1575,19 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
         sku: "",
         quantity: 1,
         price: 0,
+        costPrice: 0,
         location: "physical" as const,
         category: "",
         stock: 0,
         description: "",
+        purchaseDate: "",
+        purchasePlace: "",
+        supplierName: "",
+        dimLengthCm: "",
+        dimWidthCm: "",
+        dimHeightCm: "",
+        weightKg: "",
+        imageUrl: "",
       })
       setInitialStock({
         quantity: 1,
@@ -1395,6 +1598,8 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
       console.error('Add product error:', error)
       const errorMessage = error?.message || 'Failed to add product'
       addToast(errorMessage, "error")
+    } finally {
+      setIsSavingProduct(false);
     }
   }
 
@@ -1405,16 +1610,36 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
 
   const handleSaveEdit = async () => {
     if (editingProduct) {
+      if (Number(editingProduct.price) < Number(editingProduct.costPrice || 0)) {
+        addToast("Selling price cannot be lower than the acquired price.", "error");
+        return;
+      }
+      setIsSavingProduct(true);
       try {
-        const result = await updateProduct(editingProduct.id, {
-          name: editingProduct.name,
-          sku: editingProduct.sku,
-          quantity: editingProduct.stock, // Keep quantity synchronized with stock
-          price: editingProduct.price,
-          category: editingProduct.category,
-          stock: editingProduct.stock, // Update stock with new value
-          description: editingProduct.description,
-        }, cabinet); // Pass cabinet to updateProduct
+        const result = await updateProduct(
+          editingProduct.id,
+          {
+            name: editingProduct.name,
+            sku: editingProduct.sku,
+            quantity: editingProduct.stock,
+            price: editingProduct.price,
+            category: editingProduct.category,
+            stock: editingProduct.stock,
+            description: editingProduct.description,
+            costPrice: editingProduct.costPrice,
+            purchaseDate: editingProduct.purchaseDate,
+            purchasePlace: editingProduct.purchasePlace,
+            supplierName: editingProduct.supplierName,
+            dimLengthCm: editingProduct.dimLengthCm,
+            dimWidthCm: editingProduct.dimWidthCm,
+            dimHeightCm: editingProduct.dimHeightCm,
+            weightKg: editingProduct.weightKg,
+            imageUrl: editingProduct.imageUrl,
+            cabinet,
+            updatedBy: (username && username.trim()) || "Unknown",
+          },
+          cabinet
+        );
         
         // Check if update was successful
         if (!result.success) {
@@ -1519,7 +1744,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all"><span className="flex items-center gap-2"><Globe size={14} /> All Categories</span></SelectItem>
-                  {categories.slice(0, 15).map((category) => (
+                  {categories.map((category) => (
                     <SelectItem key={category} value={category} className="text-xs">
                       {category}
                     </SelectItem>
@@ -1549,7 +1774,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
             {/* Price Range */}
             <div className="space-y-1">
               <label className="text-xs font-semibold text-gray-700 flex items-center gap-1">
-                <DollarSign size={10} className="text-yellow-600" />
+                <PesoIcon size={10} className="text-yellow-600" />
                 Price Range
               </label>
               <div className="flex gap-1">
@@ -1585,42 +1810,65 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                 <SelectContent>
                   <SelectItem value="name"><span className="flex items-center gap-2"><FileText size={14} /> Product Name</span></SelectItem>
                   <SelectItem value="stock"><span className="flex items-center gap-2"><BarChart3 size={14} /> Stock Level</span></SelectItem>
-                  <SelectItem value="price"><span className="flex items-center gap-2"><DollarSign size={14} /> Price</span></SelectItem>
+                  <SelectItem value="price"><span className="flex items-center gap-2"><PesoIcon size={14} /> Price</span></SelectItem>
                   <SelectItem value="category"><span className="flex items-center gap-2"><Folder size={14} /> Category</span></SelectItem>
                   <SelectItem value="lastRestock"><span className="flex items-center gap-2"><Calendar size={14} /> Last Restock</span></SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            {/* Date Range */}
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-gray-700 flex items-center gap-1">
+            {/* Restock date range (From / To) */}
+            <div className="space-y-2 rounded-md border border-purple-200/80 bg-purple-50/40 p-2">
+              <label className="text-xs font-semibold text-gray-800 flex items-center gap-1">
                 <Calendar size={10} className="text-purple-600" />
-                Date Range
+                Last restock date
               </label>
-              <div className="space-y-1">
-                <Input
-                  type="date"
-                  value={tempDateFilter.startDate}
-                  onChange={(e) => setTempDateFilter(prev => ({ ...prev, startDate: e.target.value }))}
-                  className="h-6 border-2 focus:border-purple-500 text-xs px-2"
-                  placeholder="Start date"
-                />
-                <Input
-                  type="date"
-                  value={tempDateFilter.endDate}
-                  onChange={(e) => setTempDateFilter(prev => ({ ...prev, endDate: e.target.value }))}
-                  className="h-6 border-2 focus:border-purple-500 text-xs px-2"
-                  placeholder="End date"
-                />
-                <Button
-                  onClick={applyDateFilter}
-                  size="sm"
-                  className="w-full h-6 bg-[oklch(0.65_0.22_280)] hover:bg-[oklch(0.55_0.20_280)] text-white text-xs"
-                >
-                  <Check size={10} className="mr-1" />
-                  Apply Dates
-                </Button>
+              <p className="text-[10px] text-gray-600 leading-snug">
+                Filters by last restock time (falls back to last updated if never restocked). Set From and/or To, then Apply.
+              </p>
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-medium text-gray-600 w-9 shrink-0">From</span>
+                  <Input
+                    type="date"
+                    value={tempDateFilter.startDate}
+                    onChange={(e) => setTempDateFilter((prev) => ({ ...prev, startDate: e.target.value }))}
+                    className="h-7 flex-1 border-2 focus:border-purple-500 text-xs px-2"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-medium text-gray-600 w-9 shrink-0">To</span>
+                  <Input
+                    type="date"
+                    value={tempDateFilter.endDate}
+                    onChange={(e) => setTempDateFilter((prev) => ({ ...prev, endDate: e.target.value }))}
+                    className="h-7 flex-1 border-2 focus:border-purple-500 text-xs px-2"
+                  />
+                </div>
+                <div className="flex gap-1 pt-0.5">
+                  <Button
+                    type="button"
+                    onClick={applyDateFilter}
+                    size="sm"
+                    className="flex-1 h-7 bg-[oklch(0.65_0.22_280)] hover:bg-[oklch(0.55_0.20_280)] text-white text-xs"
+                  >
+                    <Check size={10} className="mr-1" />
+                    Apply
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs px-2"
+                    onClick={() => {
+                      setTempDateFilter({ startDate: "", endDate: "" })
+                      setDateFilter({ startDate: "", endDate: "" })
+                      addToast("Date filter cleared", "info")
+                    }}
+                  >
+                    Clear
+                  </Button>
+                </div>
               </div>
             </div>
 
@@ -1637,7 +1885,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                     setSelectedCategory("all")
                     setStockFilter("low")
                     setPriceRangeFilter({ min: "", max: "" })
-                    setDateFilter({ year: "all", month: "all", day: "all", startDate: "", endDate: "" })
+                    setDateFilter({ startDate: "", endDate: "" })
                     setTempDateFilter({ startDate: "", endDate: "" })
                     addToast("Showing low stock items", "info")
                   }}
@@ -1652,7 +1900,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                     setSelectedCategory("all")
                     setStockFilter("out")
                     setPriceRangeFilter({ min: "", max: "" })
-                    setDateFilter({ year: "all", month: "all", day: "all", startDate: "", endDate: "" })
+                    setDateFilter({ startDate: "", endDate: "" })
                     setTempDateFilter({ startDate: "", endDate: "" })
                     addToast("Showing out of stock items", "info")
                   }}
@@ -1671,7 +1919,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                     setSelectedCategory("all")
                     setStockFilter("all")
                     setPriceRangeFilter({ min: "", max: "" })
-                    setDateFilter({ year: "all", month: "all", day: "all", startDate: localDateString, endDate: localDateString })
+                    setDateFilter({ startDate: localDateString, endDate: localDateString })
                     setTempDateFilter({ startDate: localDateString, endDate: localDateString })
                     addToast("Showing today's restocks", "info")
                   }}
@@ -1713,14 +1961,10 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
           <>
             <div className="flex flex-col gap-4">
               {/* Action Buttons Row */}
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-gray-600">
-                  Showing {filteredInventory.length} of {products.length} items
-                  {searchQuery && ` for "${searchQuery}"`}
-                  {selectedCategory !== "all" && ` in ${selectedCategory}`}
-                  {stockFilter !== "all" && ` with ${stockFilter.replace(/([A-Z])/g, ' $1').trim()}`}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center gap-3 flex-1 w-full md:w-auto">
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                 <Button
                   variant="outline"
                   onClick={handlePrint}
@@ -1763,7 +2007,11 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                 </div>
 
                 {/* Match Sales tab: keep only the Filters button here. */}
-                <div className="mt-3 flex items-center justify-end">
+                <div className="mt-4 flex items-center justify-between">
+                  <div className="relative w-full max-w-sm">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                    <Input placeholder="Search inventory by name, SKU..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10 h-8 text-sm" />
+                  </div>
                   <Button
                     variant="outline"
                     onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
@@ -1773,7 +2021,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                     <div className="flex items-center gap-1">
                       <Filter size={12} className="text-[#3B18DA]" />
                       Filters
-                      {(selectedCategory !== "all" || stockFilter !== "all" || (priceRangeFilter.min || priceRangeFilter.max) || (dateFilter.startDate || dateFilter.endDate) || dateFilter.year !== "all" || searchQuery !== "") && (
+                      {(selectedCategory !== "all" || stockFilter !== "all" || (priceRangeFilter.min || priceRangeFilter.max) || (dateFilter.startDate || dateFilter.endDate) || searchQuery !== "") && (
                         <span className="w-2 h-2 bg-[#3B18DA] rounded-full animate-pulse"></span>
                       )}
                     </div>
@@ -1781,25 +2029,24 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[700px]">
-                    <thead className="border-b border-border bg-muted/50">
+                <div className="overflow-auto max-h-[calc(100vh-250px)] relative rounded-md border border-border">
+                  <table className="w-full min-w-[1280px]">
+                    <thead className="border-b-2 border-border bg-muted/60 sticky top-0 z-10 shadow-sm backdrop-blur-md">
                       <tr>
-                        <th className="py-4 px-5 text-left font-semibold text-foreground">
-                          SKU
-                        </th>
-                        <th className="py-4 px-5 text-left font-semibold text-foreground">
-                          Name
-                        </th>
-                        <th className="py-4 px-5 text-left font-semibold text-foreground">
-                          Description
-                        </th>
-                        <th className="py-4 px-5 text-left font-semibold text-foreground">
+                        <th className={`${INV_TH} text-left`}>SKU</th>
+                        <th className={`${INV_TH} w-[5.5rem] text-center`}>Photo</th>
+                        <th className={`${INV_TH} text-left`}>Name</th>
+                        <th className={`${INV_TH} text-left`}>Description</th>
+                        <th className={`${INV_TH} text-left`}>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm" className="h-8 px-2 -ml-2 font-semibold hover:bg-muted/80">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="-ml-2 h-9 gap-1 px-2 text-xs font-bold uppercase tracking-wider text-muted-foreground hover:bg-muted/80"
+                              >
                                 Category
-                                <ArrowUpDown size={14} className="ml-1 text-muted-foreground" />
+                                <ArrowUpDown size={14} className="ml-0.5 shrink-0 opacity-70" />
                                 {selectedCategory !== "all" && (
                                   <span className="ml-1 w-2 h-2 bg-violet-500 rounded-full"></span>
                                 )}
@@ -1830,24 +2077,26 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </th>
-                        <th className="py-4 px-5 text-center font-semibold text-foreground">
-                          Stock
-                        </th>
-                        <th className="py-4 px-5 text-center font-semibold text-foreground">
-                          Current Batch Price
-                        </th>
-                        <th className="py-4 px-5 text-center font-semibold text-foreground">
-                          Last Restock
-                        </th>
-                        <th className="py-4 px-5 text-center font-semibold text-foreground">
-                          Actions
-                        </th>
+                        <th className={`${INV_TH} text-center`}>Stock</th>
+                        <th className={`${INV_TH} text-center`}>Current Unit Cost</th>
+                        <th className={`${INV_TH} text-center`}>Current Selling Price</th>
+                        <th className={`${INV_TH} text-center`}>Capital ₱</th>
+                        <th className={`${INV_TH} text-center`}>L×W×H (cm)</th>
+                        <th className={`${INV_TH} text-center`}>Weight (kg)</th>
+                        <th className={`${INV_TH} text-center`}>Place of Purchase</th>
+                        <th className={`${INV_TH} text-center`}>Supplier</th>
+                        <th className={`${INV_TH} text-center`}>Created by</th>
+                        <th className={`${INV_TH} text-center`}>Date created</th>
+                        <th className={`${INV_TH} text-center`}>Last updated by</th>
+                        <th className={`${INV_TH} text-center`}>Last modified</th>
+                        <th className={`${INV_TH} text-center`}>Last Restock</th>
+                        <th className={`${INV_TH} text-center`}>Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
                         {filteredInventory.length === 0 ? (
                           <tr>
-                            <td colSpan={8} className="py-12 text-center">
+                            <td colSpan={18} className="py-12 text-center">
                               <div className="flex flex-col items-center">
                                 <Package size={48} className="text-gray-400 mb-4" />
                                 <h3 className="text-lg font-semibold text-gray-900 mb-2">No products found</h3>
@@ -1875,47 +2124,120 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                           </tr>
                         ) : (
                           filteredInventory.map((item) => (
-                            <tr key={item.id} className="hover:bg-muted/50 transition-colors">
-                              <td className="py-4 px-5 text-left text-muted-foreground text-sm">{item.sku}</td>
-                              <td className="py-4 px-5 text-left text-foreground font-medium">{item.name}</td>
-                              <td className="py-4 px-5 text-left text-muted-foreground text-sm max-w-xs truncate" title={item.description || ''}>
-                                {item.description || '-'}
+                            <tr key={item.id} className="border-b border-border/60 transition-colors hover:bg-muted/40">
+                              <td className="py-3.5 px-4 text-left text-sm text-muted-foreground">{item.sku}</td>
+                              <td className="py-3.5 px-3 text-center align-middle">
+                                {item.imageUrl ? (
+                                  <img
+                                    src={item.imageUrl}
+                                    alt=""
+                                    className="mx-auto h-[80px] w-[80px] rounded-md object-cover ring-1 ring-border"
+                                    loading="lazy"
+                                  />
+                                ) : (
+                                  <span className="text-muted-foreground text-xs">—</span>
+                                )}
                               </td>
-                              <td className="py-4 px-5 text-muted-foreground text-sm">
+                              <td className="py-3.5 px-4 text-left text-sm font-medium text-foreground">{item.name}</td>
+                              <td className="max-w-xs truncate py-3.5 px-4 text-left text-sm text-muted-foreground" title={item.description || ""}>
+                                {item.description || "-"}
+                              </td>
+                              <td className="py-3.5 px-4 text-sm text-muted-foreground">
                                 <div className="flex flex-wrap gap-1">
-                                  <span className="px-2 py-0.5 bg-[#3B18DA]/10 text-[#3B18DA] rounded text-xs">
+                                  <span className="rounded-md bg-[#3B18DA]/10 px-2 py-0.5 text-xs font-medium text-[#3B18DA] ring-1 ring-[#3B18DA]/15">
                                     {item.category}
                                   </span>
                                 </div>
                               </td>
-                              <td className="py-4 px-5 text-center">
+                              <td className="py-3.5 px-4 text-center">
                                 <span
-                                  className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                                    item.stock === 0 
-                                      ? "bg-red-100 text-red-700" 
-                                      : item.stock < 20 
-                                      ? "bg-yellow-100 text-yellow-700" 
-                                      : "bg-primary/20 text-primary"
+                                  className={`inline-flex min-w-[1.75rem] justify-center rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                    item.stock === 0
+                                      ? "bg-red-100 text-red-700"
+                                      : item.stock < 20
+                                        ? "bg-yellow-100 text-yellow-800"
+                                        : "bg-primary/15 text-primary"
                                   }`}
                                 >
                                   {item.stock}
                                 </span>
                               </td>
-                              <td className="py-4 px-5 text-center text-muted-foreground text-sm font-semibold">
-                                <BatchPriceDisplay 
-                                  productId={String(item.id)} 
+                              <td className="py-3.5 px-4 text-center text-sm font-bold tabular-nums text-foreground">
+                                <BatchPriceDisplay
+                                  productId={String(item.id)}
                                   cabinet={cabinet}
-                                  className="text-foreground text-sm font-semibold"
+                                  metric="unitCost"
+                                  className="text-sm font-bold text-foreground"
                                 />
                               </td>
-                              <td className="py-4 px-5 text-center text-muted-foreground text-sm">
-                                {item.lastRestockDate ? new Date(item.lastRestockDate).toLocaleDateString('en-US', {
-                                  month: 'short',
-                                  day: 'numeric',
-                                  year: 'numeric'
-                                }) : '-'}
+                              <td className="py-3.5 px-4 text-center text-sm font-bold tabular-nums text-foreground">
+                                <BatchPriceDisplay
+                                  productId={String(item.id)}
+                                  cabinet={cabinet}
+                                  metric="price"
+                                  className="text-sm font-bold text-foreground"
+                                />
                               </td>
-                              <td className="py-4 px-5 text-center">
+                              <td className="py-3.5 px-4 text-center text-sm font-bold tabular-nums text-foreground">
+                                ₱{((Number(item.stock) || 0) * (Number(item.costPrice) || 0)).toLocaleString("en-PH", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
+                              </td>
+                              <td className="whitespace-nowrap py-3.5 px-3 text-center text-xs tabular-nums text-muted-foreground">
+                                {(() => {
+                                  const dims = [];
+                                  if (item.dimLengthCm != null && item.dimLengthCm.toString().trim() !== '') dims.push(`${item.dimLengthCm}L`);
+                                  if (item.dimWidthCm != null && item.dimWidthCm.toString().trim() !== '') dims.push(`${item.dimWidthCm}W`);
+                                  if (item.dimHeightCm != null && item.dimHeightCm.toString().trim() !== '') dims.push(`${item.dimHeightCm}H`);
+                                  return dims.length > 0 ? dims.join(" × ") : "—";
+                                })()}
+                              </td>
+                              <td className="py-3.5 px-3 text-center text-xs tabular-nums text-muted-foreground">
+                                {item.weightKg != null
+                                  ? Number(item.weightKg).toLocaleString("en-PH", { maximumFractionDigits: 3 })
+                                  : "—"}
+                              </td>
+                              <td className="py-3.5 px-3 text-center text-xs text-muted-foreground">
+                                {item.purchasePlace || "—"}
+                              </td>
+                              <td className="py-3.5 px-3 text-center text-xs text-muted-foreground">
+                                {item.supplierName || "—"}
+                              </td>
+                              <td className="py-3.5 px-3 text-center">
+                                {item.createdBy ? (
+                                  <span
+                                    className="inline-block max-w-[7.5rem] truncate rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground ring-1 ring-border"
+                                    title={item.createdBy}
+                                  >
+                                    {item.createdBy}
+                                  </span>
+                                ) : (
+                                  <span className="text-muted-foreground text-xs">—</span>
+                                )}
+                              </td>
+                              <td className="whitespace-nowrap py-3.5 px-3 text-center text-xs tabular-nums text-muted-foreground">
+                                {item.dateCreated ? formatInventoryMMDDYY(item.dateCreated) : "—"}
+                              </td>
+                              <td className="py-3.5 px-3 text-center">
+                                {item.lastUpdatedBy ? (
+                                  <span
+                                    className="inline-block max-w-[7.5rem] truncate rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground ring-1 ring-border"
+                                    title={item.lastUpdatedBy}
+                                  >
+                                    {item.lastUpdatedBy}
+                                  </span>
+                                ) : (
+                                  <span className="text-muted-foreground text-xs">—</span>
+                                )}
+                              </td>
+                              <td className="whitespace-nowrap py-3.5 px-3 text-center text-xs tabular-nums text-muted-foreground">
+                                {item.lastModifiedDate ? formatInventoryMMDDYY(item.lastModifiedDate) : "—"}
+                              </td>
+                              <td className="whitespace-nowrap py-3.5 px-4 text-center text-xs tabular-nums text-muted-foreground">
+                                {item.lastRestockDate ? formatInventoryMMDDYY(item.lastRestockDate) : "—"}
+                              </td>
+                              <td className="py-3.5 px-4 text-center">
                                 <div className="flex items-center justify-center gap-1">
                                   <Button
                                     variant="ghost"
@@ -1971,7 +2293,16 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
       onCancel={() => setClearConfirm(false)}
     />
 
-    <Dialog open={showAddForm} onOpenChange={setShowAddForm}>
+    <Dialog 
+      open={showAddForm} 
+      onOpenChange={(open) => {
+        setShowAddForm(open);
+        if (!open) {
+          setIsSavingProduct(false);
+          setIsUploadingImage(false);
+        }
+      }}
+    >
       <DialogContent className="max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -1979,137 +2310,469 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
             Add New Product
           </DialogTitle>
           <DialogDescription>
-            Enter product details to add to inventory. Stock can be added later using the clock icon.
+            Complete all required fields to add a product. You can add more stock later from the inventory row actions.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
-          <div className="border rounded-lg p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
-            <h3 className="font-semibold mb-3 text-blue-800">Product Information</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="text-sm font-medium text-blue-700 mb-1 block">Product Name</label>
-                <Input
-                  placeholder="Enter product name"
-                  value={newProduct.name}
-                  onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
-                  className="border-blue-300 focus:border-blue-500"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-sm font-medium text-blue-700 mb-1 block">SKU</label>
+        <div className="space-y-6">
+          <div className="rounded-xl border-2 border-blue-200/80 bg-gradient-to-br from-blue-50/90 via-background to-indigo-50/50 p-5 shadow-sm">
+            <h3 className="mb-4 text-base font-semibold tracking-tight text-blue-900">Product information</h3>
+            <p className="mb-5 text-xs text-muted-foreground">
+              Fields marked <span className="text-destructive font-semibold">*</span> are required. All other fields are optional.
+            </p>
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-blue-900">
+                    SKU <span className="text-destructive">*</span>
+                  </label>
                   <Input
-                    placeholder="Product SKU"
+                    placeholder="e.g. FUNKO-001"
                     value={newProduct.sku}
                     onChange={(e) => setNewProduct({ ...newProduct, sku: e.target.value })}
-                    className="border-blue-300 focus:border-blue-500"
+                    className={ADD_PRODUCT_FIELD_CLASS}
                   />
                 </div>
-                <div>
-                  <label className="text-sm font-medium text-blue-700 mb-1 block">Unit Price (₱)</label>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-blue-900">
+                    Product name <span className="text-destructive">*</span>
+                  </label>
+                  <Input
+                    placeholder="Product display name"
+                    value={newProduct.name}
+                    onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
+                    className={ADD_PRODUCT_FIELD_CLASS}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-blue-900">
+                    Acquired price (₱) per unit <span className="text-destructive">*</span>
+                  </label>
+                  <Input
+                    type="number"
+                    placeholder="Your unit cost"
+                    value={newProduct.costPrice || ""}
+                    onChange={(e) => setNewProduct({ ...newProduct, costPrice: parseFloat(e.target.value) || 0 })}
+                    className={ADD_PRODUCT_FIELD_CLASS}
+                    step="0.01"
+                    min="0.01"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-blue-900">
+                    Selling price (₱) <span className="text-destructive">*</span>
+                  </label>
                   <Input
                     type="number"
                     placeholder="0.00"
-                    value={newProduct.price}
+                    value={newProduct.price || ""}
                     onChange={(e) => setNewProduct({ ...newProduct, price: parseFloat(e.target.value) || 0 })}
-                    className="border-blue-300 focus:border-blue-500"
+                    className={ADD_PRODUCT_FIELD_CLASS}
                     step="0.01"
-                    min="0"
+                    min="0.01"
                   />
                 </div>
               </div>
-              <div>
-                <label className="text-sm font-medium text-blue-700 mb-1 block">Initial Quantity</label>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-blue-900">
+                    Date of purchase <span className="text-destructive">*</span>
+                  </label>
+                  <Input
+                    type="date"
+                    value={newProduct.purchaseDate}
+                    onChange={(e) => setNewProduct({ ...newProduct, purchaseDate: e.target.value })}
+                    className={ADD_PRODUCT_FIELD_CLASS}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-blue-900">
+                    Place of purchase <span className="text-destructive">*</span>
+                  </label>
+                  <Input
+                    placeholder="Store, city, or URL"
+                    value={newProduct.purchasePlace}
+                    onChange={(e) => setNewProduct({ ...newProduct, purchasePlace: e.target.value })}
+                    className={ADD_PRODUCT_FIELD_CLASS}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-blue-900">
+                    Initial quantity <span className="text-destructive">*</span>
+                  </label>
+                  <Input
+                    type="number"
+                    placeholder="1"
+                    value={initialStock.quantity}
+                    onChange={(e) => setInitialStock({ ...initialStock, quantity: parseInt(e.target.value, 10) || 1 })}
+                    className={ADD_PRODUCT_FIELD_CLASS}
+                    min="1"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-blue-900">
+                    Category <span className="text-destructive">*</span>
+                  </label>
+                  <Select value={newProduct.category} onValueChange={(value) => setNewProduct({ ...newProduct, category: value })}>
+                    <SelectTrigger className={ADD_PRODUCT_FIELD_CLASS}>
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories.map((category) => (
+                        <SelectItem key={category} value={category}>
+                          {category}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-blue-900">Supplier / seller (optional)</label>
                 <Input
-                  type="number"
-                  placeholder="1"
-                  value={initialStock.quantity}
-                  onChange={(e) => setInitialStock({ ...initialStock, quantity: parseInt(e.target.value) || 1 })}
-                  className="border-blue-300 focus:border-blue-500"
-                  min="1"
+                  placeholder="Vendor name"
+                  value={newProduct.supplierName}
+                  onChange={(e) => setNewProduct({ ...newProduct, supplierName: e.target.value })}
+                  className={ADD_PRODUCT_FIELD_CLASS}
                 />
               </div>
-              <div>
-                <label className="text-sm font-medium text-blue-700 mb-1 block">Category</label>
-                <Select value={newProduct.category} onValueChange={(value) => setNewProduct({ ...newProduct, category: value })}>
-                  <SelectTrigger className="border-blue-300 focus:border-blue-500">
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories.map((category) => (
-                      <SelectItem key={category} value={category}>
-                        {category}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="rounded-lg border border-dashed border-blue-200/80 bg-background/80 p-4">
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-blue-900/80">
+                  Item dimensions and weight (optional)
+                </p>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-blue-800">Length (cm)</label>
+                    <Input
+                      type="number"
+                      value={newProduct.dimLengthCm}
+                      onChange={(e) => setNewProduct({ ...newProduct, dimLengthCm: e.target.value })}
+                      className={ADD_PRODUCT_FIELD_CLASS}
+                      step="0.01"
+                      min="0"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-blue-800">Width (cm)</label>
+                    <Input
+                      type="number"
+                      value={newProduct.dimWidthCm}
+                      onChange={(e) => setNewProduct({ ...newProduct, dimWidthCm: e.target.value })}
+                      className={ADD_PRODUCT_FIELD_CLASS}
+                      step="0.01"
+                      min="0"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-blue-800">Height (cm)</label>
+                    <Input
+                      type="number"
+                      value={newProduct.dimHeightCm}
+                      onChange={(e) => setNewProduct({ ...newProduct, dimHeightCm: e.target.value })}
+                      className={ADD_PRODUCT_FIELD_CLASS}
+                      step="0.01"
+                      min="0"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-blue-800">Weight (kg)</label>
+                    <Input
+                      type="number"
+                      value={newProduct.weightKg}
+                      onChange={(e) => setNewProduct({ ...newProduct, weightKg: e.target.value })}
+                      className={ADD_PRODUCT_FIELD_CLASS}
+                      step="0.01"
+                      min="0"
+                    />
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="text-sm font-medium text-blue-700 mb-1 block">Description</label>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-blue-900">Product photo (optional)</label>
+                {!newProduct.imageUrl ? (
+                  <div className="relative group rounded-md border-2 border-dashed border-blue-300 hover:border-blue-500 bg-blue-50/50 hover:bg-blue-100/50 transition-all">
+                    <div className="px-4 py-6 text-center focus-within:ring-2 focus-within:ring-blue-500 rounded-md">
+                      <ImagePlus className="mx-auto h-8 w-8 text-blue-400 group-hover:text-blue-600 mb-2 transition-colors" />
+                      <p className="text-sm font-medium text-blue-900">Click to upload an image</p>
+                      <p className="text-xs text-blue-600/70 mt-1">PNG, JPG, WEBP (auto compressed)</p>
+                    </div>
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      disabled={isSavingProduct || isUploadingImage}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                      onChange={async (e) => {
+                        const f = e.target.files?.[0]
+                        if (!f) return
+                        setIsUploadingImage(true)
+                        try {
+                          const url = await compressImageFileToDataUrl(f, 420, 0.82)
+                          setNewProduct((p) => ({ ...p, imageUrl: url }))
+                          addToast("Image attached", "success")
+                        } catch (err: any) {
+                          addToast(err?.message || "Could not process image", "error")
+                        } finally {
+                          setIsUploadingImage(false)
+                        }
+                        e.target.value = ""
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div className="mt-2 flex items-center justify-between p-3 border rounded-md shadow-sm ring-1 ring-border bg-slate-50/30">
+                    <div className="flex items-center gap-3">
+                      <img src={newProduct.imageUrl} alt="" className="h-20 w-20 rounded-md border object-cover bg-white shadow-sm" />
+                      <div className="flex flex-col text-sm">
+                        <span className="font-medium text-slate-800">1 image attached</span>
+                        <span className="text-xs text-slate-500">Max capacity reached</span>
+                      </div>
+                    </div>
+                    <Button type="button" variant="outline" size="sm" onClick={() => setNewProduct((p) => ({ ...p, imageUrl: "" }))}>
+                      <Trash2 className="w-4 h-4 mr-1.5" /> Remove
+                    </Button>
+                  </div>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-blue-900">Product details (optional)</label>
                 <textarea
                   value={newProduct.description}
                   onChange={(e) => {
-                    if (e.target.value.length <= 50) {
+                    if (e.target.value.length <= 2000) {
                       setNewProduct({ ...newProduct, description: e.target.value })
                     }
                   }}
-                  placeholder="Product description (optional)..."
-                  className="w-full p-2 border rounded-md resize-none h-20 border-blue-300 focus:border-blue-500"
-                  maxLength={50}
+                  placeholder="Description, condition, notes…"
+                  className={`min-h-[96px] w-full resize-y rounded-md px-3 py-2.5 text-sm ${ADD_PRODUCT_FIELD_CLASS}`}
+                  maxLength={2000}
                 />
-                <p className="text-xs text-gray-500 mt-1">{newProduct.description.length}/50 characters</p>
+                <p className="text-xs text-muted-foreground">{newProduct.description.length}/2000 characters</p>
               </div>
             </div>
           </div>
           
           <div className="flex justify-end gap-2">
-            <Button onClick={() => setShowAddForm(false)} variant="outline">
+            <Button disabled={isSavingProduct || isUploadingImage} onClick={() => setShowAddForm(false)} variant="outline">
               Cancel
             </Button>
-            <Button onClick={handleAddProduct} className="bg-[#3B18DA] hover:bg-[#2A1199] text-white">
-              <Plus size={16} className="mr-2" />
-              Add Product
+            <Button disabled={isSavingProduct || isUploadingImage} onClick={handleAddProduct} className="bg-[#3B18DA] hover:bg-[#2A1199] text-white">
+              {isSavingProduct || isUploadingImage ? <Spinner className="mr-2" /> : <Plus size={16} className="mr-2" />}
+              {isUploadingImage ? "Compressing Image..." : isSavingProduct ? "Adding Product..." : "Add Product"}
             </Button>
           </div>
         </div>
       </DialogContent>
     </Dialog>
 
-    <Dialog open={editingId !== null} onOpenChange={() => setEditingId(null)}>
+    <Dialog
+      open={editingId !== null}
+      onOpenChange={(open) => {
+        if (!open) {
+          setEditingId(null)
+          setEditingProduct(null)
+        }
+      }}
+    >
       <DialogContent className="mx-4 max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Product</DialogTitle>
           <DialogDescription>Update product details</DialogDescription>
         </DialogHeader>
         {editingProduct && (
-          <div className="space-y-4">
+          <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
             <div>
-              <label className="text-sm font-medium text-foreground mb-2 block">SKU</label>
+              <label className="text-sm font-medium text-foreground mb-2 block">Name</label>
               <Input
-                value={editingProduct?.sku || ''}
-                onChange={(e) => setEditingProduct(editingProduct ? { ...editingProduct, sku: e.target.value } : null)}
+                value={editingProduct.name}
+                onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })}
               />
             </div>
-            <div>
-              <label className="text-sm font-medium text-foreground mb-1 block">Description</label>
-              <textarea
-                value={editingProduct?.description || ""}
-                onChange={(e) => {
-                  if (e.target.value.length <= 50) {
-                    setEditingProduct(editingProduct ? { ...editingProduct, description: e.target.value } : null)
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium text-foreground mb-2 flex items-center justify-between">
+                  SKU
+                  <span className="text-[10px] font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded mr-1">Not editable</span>
+                </label>
+                <Input
+                  value={editingProduct.sku || ""}
+                  disabled
+                  onChange={(e) => {}}
+                  className="bg-muted text-muted-foreground cursor-not-allowed border-muted-foreground/20"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground mb-2 flex items-center justify-between">
+                  Stock (units)
+                  <span className="text-[10px] font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded ml-1">Not editable</span>
+                </label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={editingProduct.stock}
+                  disabled
+                  onChange={() => {}}
+                  className="bg-muted text-muted-foreground cursor-not-allowed border-muted-foreground/20"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 block">Selling price (₱)</label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  value={editingProduct.price}
+                  onChange={(e) =>
+                    setEditingProduct({ ...editingProduct, price: parseFloat(e.target.value) || 0 })
                   }
-                }}
-                placeholder="Product description..."
-                className="w-full p-2 border rounded-md resize-none h-20"
-                maxLength={50}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 flex items-center justify-between">
+                  Acquired price (₱)
+                  <span className="text-[10px] font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded ml-1">Not editable</span>
+                </label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  value={editingProduct.costPrice ?? 0}
+                  disabled
+                  onChange={() => {}}
+                  className="bg-muted text-muted-foreground cursor-not-allowed border-muted-foreground/20"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground mb-1 block">Est. capital (stock × acquired)</label>
+              <p className="text-sm font-semibold tabular-nums">
+                ₱
+                {((Number(editingProduct.stock) || 0) * (Number(editingProduct.costPrice) || 0)).toLocaleString("en-PH", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 flex items-center justify-between">
+                  Purchase date
+                  <span className="text-[10px] font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded ml-1">Not editable</span>
+                </label>
+                <Input
+                  type="date"
+                  value={editingProduct.purchaseDate || ""}
+                  disabled
+                  onChange={() => {}}
+                  className="bg-muted text-muted-foreground cursor-not-allowed border-muted-foreground/20"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1 flex items-center justify-between">
+                  Place of purchase
+                  <span className="text-[10px] font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded ml-1">Not editable</span>
+                </label>
+                <Input
+                  value={editingProduct.purchasePlace || ""}
+                  disabled
+                  onChange={() => {}}
+                  className="bg-muted text-muted-foreground cursor-not-allowed border-muted-foreground/20"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground mb-1 flex items-center w-fit gap-2">
+                Supplier
+                <span className="text-[10px] font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded">Not editable</span>
+              </label>
+              <Input
+                value={editingProduct.supplierName || ""}
+                disabled
+                onChange={() => {}}
+                className="bg-muted text-muted-foreground cursor-not-allowed border-muted-foreground/20"
               />
-              <p className="text-xs text-gray-500 mt-1">{(editingProduct?.description || "").length}/50 characters</p>
+            </div>
+            <p className="text-xs font-semibold text-muted-foreground">Item dimensions and weight</p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {(
+                [
+                  ["dimLengthCm", "Length (cm)"],
+                  ["dimWidthCm", "Width (cm)"],
+                  ["dimHeightCm", "Height (cm)"],
+                  ["weightKg", "Weight (kg)"],
+                ] as const
+              ).map(([key, label]) => (
+                <div key={key}>
+                  <label className="text-xs font-medium text-foreground mb-1 block">{label}</label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={(editingProduct as any)[key] ?? ""}
+                    onChange={(e) =>
+                      setEditingProduct({
+                        ...editingProduct,
+                        [key]: e.target.value === "" ? undefined : parseFloat(e.target.value),
+                      } as InventoryItem)
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground mb-1 block">Photo (optional)</label>
+              {!editingProduct.imageUrl ? (
+                <div className="relative group rounded-md border-2 border-dashed border-muted hover:border-primary bg-muted/30 hover:bg-muted/50 transition-all mb-2">
+                  <div className="px-4 py-5 text-center focus-within:ring-2 focus-within:ring-primary rounded-md">
+                    <ImagePlus className="mx-auto h-6 w-6 text-muted-foreground group-hover:text-primary mb-2 transition-colors" />
+                    <p className="text-sm font-medium text-foreground">Click to upload photo</p>
+                    <p className="text-xs text-muted-foreground mt-1">PNG, JPG, WEBP (auto compressed)</p>
+                  </div>
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    disabled={isSavingProduct || isUploadingImage}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                    onChange={async (e) => {
+                      const f = e.target.files?.[0]
+                      if (!f || !editingProduct) return
+                      setIsUploadingImage(true)
+                      try {
+                        const url = await compressImageFileToDataUrl(f, 420, 0.82)
+                        setEditingProduct({ ...editingProduct, imageUrl: url })
+                        addToast("Image updated", "success")
+                      } catch (err: any) {
+                        addToast(err?.message || "Could not process image", "error")
+                      } finally {
+                        setIsUploadingImage(false)
+                      }
+                      e.target.value = ""
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="mt-2 flex items-center justify-between p-3 border rounded-md shadow-sm ring-1 ring-border bg-slate-50/30">
+                  <div className="flex items-center gap-3">
+                    <img src={editingProduct.imageUrl} alt="" className="h-14 w-14 rounded-md border object-cover bg-white shadow-sm" />
+                    <div className="flex flex-col text-sm">
+                      <span className="font-medium text-slate-800">1 image attached</span>
+                      <span className="text-xs text-slate-500">Max capacity reached</span>
+                    </div>
+                  </div>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setEditingProduct({ ...editingProduct, imageUrl: undefined })}>
+                    <Trash2 className="w-4 h-4 mr-1.5" /> Remove
+                  </Button>
+                </div>
+              )}
             </div>
             <div>
               <label className="text-sm font-medium text-foreground mb-1 block">Category</label>
               <Select
-                value={editingProduct?.category || ""}
-                onValueChange={(value) => setEditingProduct(editingProduct ? { ...editingProduct, category: value } : null)}
+                value={editingProduct.category || ""}
+                onValueChange={(value) => setEditingProduct({ ...editingProduct, category: value })}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select category" />
@@ -2123,11 +2786,69 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex gap-2">
-              <Button onClick={handleSaveEdit} className="bg-primary hover:bg-primary/90 text-primary-foreground">
-                Save Changes
+            <div>
+              <label className="text-sm font-medium text-foreground mb-1 block">Product details</label>
+              <textarea
+                value={editingProduct.description || ""}
+                onChange={(e) => {
+                  if (e.target.value.length <= 2000) {
+                    setEditingProduct({ ...editingProduct, description: e.target.value })
+                  }
+                }}
+                className="w-full p-2 border rounded-md resize-y min-h-[80px]"
+                maxLength={2000}
+              />
+              <p className="text-xs text-gray-500 mt-1">{(editingProduct.description || "").length}/2000</p>
+            </div>
+            <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-2 text-sm">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Record audit</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                <div>
+                  <span className="text-muted-foreground">Created by</span>
+                  <p className="mt-1">
+                    {editingProduct.createdBy ? (
+                      <span className="inline-block max-w-full truncate rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground ring-1 ring-border">
+                        {editingProduct.createdBy}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Last updated by</span>
+                  <p className="mt-1">
+                    {editingProduct.lastUpdatedBy ? (
+                      <span className="inline-block max-w-full truncate rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground ring-1 ring-border">
+                        {editingProduct.lastUpdatedBy}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Date created</span>
+                  <p className="font-medium">{editingProduct.dateCreated || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Last modified</span>
+                  <p className="font-medium">{editingProduct.lastModifiedDate || "—"}</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button disabled={isSavingProduct || isUploadingImage} onClick={handleSaveEdit} className="bg-primary hover:bg-primary/90 text-primary-foreground">
+                {isSavingProduct || isUploadingImage ? <Spinner className="mr-2 h-4 w-4" /> : null}
+                {isUploadingImage ? "Compressing Image..." : isSavingProduct ? "Saving..." : "Save Changes"}
               </Button>
-              <Button onClick={() => setEditingId(null)} variant="outline">
+              <Button
+                onClick={() => {
+                  setEditingId(null)
+                  setEditingProduct(null)
+                }}
+                variant="outline"
+              >
                 Cancel
               </Button>
             </div>
@@ -2190,7 +2911,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
 
     {/* Stock Tracking Dialog */}
     <Dialog open={showStockDialog} onOpenChange={setShowStockDialog}>
-      <DialogContent className="max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl mx-4 max-h-[90vh] overflow-y-auto overflow-x-hidden">
         <DialogHeader>
           <DialogTitle>Stock Tracking - {selectedProductForStock?.name}</DialogTitle>
           <DialogDescription>Manage stock batches and track inventory by purchase date</DialogDescription>
@@ -2201,7 +2922,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
             <div className="border rounded-lg p-4 bg-gradient-to-r from-green-50 to-emerald-50 border-green-200">
               <h3 className="font-semibold mb-3 text-green-800">Add New Stock</h3>
               <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
                     <label className="text-sm font-medium text-green-700 mb-1 block">Quantity</label>
                     <Input
@@ -2214,18 +2935,32 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                     />
                   </div>
                   <div>
-                    <label className="text-sm font-medium text-green-700 mb-1 block">Cost per Unit (₱) *</label>
+                    <label className="text-sm font-medium text-green-700 mb-1 block">Acquired Cost (₱) *</label>
                     <Input
                       type="number"
                       value={newStock.costPerUnit}
                       onChange={(e) => setNewStock({ ...newStock, costPerUnit: parseFloat(e.target.value) || 0 })}
                       min="0.01"
                       step="0.01"
-                      placeholder="Enter cost per unit (required)"
+                      placeholder="Required"
                       className="border-green-300 focus:border-green-500"
                       required
                     />
-                    <p className="text-xs text-gray-500 mt-1">Enter the actual cost price per unit (cannot be 0)</p>
+                    <p className="text-xs text-gray-500 mt-1 leading-tight">Cost price per unit. Cannot be 0.</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-green-700 mb-1 block">Selling Price (₱) *</label>
+                    <Input
+                      type="number"
+                      value={newStock.sellingPrice}
+                      onChange={(e) => setNewStock({ ...newStock, sellingPrice: parseFloat(e.target.value) || 0 })}
+                      min="0.01"
+                      step="0.01"
+                      placeholder="Required"
+                      className="border-green-300 focus:border-green-500"
+                      required
+                    />
+                    <p className="text-xs text-gray-500 mt-1 leading-tight">Retail price customers pay.</p>
                   </div>
                 </div>
                 <div>
@@ -2313,67 +3048,85 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                           ? 'bg-white border-blue-500 border-2' 
                           : 'bg-white border-gray-200'
                     }`}>
-                      {/* Top row - Main info */}
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-start gap-3">
-                          {/* Quantity and Notes */}
-                          <div className="flex flex-col">
-                            <span className="font-semibold text-lg">{addition.quantity} units</span>
-                            
-                            {/* Notes - simple text display */}
-                            {addition.notes && (
-                              <p className="text-sm text-gray-700 mt-1 font-medium">
-                                Notes: {addition.notes}
-                              </p>
-                            )}
-                          </div>
-                          
-                          {/* Price and other items */}
-                          <div className="flex items-center gap-2">
-                            {addition.costPerUnit && addition.costPerUnit > 0 && (
-                              <span className="text-sm text-green-600">
-                                ₱{addition.costPerUnit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </span>
-                            )}
-                            
-                            {/* Current batch indicator - only for batches with stock > 0 */}
+                      {/* Top Row: Info and Actions */}
+                      <div className="flex items-start justify-between pb-3 border-b border-slate-100">
+                        <div className="flex flex-col">
+                          <div className="flex items-center gap-2.5 mb-1.5">
+                            <span className="text-xl font-bold tracking-tight text-slate-800">{addition.quantity} <span className="text-sm font-semibold text-slate-500">units</span></span>
+                            {/* Current batch indicator */}
                             {index === 0 && hasStock && (
-                              <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
+                              <span className="px-2 py-0.5 bg-blue-100/60 border border-blue-200 text-blue-800 text-[10px] font-bold tracking-widest uppercase rounded-full">
                                 Current Batch
                               </span>
                             )}
-                            
                             {/* Zero stock indicator */}
                             {isZeroStock && (
-                              <span className="px-2 py-1 bg-red-100 text-red-800 text-xs font-medium rounded-full">
-                                Out of Stock
+                              <span className="px-2 py-0.5 bg-red-100/60 border border-red-200 text-red-800 text-[10px] font-bold tracking-widest uppercase rounded-full">
+                                Sold Out
                               </span>
                             )}
                           </div>
+                          
+                          {/* Notes */}
+                          {addition.notes && (
+                            <p className="text-xs text-slate-500 font-medium">
+                              <span className="text-slate-400 mr-1">Note:</span> {addition.notes}
+                            </p>
+                          )}
                         </div>
                         
                         {/* Delete button */}
                         <Button
-                          variant="outline"
+                          variant="ghost"
                           size="sm"
                           onClick={() => {
                             setBatchToDelete(addition)
                             setShowDeleteBatchConfirm(true)
                           }}
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          className="h-8 w-8 p-0 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full"
                           title="Remove this batch"
                           disabled={isDeletingBatch && batchToDelete?.id === addition.id}
                         >
                           {isDeletingBatch && batchToDelete?.id === addition.id ? (
                             <Spinner className="size-3.5" />
                           ) : (
-                            <Trash2 size={14} />
+                            <Trash2 size={16} />
                           )}
                         </Button>
                       </div>
 
+                      {/* Middle Row: Financial Grid */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 py-1">
+                        <div className="bg-slate-50 border border-slate-100 rounded-md p-2.5 flex flex-col justify-center">
+                          <span className="text-[10px] uppercase text-slate-400 font-bold tracking-widest mb-0.5">Acquired</span>
+                          <span className="font-mono text-[13px] font-semibold text-slate-700">
+                            {addition.costPerUnit != null ? `₱${Number(addition.costPerUnit).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A'}
+                          </span>
+                        </div>
+                        
+                        <div className="bg-slate-50 border border-slate-100 rounded-md p-2.5 flex flex-col justify-center">
+                          <span className="text-[10px] uppercase text-slate-400 font-bold tracking-widest mb-0.5">Retail</span>
+                          <span className="font-mono text-[13px] font-bold text-slate-900">
+                            {addition.sellingPrice != null 
+                              ? `₱${Number(addition.sellingPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` 
+                              : (selectedProductForStock?.price != null 
+                                  ? `₱${Number(selectedProductForStock.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` 
+                                  : 'N/A')}
+                          </span>
+                        </div>
+
+                        <div className="bg-blue-50/40 border border-blue-100 rounded-md p-2.5 flex flex-col justify-center">
+                          <span className="text-[10px] uppercase text-blue-500/80 font-bold tracking-widest mb-0.5">Capital Used</span>
+                          <span className="font-mono text-[13px] font-bold text-blue-700">
+                            {addition.costPerUnit != null 
+                              ? `₱${Number(addition.costPerUnit * (addition.initialQuantity || addition.quantity)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` 
+                              : 'N/A'}
+                          </span>
+                        </div>
+                      </div>
+
                       {/* Bottom row - Status and Date */}
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between pt-1">
                         <div className="flex items-center gap-4">
                           {/* Status */}
                           <div className="flex items-center gap-2">

@@ -1,15 +1,17 @@
 import { StockBatch } from './indexeddb';
 
 // Cache for batch prices to prevent repeated fetching
-const priceCache = new Map<string, { price: number; timestamp: number }>();
+const priceCache = new Map<string, { price: number; unitCost?: number; timestamp: number }>();
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 export interface BatchPriceResult {
   price: number;
+  unitCost?: number;
   batchId?: string;
   batchInfo?: {
     id: string;
     costPerUnit: number;
+    sellingPrice?: number;
     quantity: number;
     status: string;
     addedDate: string;
@@ -19,7 +21,7 @@ export interface BatchPriceResult {
 /**
  * Get the current price from stock batches using consistent FIFO logic
  * Prioritizes on-shelf batches first, then falls back to FIFO for storage batches
- * Falls back to product base price if no batches with valid costPerUnit exist
+ * Falls back to product base price if no batches with valid sellingPrice exist
  */
 export async function getCurrentPriceFromBatches(
   productId: string, 
@@ -31,8 +33,8 @@ export async function getCurrentPriceFromBatches(
   // Check cache first
   const cached = priceCache.get(cacheKey);
   // Never trust cached "0" because it commonly happens during startup/new-product race conditions.
-  if (cached && cached.price > 0 && (now - cached.timestamp) < CACHE_DURATION) {
-    return { price: cached.price };
+  if (cached && (cached.price > 0 || (cached.unitCost && cached.unitCost > 0)) && (now - cached.timestamp) < CACHE_DURATION) {
+    return { price: cached.price, unitCost: cached.unitCost };
   }
   
   try {
@@ -110,16 +112,31 @@ export async function getCurrentPriceFromBatches(
     }
     
     if (selectedBatch) {
-      // Handle case where costPerUnit might be undefined or null
-      const price = Number((selectedBatch as any)?.costPerUnit) || 0;
+      // Handle case where sellingPrice might be missing, fallback to product base price later if so
+      let price = Number((selectedBatch as any)?.sellingPrice) || 0;
+      let unitCost = Number((selectedBatch as any)?.costPerUnit) || 0;
       
-      if (price > 0) {
+      // If batch has missing prices, grab the base product prices as fallback
+      if (price <= 0 || unitCost <= 0) {
+          try {
+              const { db } = await import('./indexeddb');
+              const product = await db.products.get(String(productId));
+              if (price <= 0) price = Number((product as any)?.price) || 0;
+              if (unitCost <= 0) unitCost = Number((product as any)?.costPrice) || 0;
+          } catch (e) {
+              console.warn("Could not fetch product base prices for batch fallback");
+          }
+      }
+
+      if (price > 0 || unitCost > 0) {
         const result = {
           price,
+          unitCost,
           batchId: String(selectedBatch.id),
           batchInfo: {
             id: String(selectedBatch.id),
-            costPerUnit: price,
+            costPerUnit: unitCost,
+            sellingPrice: price,
             quantity: selectedBatch.quantity || 0,
             status: selectedBatch.status || 'unknown',
             addedDate: selectedBatch.addedDate || new Date().toISOString()
@@ -127,11 +144,11 @@ export async function getCurrentPriceFromBatches(
         };
         
         // Update cache
-        priceCache.set(cacheKey, { price, timestamp: now });
-        console.log(`Successfully calculated price ${price} for product ${productId} using batch ${selectedBatch.id}`);
+        priceCache.set(cacheKey, { price, unitCost, timestamp: now });
+        console.log(`Successfully calculated price ${price} (Cost: ${unitCost}) for product ${productId} using batch ${selectedBatch.id}`);
         return result;
       } else {
-        console.log(`Selected batch ${selectedBatch.id} has no valid costPerUnit for product ${productId} - trying product base price`);
+        console.log(`Selected batch ${selectedBatch.id} has no valid price/cost for product ${productId} - trying product base price`);
       }
     }
     
@@ -140,11 +157,12 @@ export async function getCurrentPriceFromBatches(
     try {
       const { db } = await import('./indexeddb');
       const product = await db.products.get(String(productId));
-      const basePrice = Number((product as any)?.price);
-      if (Number.isFinite(basePrice) && basePrice > 0) {
-        console.log(`Using product base price ${basePrice} as fallback for product ${productId}`);
-        const result = { price: basePrice };
-        priceCache.set(cacheKey, { price: basePrice, timestamp: now });
+      const basePrice = Number((product as any)?.price) || 0;
+      const baseCost = Number((product as any)?.costPrice) || 0;
+      if (basePrice > 0 || baseCost > 0) {
+        console.log(`Using product base price/cost as fallback for product ${productId}`);
+        const result = { price: basePrice, unitCost: baseCost };
+        priceCache.set(cacheKey, { price: basePrice, unitCost: baseCost, timestamp: now });
         return result;
       }
     } catch (productError) {
@@ -157,9 +175,9 @@ export async function getCurrentPriceFromBatches(
   } catch (error) {
     console.error('Error getting current price from batches:', error);
     // Try to use cached price on error
-    if (cached && cached.price > 0) {
+    if (cached && (cached.price > 0 || (cached.unitCost && cached.unitCost > 0))) {
       console.log(`Error occurred, using cached price for product ${productId}: ${cached.price}`);
-      return { price: cached.price };
+      return { price: cached.price, unitCost: cached.unitCost };
     }
     
     // Try to get product base price as fallback on error
@@ -167,11 +185,12 @@ export async function getCurrentPriceFromBatches(
     try {
       const { db } = await import('./indexeddb');
       const product = await db.products.get(String(productId));
-      const basePrice = Number((product as any)?.price);
-      if (Number.isFinite(basePrice) && basePrice > 0) {
-        console.log(`Using product base price ${basePrice} as fallback for product ${productId} (error case)`);
-        const result = { price: basePrice };
-        priceCache.set(cacheKey, { price: basePrice, timestamp: now });
+      const basePrice = Number((product as any)?.price) || 0;
+      const baseCost = Number((product as any)?.costPrice) || 0;
+      if (basePrice > 0 || baseCost > 0) {
+        console.log(`Using product base price/cost as fallback for product ${productId} (error case)`);
+        const result = { price: basePrice, unitCost: baseCost };
+        priceCache.set(cacheKey, { price: basePrice, unitCost: baseCost, timestamp: now });
         return result;
       }
     } catch (productError) {

@@ -1,10 +1,12 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Search, Download, Filter, Calendar, DollarSign, Package, ArrowUpDown, ArrowUp, ArrowDown, X, RefreshCw, Wrench, LayoutList, Users, Boxes, Settings, Building2, Home, Folder, FolderOpen, FileText, Globe, Banknote, Smartphone, CreditCard, Tag, FileSpreadsheet, BarChart3, Check, Printer, Archive, Store, Zap, Plus } from "lucide-react"
+import { Search, Download, Filter, Calendar, Package, ArrowUpDown, ArrowUp, ArrowDown, X, RefreshCw, LayoutList, Users, Boxes, Settings, Building2, Home, Folder, FolderOpen, FileText, Globe, Banknote, Smartphone, CreditCard, Tag, FileSpreadsheet, BarChart3, Check, Printer, Archive, Store, Zap, Plus, ShoppingCart, Receipt, TrendingUp, Lock, Unlock } from "lucide-react"
+import { PesoIcon } from "@/components/ui/peso-icon"
+import { DashboardMetricCard } from "@/components/ui/dashboard-metric-card"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -12,8 +14,19 @@ import { useSales } from "@/contexts/sales-context"
 import { useToast } from "@/contexts/toast-context"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { EmptyState } from "@/components/ui/empty-state"
-import { countUnitsInSale } from "@/lib/sale-metrics"
-import { dedupeLikelyDuplicateSales, parseSaleDate } from "@/lib/analytics-from-sales"
+import {
+  countUnitsInSale,
+  formatSaleLineItemLabel,
+  lineCogs,
+  lineProfit,
+  lineQuantity,
+  lineRevenue,
+  saleTotalCogs,
+  saleTotalRevenue,
+} from "@/lib/sale-metrics"
+import { finalizeSaleRowsForTable, parseSaleDate } from "@/lib/analytics-from-sales"
+import { getPhilippineDayBounds, getPhilippineDayRangeFromYmd } from "@/lib/philippine-time"
+import { buildSalesExcelBuffer } from "@/lib/sales-excel-export"
 
 // Helper function to create short sale ID
 const createShortSaleId = (fullId: string): string => {
@@ -28,25 +41,59 @@ const formatSaleDate = (dateValue: string) => {
   return d.toLocaleDateString('en-US', { timeZone: 'Asia/Manila' });
 }
 
-const PH_TIMEZONE = "Asia/Manila";
-const getPhilippineDayBounds = (baseDate: Date = new Date()) => {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: PH_TIMEZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(baseDate);
+function timePeriodDescription(period: string): string {
+  switch (period) {
+    case "today":
+      return "Today";
+    case "weekly":
+      return "Last 7 days";
+    case "monthly":
+      return "Last 30 days";
+    case "quarterly":
+      return "Last 90 days";
+    case "annually":
+      return "Last 365 days";
+    case "all":
+      return "All time (loaded in app)";
+    default:
+      return "";
+  }
+}
 
-  const year = Number(parts.find((p) => p.type === "year")?.value || 0);
-  const month = Number(parts.find((p) => p.type === "month")?.value || 1);
-  const day = Number(parts.find((p) => p.type === "day")?.value || 1);
+/** Shown under Total Sales — custom range replaces quick period (not combined). */
+function totalSalesPeriodCaption(
+  timePeriod: string,
+  applied: { startDate: string; endDate: string }
+): string {
+  if (applied.startDate && applied.endDate) {
+    return `Custom: ${applied.startDate} → ${applied.endDate}`;
+  }
+  if (applied.startDate) return `From ${applied.startDate} onward`;
+  if (applied.endDate) return `Through ${applied.endDate}`;
+  return timePeriodDescription(timePeriod);
+}
 
-  // PH midnight corresponds to UTC-8h.
-  const startUtcMs = Date.UTC(year, month - 1, day, -8, 0, 0, 0);
-  return {
-    start: new Date(startUtcMs),
-    end: new Date(startUtcMs + 24 * 60 * 60 * 1000),
-  };
+function saleAmountNumber(sale: { amount?: unknown }): number {
+  const a = sale.amount;
+  if (typeof a === "number" && Number.isFinite(a)) return a;
+  const s = String(a ?? "").trim().replace(/,/g, "");
+  const p = parseFloat(s);
+  return Number.isFinite(p) ? p : 0;
+}
+
+const PH_MONEY: Intl.NumberFormatOptions = {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+}
+
+function formatPhpAmount(n: number) {
+  return n.toLocaleString("en-PH", PH_MONEY)
+}
+
+/** Summary / display: never show negative peso amounts. */
+function formatPhpAmountNonNegative(n: number) {
+  const v = Number.isFinite(n) ? n : 0
+  return formatPhpAmount(Math.max(0, v))
 }
 
 interface SalesViewProps {
@@ -75,24 +122,80 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
   
   // Advanced filter states
   const [selectedCategory, setSelectedCategory] = useState("all")
-  const [dateFilter, setDateFilter] = useState({ 
-    year: "all", month: "all", day: "all", startDate: "", endDate: ""
-  })
+  /** Applied custom range only — when set, quick period below is ignored. */
+  const [dateFilter, setDateFilter] = useState({ startDate: "", endDate: "" })
+  const [tempDateFilter, setTempDateFilter] = useState({ startDate: "", endDate: "" })
   const [amountFilter, setAmountFilter] = useState("all")
   const [soldAtFilter, setSoldAtFilter] = useState("all")
   const [paymentMethodFilter, setPaymentMethodFilter] = useState("all")
   const [negotiationFilter, setNegotiationFilter] = useState("all")
   const [sortBy, setSortBy] = useState("date")
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
-  const [timePeriod, setTimePeriod] = useState("weekly")
+  const [timePeriod, setTimePeriod] = useState("today")
   const [showManageArchives, setShowManageArchives] = useState(false)
   const [manageArchiveMonth, setManageArchiveMonth] = useState("")
   const [expandedSales, setExpandedSales] = useState<Set<string>>(new Set())
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string | null }>({ open: false, id: null })
   const [selectedSale, setSelectedSale] = useState<any | null>(null)
   const [showSaleDetails, setShowSaleDetails] = useState(false)
+  const [operatingExpensePercent, setOperatingExpensePercent] = useState<number>(0)
+  const [isOpexLocked, setIsOpexLocked] = useState<boolean>(false)
+  const [isOpexLoaded, setIsOpexLoaded] = useState(false)
+
+  useEffect(() => {
+    const savedOpex = localStorage.getItem("pos_opex_percent")
+    const savedLock = localStorage.getItem("pos_opex_locked")
+    if (savedOpex) setOperatingExpensePercent(Number(savedOpex))
+    if (savedLock) setIsOpexLocked(savedLock === "true")
+    setIsOpexLoaded(true)
+  }, [])
+
+  useEffect(() => {
+    if (isOpexLoaded) {
+      localStorage.setItem("pos_opex_percent", operatingExpensePercent.toString())
+      localStorage.setItem("pos_opex_locked", isOpexLocked.toString())
+    }
+  }, [operatingExpensePercent, isOpexLocked, isOpexLoaded])
 
   const sales = getSalesByCabinet(cabinet)
+
+  const usingCustomSaleDates = Boolean(dateFilter.startDate || dateFilter.endDate)
+
+  const applySalesDateRange = () => {
+    if (tempDateFilter.startDate && tempDateFilter.endDate) {
+      const startR = getPhilippineDayRangeFromYmd(tempDateFilter.startDate)
+      const endR = getPhilippineDayRangeFromYmd(tempDateFilter.endDate)
+      if (!startR || !endR) {
+        addToast("Invalid date range", "error")
+        return
+      }
+      if (startR.start.getTime() > endR.start.getTime()) {
+        addToast("From date cannot be after To date", "error")
+        return
+      }
+    }
+    setDateFilter({
+      startDate: tempDateFilter.startDate,
+      endDate: tempDateFilter.endDate,
+    })
+    addToast("Date range applied", "success")
+  }
+
+  const clearSalesDateRange = () => {
+    setTempDateFilter({ startDate: "", endDate: "" })
+    setDateFilter({ startDate: "", endDate: "" })
+    addToast("Custom date range cleared", "info")
+  }
+
+  const toggleAdvancedFilters = () => {
+    setShowAdvancedFilters((prev) => {
+      const next = !prev
+      if (next) {
+        setTempDateFilter({ startDate: dateFilter.startDate, endDate: dateFilter.endDate })
+      }
+      return next
+    })
+  }
 
   
   // Debug logging removed (was too noisy and slowed down the app)
@@ -127,29 +230,78 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
   }
 
   const handlePrint = () => {
+    const totalTransactions = filteredSales.length;
+    const totalUnits = filteredSales.reduce((sum, sale) => sum + countUnitsInSale(sale), 0);
+    const totalRev = filteredSales.reduce((sum, sale) => sum + saleAmountNumber(sale), 0);
+    const avg = totalTransactions > 0 ? totalRev / totalTransactions : 0;
+    const totalCogs = lineFinanceDisplay.cogs;
+    const totalProfit = lineFinanceDisplay.profit;
+    const netRevenue = (totalRev - totalCogs) * (1 - operatingExpensePercent / 100);
+    const salesWithDiscount = filteredSales.filter((s: any) => Array.isArray(s.items) && s.items.some((i: any) => i.isDiscounted === true)).length;
+
     const printContent = `
       <html>
         <head>
           <title>Sales Report - ${new Date().toLocaleDateString()}</title>
           <style>
-            body { font-family: Arial, sans-serif; margin: 20px; }
-            h1 { color: #333; text-align: center; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background-color: #f5f5f5; font-weight: bold; }
-            tr:nth-child(even) { background-color: #f9f9f9; }
-            .header-info { margin-bottom: 20px; color: #666; }
+            body { font-family: Arial, sans-serif; margin: 20px; color: #333; }
+            .logo-container { display: flex; align-items: center; justify-content: center; gap: 15px; margin-bottom: 20px; }
+            .logo-container img { max-height: 50px; }
+            h1 { color: #1e293b; margin: 0; font-size: 1.5rem; text-transform: uppercase; }
+            .meta { text-align: center; margin-bottom: 30px; font-size: 0.9em; color: #64748b; }
+            
+            
+            .cards-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 30px; }
+            .card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; text-align: center; background: #f8fafc; }
+            .card-title { font-size: 0.8rem; text-transform: uppercase; color: #64748b; margin-bottom: 5px; font-weight: bold; }
+            .card-value { font-size: 1.3rem; font-weight: bold; color: #0f172a; }
+            .card-sub { font-size: 0.75rem; color: #64748b; margin-top: 5px; }
+
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.9rem; }
+            th, td { border: 1px solid #e2e8f0; padding: 8px 10px; text-align: left; }
+            th { background-color: #f1f5f9; font-weight: bold; color: #334155; }
+            tr:nth-child(even) { background-color: #f8fafc; }
             .amount { text-align: right; font-weight: bold; }
+            @media print {
+              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              @page { size: landscape; }
+            }
           </style>
         </head>
         <body>
-          <h1>Sales Report</h1>
-          <div class="header-info">
-            <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
-            <p><strong>Cabinet:</strong> ${cabinet.charAt(0).toUpperCase() + cabinet.slice(1)}</p>
-            <p><strong>Total Units Sold:</strong> ${filteredSales.reduce((sum, sale) => sum + countUnitsInSale(sale), 0)}</p>
-            <p><strong>Total Revenue:</strong> ₱${filteredSales.reduce((sum, sale) => sum + sale.amount, 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+          <div class="logo-container">
+            <img src="/Wheezard logo.png" onerror="this.style.display='none'" alt="LOGO" />
+            <h1>SALES REPORT - THE WHEEZARD PH</h1>
           </div>
+          <div class="meta">
+            Cabinet: <strong>${cabinet.charAt(0).toUpperCase() + cabinet.slice(1)}</strong> | 
+            Date: <strong>${new Date().toLocaleDateString()}</strong> | 
+            Time Period: <strong>${totalSalesPeriodCaption(timePeriod, dateFilter)}</strong>
+          </div>
+
+          <div class="cards-grid">
+            <div class="card">
+              <div class="card-title">Gross Revenue</div>
+              <div class="card-value">₱${formatPhpAmountNonNegative(totalRev)}</div>
+              <div class="card-sub">Orders: ${totalTransactions} | Units: ${totalUnits}</div>
+            </div>
+            <div class="card">
+              <div class="card-title">Less COGS</div>
+              <div class="card-value">₱${formatPhpAmountNonNegative(totalCogs)}</div>
+              <div class="card-sub">Gross Profit: ₱${formatPhpAmountNonNegative(totalProfit)}</div>
+            </div>
+            <div class="card">
+              <div class="card-title">Net Revenue</div>
+              <div class="card-value">₱${formatPhpAmountNonNegative(netRevenue)}</div>
+              <div class="card-sub">Post-OpEx (${operatingExpensePercent}%)</div>
+            </div>
+            <div class="card">
+              <div class="card-title">Discounted Sales</div>
+              <div class="card-value">${salesWithDiscount}</div>
+              <div class="card-sub">Out of ${totalTransactions} transactions</div>
+            </div>
+          </div>
+
           <table>
             <thead>
               <tr>
@@ -160,12 +312,12 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
             <tbody>
               ${filteredSales.map(sale => `
                 <tr>
-                  <td>${formatSaleDate(sale.date)}</td>
+                  <td>${formatSaleDate(String(sale.date || sale.createdAt || sale.soldAt || ""))}</td>
                   <td>${createShortSaleId(sale.id)}</td>
-                  <td>${sale.items.map((item: any) => `${item.productName} (${item.quantity})`).join(', ')}</td>
+                  <td>${(Array.isArray(sale.items) ? sale.items : []).map((item: any) => formatSaleLineItemLabel(item.productName, item.quantity)).join(', ')}</td>
                   <td>${sale.staffName}</td>
                   <td>${sale.paymentMethod}</td>
-                  <td class="amount">₱${sale.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                  <td class="amount">₱${formatPhpAmountNonNegative(saleAmountNumber(sale))}</td>
                   <td>${sale.soldAt}</td>
                 </tr>
               `).join('')}
@@ -192,7 +344,7 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
       printWindow.onafterprint = () => {
         printHandled = true;
         printWindow.close();
-        addToast("Sales report printed successfully!", "success");
+        addToast("Print dialog closed", "info");
       };
       
       // Close window if user cancels or closes without printing
@@ -212,128 +364,308 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
     }
   };
 
-  // Export sales to Excel
-  const handleExportExcel = () => {
-    const headers = ['Date', 'Sale ID', 'Products', 'Staff', 'Payment Method', 'Amount', 'Sold At'];
-    const data = filteredSales.map(sale => [
-      formatSaleDate(sale.date),
-      createShortSaleId(sale.id),
-      sale.items.map((item: any) => `${item.productName} (${item.quantity})`).join('; '),
-      sale.staffName,
-      sale.paymentMethod,
-      sale.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-      sale.soldAt
-    ]);
+  const filteredSales = useMemo(() => {
+    // Filter first, then dedupe: pre-filter dedupe could drop a valid sale on the selected day
+    // when an earlier duplicate row (e.g. sync/merge) shares the same id or requestKey.
+    const matched = sales.filter((sale: any) => {
+        const items = Array.isArray(sale.items) ? sale.items : []
 
-    const csvContent = [
-      headers.join(','),
-      ...data.map(row => row.map(cell => `"${cell}"`).join(','))
-    ].join('\n');
+        const matchesSearch =
+          searchQuery === "" ||
+          items.some(
+            (item: any) =>
+              String(item.productName ?? "")
+                .toLowerCase()
+                .includes(searchQuery.toLowerCase()) ||
+              String(item.category ?? "")
+                .toLowerCase()
+                .includes(searchQuery.toLowerCase())
+          ) ||
+          String(sale.staffName ?? "")
+            .toLowerCase()
+            .includes(searchQuery.toLowerCase()) ||
+          createShortSaleId(sale.id).toLowerCase().includes(searchQuery.toLowerCase())
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `sales_${cabinet}_${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    // Set success state after export
-    setExportSuccess(true);
-    addToast(`Exported ${filteredSales.reduce((sum, sale) => sum + countUnitsInSale(sale), 0)} units sold to Excel`, "success");
-  };
+        const matchesCategory =
+          selectedCategory === "all" || items.some((item: any) => item.category === selectedCategory)
 
-  const filteredSales = dedupeLikelyDuplicateSales(sales as any)
-    .filter((sale: any) => {
-      const matchesSearch = searchQuery === "" || 
-        sale.items.some((item: any) => 
-          item.productName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          item.category.toLowerCase().includes(searchQuery.toLowerCase())
-        ) ||
-        sale.staffName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        createShortSaleId(sale.id).toLowerCase().includes(searchQuery.toLowerCase());
-
-      const matchesCategory = selectedCategory === "all" || 
-        sale.items.some((item: any) => item.category === selectedCategory);
-
-      let matchesAmount = true;
-      if (amountFilter !== "all") {
-        switch (amountFilter) {
-          case "0-500": matchesAmount = sale.amount >= 0 && sale.amount <= 500; break;
-          case "500-1000": matchesAmount = sale.amount > 500 && sale.amount <= 1000; break;
-          case "1000-5000": matchesAmount = sale.amount > 1000 && sale.amount <= 5000; break;
-          case "5000-plus": matchesAmount = sale.amount > 5000; break;
+        let matchesAmount = true
+        if (amountFilter !== "all") {
+          const amt = saleAmountNumber(sale)
+          switch (amountFilter) {
+            case "0-500":
+              matchesAmount = amt >= 0 && amt <= 500
+              break
+            case "500-1000":
+              matchesAmount = amt > 500 && amt <= 1000
+              break
+            case "1000-5000":
+              matchesAmount = amt > 1000 && amt <= 5000
+              break
+            case "5000-plus":
+              matchesAmount = amt > 5000
+              break
+          }
         }
-      }
 
-      const matchesSoldAt = soldAtFilter === "all" || sale.soldAt === soldAtFilter;
-      const matchesPaymentMethod = paymentMethodFilter === "all" || sale.paymentMethod === paymentMethodFilter;
-      
-      // Negotiation filter
-      let matchesNegotiation = true;
-      if (negotiationFilter !== "all") {
-        const hasDiscountedItems = sale.items.some((item: any) => item.isDiscounted === true);
-        if (negotiationFilter === "discounted") {
-          matchesNegotiation = hasDiscountedItems;
-        } else if (negotiationFilter === "regular") {
-          matchesNegotiation = !hasDiscountedItems;
+        const matchesSoldAt = soldAtFilter === "all" || sale.soldAt === soldAtFilter
+        const matchesPaymentMethod = paymentMethodFilter === "all" || sale.paymentMethod === paymentMethodFilter
+
+        let matchesNegotiation = true
+        if (negotiationFilter !== "all") {
+          const hasDiscountedItems = items.some((item: any) => item.isDiscounted === true)
+          if (negotiationFilter === "discounted") {
+            matchesNegotiation = hasDiscountedItems
+          } else if (negotiationFilter === "regular") {
+            matchesNegotiation = !hasDiscountedItems
+          }
         }
-      }
 
-      let matchesDate = true;
-      const saleDate = parseSaleDate(sale.date || sale.createdAt || sale.soldAt || "");
-      if (Number.isNaN(saleDate.getTime())) return false;
-      
-      // Apply time period filtering (same logic as dashboard)
-      const now = new Date();
-      let startDate: Date;
-      
-      switch (timePeriod) {
-        case "today":
-          const { start: phStart, end: phEnd } = getPhilippineDayBounds(now);
-          matchesDate = saleDate >= phStart && saleDate < phEnd;
-          break;
-        case "weekly":
-          startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-          matchesDate = saleDate >= startDate;
-          break;
-        case "monthly":
-          startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-          matchesDate = saleDate >= startDate;
-          break;
-        case "quarterly":
-          startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-          matchesDate = saleDate >= startDate;
-          break;
-        case "annually":
-          startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
-          matchesDate = saleDate >= startDate;
-          break;
-        default:
-          startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-          matchesDate = saleDate >= startDate;
-      }
-      
-      // Apply custom date range filter
-      if (dateFilter.startDate || dateFilter.endDate) {
-        if (dateFilter.startDate) matchesDate = matchesDate && saleDate >= new Date(dateFilter.startDate);
-        if (dateFilter.endDate) matchesDate = matchesDate && saleDate <= new Date(dateFilter.endDate);
-      }
+        const saleDate = parseSaleDate(sale.date || sale.createdAt || sale.soldAt || "")
+        if (Number.isNaN(saleDate.getTime())) return false
 
-      return matchesSearch && matchesCategory && matchesAmount && matchesSoldAt && matchesPaymentMethod && matchesNegotiation && matchesDate;
-    })
-    .sort((a: any, b: any) => {
-      let comparison = 0;
+        let matchesDate: boolean
+        if (dateFilter.startDate || dateFilter.endDate) {
+          if (dateFilter.startDate && dateFilter.endDate) {
+            const fromR = getPhilippineDayRangeFromYmd(dateFilter.startDate)
+            const toR = getPhilippineDayRangeFromYmd(dateFilter.endDate)
+            if (!fromR || !toR) {
+              matchesDate = false
+            } else {
+              matchesDate = saleDate >= fromR.start && saleDate < toR.end
+            }
+          } else if (dateFilter.startDate) {
+            const fromR = getPhilippineDayRangeFromYmd(dateFilter.startDate)
+            matchesDate = Boolean(fromR && saleDate >= fromR.start)
+          } else {
+            const toR = getPhilippineDayRangeFromYmd(dateFilter.endDate!)
+            matchesDate = Boolean(toR && saleDate < toR.end)
+          }
+        } else {
+          const now = new Date()
+          let startDate: Date
+          switch (timePeriod) {
+            case "all":
+              matchesDate = true
+              break
+            case "today": {
+              const { start: phStart, end: phEnd } = getPhilippineDayBounds(now)
+              matchesDate = saleDate >= phStart && saleDate < phEnd
+              break
+            }
+            case "weekly":
+              startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+              matchesDate = saleDate >= startDate
+              break
+            case "monthly":
+              startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+              matchesDate = saleDate >= startDate
+              break
+            case "quarterly":
+              startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
+              matchesDate = saleDate >= startDate
+              break
+            case "annually":
+              startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000)
+              matchesDate = saleDate >= startDate
+              break
+            default:
+              startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+              matchesDate = saleDate >= startDate
+          }
+        }
+
+        return (
+          matchesSearch &&
+          matchesCategory &&
+          matchesAmount &&
+          matchesSoldAt &&
+          matchesPaymentMethod &&
+          matchesNegotiation &&
+          matchesDate
+        )
+      })
+
+    return finalizeSaleRowsForTable(matched as any, (a: any, b: any) => {
+      let comparison = 0
       switch (sortBy) {
-        case "date": comparison = new Date(b.date).getTime() - new Date(a.date).getTime(); break;
-        case "amount": comparison = b.amount - a.amount; break;
-        case "staff": comparison = a.staffName.localeCompare(b.staffName); break;
-        default: return 0;
+        case "date":
+          comparison =
+            parseSaleDate(b.date || b.createdAt || b.soldAt || "").getTime() -
+            parseSaleDate(a.date || a.createdAt || a.soldAt || "").getTime()
+          break
+        case "amount":
+          comparison = saleAmountNumber(b) - saleAmountNumber(a)
+          break
+        case "staff":
+          comparison = String(a.staffName ?? "").localeCompare(String(b.staffName ?? ""))
+          break
+        default:
+          return 0
       }
-      return sortDirection === "asc" ? -comparison : comparison;
-    });
+      return sortDirection === "asc" ? -comparison : comparison
+    })
+  }, [
+    sales,
+    searchQuery,
+    selectedCategory,
+    amountFilter,
+    soldAtFilter,
+    paymentMethodFilter,
+    negotiationFilter,
+    timePeriod,
+    dateFilter.startDate,
+    dateFilter.endDate,
+    sortBy,
+    sortDirection,
+  ])
+
+  /** Sum of line extended prices / costs (from stored line items; excludes tax vs sale.amount). */
+  const lineFinance = useMemo(() => {
+    let revenue = 0
+    let cogs = 0
+    for (const sale of filteredSales) {
+      revenue += saleTotalRevenue(sale as any)
+      cogs += saleTotalCogs(sale as any)
+    }
+    return {
+      revenue,
+      cogs,
+      profit: revenue - cogs,
+    }
+  }, [filteredSales])
+
+  const lineFinanceDisplay = useMemo(
+    () => ({
+      revenue: Math.max(0, lineFinance.revenue),
+      cogs: Math.max(0, lineFinance.cogs),
+      profit: Math.max(0, lineFinance.profit),
+    }),
+    [lineFinance]
+  )
+
+  const trueTotalSales = useMemo(() => {
+    return filteredSales.reduce((sum, sale) => sum + saleAmountNumber(sale), 0)
+  }, [filteredSales])
+
+  const handleExportExcel = async () => {
+    const rows = filteredSales as any[]
+    const totalTransactions = rows.length
+    const totalUnits = rows.reduce((sum, sale) => sum + countUnitsInSale(sale), 0)
+    const totalRevenue = rows.reduce((sum, sale) => sum + saleAmountNumber(sale), 0)
+    const avgSale = totalTransactions > 0 ? totalRevenue / totalTransactions : 0
+    const salesWithDiscount = rows.filter(
+      (s) => Array.isArray(s.items) && s.items.some((i: { isDiscounted?: boolean }) => i.isDiscounted === true)
+    ).length
+
+    const paymentMap = new Map<string, { count: number; revenue: number }>()
+    for (const s of rows) {
+      const key = String(s.paymentMethod ?? "Other").trim() || "Other"
+      const cur = paymentMap.get(key) ?? { count: 0, revenue: 0 }
+      cur.count += 1
+      cur.revenue += saleAmountNumber(s)
+      paymentMap.set(key, cur)
+    }
+
+    const filterBits: string[] = []
+    if (searchQuery) filterBits.push(`Search: ${searchQuery}`)
+    if (selectedCategory !== "all") filterBits.push(`Category: ${selectedCategory}`)
+    if (amountFilter !== "all") filterBits.push(`Amount band: ${amountFilter}`)
+    if (soldAtFilter !== "all") filterBits.push(`Sold at: ${soldAtFilter}`)
+    if (paymentMethodFilter !== "all") filterBits.push(`Payment: ${paymentMethodFilter}`)
+    if (negotiationFilter !== "all") filterBits.push(`Lines: ${negotiationFilter}`)
+    const filterLine = filterBits.length ? filterBits.join(" | ") : "None (date scope only)"
+
+    const paymentRows = [...paymentMap.entries()]
+      .sort((a, b) => b[1].revenue - a[1].revenue)
+      .map(([method, { count, revenue }]) => ({ method, count, revenue }))
+
+    const detailRows = rows.map((sale) => {
+      const amt = saleAmountNumber(sale)
+      const units = countUnitsInSale(sale)
+      const products = Array.isArray(sale.items)
+        ? sale.items.map((item: any) => formatSaleLineItemLabel(item.productName, item.quantity)).join("; ")
+        : ""
+      return {
+        date: formatSaleDate(String(sale.date || sale.createdAt || sale.soldAt || "")),
+        saleId: createShortSaleId(sale.id),
+        units,
+        products,
+        staff: sale.staffName ?? "",
+        paymentMethod: sale.paymentMethod ?? "",
+        amount: amt,
+        soldAt: String(sale.soldAt ?? ""),
+      }
+    })
+
+      let logoBuffer: ArrayBuffer | undefined;
+      try {
+        const res = await fetch('/Wheezard logo.png');
+        if (res.ok) {
+          logoBuffer = await res.arrayBuffer();
+        }
+      } catch (err) {
+        console.warn('Could not fetch logo for excel export', err);
+      }
+
+      try {
+      const bytes = await buildSalesExcelBuffer({
+        cabinetLabel: cabinet === "all" ? "All cabinets" : cabinet,
+        generatedAt: new Date().toLocaleString("en-PH", {
+          timeZone: "Asia/Manila",
+          dateStyle: "medium",
+          timeStyle: "short",
+        }),
+        dateScopeLabel: totalSalesPeriodCaption(timePeriod, dateFilter),
+        filterLine,
+        totalTransactions,
+        totalUnits,
+        totalRevenue,
+        totalCOGS: lineFinanceDisplay.cogs,
+        totalProfit: lineFinanceDisplay.profit,
+        netRevenue: (totalRevenue - lineFinanceDisplay.cogs) * (1 - operatingExpensePercent / 100),
+        avgSale,
+        salesWithDiscount,
+        paymentRows,
+        detailRows,
+        logoBuffer,
+      })
+
+      const blob = new Blob([bytes], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      })
+      const link = document.createElement("a")
+      const url = URL.createObjectURL(blob)
+      const safeCabinet = String(cabinet || "all").replace(/[^\w.-]+/g, "_")
+      link.setAttribute("href", url)
+      link.setAttribute(
+        "download",
+        `sales_report_${safeCabinet}_${new Date().toISOString().split("T")[0]}.xlsx`
+      )
+      link.style.visibility = "hidden"
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+
+      setExportSuccess(true)
+      const cabinetLabel = cabinet === "all" ? "All cabinets" : cabinet
+      const scopeCaption = totalSalesPeriodCaption(timePeriod, dateFilter)
+      const filterSummary = filterBits.length ? filterBits.join(" · ") : null
+      addToast(
+        [
+          `Sales report (filtered): ${totalTransactions} transactions, ${totalUnits} units, ₱${totalRevenue.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`,
+          `Cabinet: ${cabinetLabel}. Period: ${scopeCaption}.`,
+          filterSummary ? `Filters: ${filterSummary}.` : "No extra filters (date scope only).",
+        ].join(" "),
+        "success",
+        9500
+      )
+    } catch (e) {
+      console.error(e)
+      addToast("Could not build Excel file. Try again.", "error")
+    }
+  }
 
   const handleExportReport = async () => {
     try {
@@ -466,7 +798,7 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
                 <Filter size={14} className="text-[#3B18DA]" />
                 <h3 className="font-semibold text-gray-800 text-sm">Sales Filters</h3>
                 <span className="bg-[#3B18DA]/10 text-[#3B18DA] px-1.5 py-0.5 rounded-full text-xs">
-                  {[selectedCategory !== "all" ? 1 : 0, (dateFilter.startDate || dateFilter.endDate) ? 1 : 0, dateFilter.year !== "all" ? 1 : 0, amountFilter !== "all" ? 1 : 0, soldAtFilter !== "all" ? 1 : 0, paymentMethodFilter !== "all" ? 1 : 0, negotiationFilter !== "all" ? 1 : 0, searchQuery !== "" ? 1 : 0].reduce((a, b) => a + b, 0)}
+                  {[selectedCategory !== "all" ? 1 : 0, (dateFilter.startDate || dateFilter.endDate) ? 1 : 0, amountFilter !== "all" ? 1 : 0, soldAtFilter !== "all" ? 1 : 0, paymentMethodFilter !== "all" ? 1 : 0, negotiationFilter !== "all" ? 1 : 0, searchQuery !== "" ? 1 : 0].reduce((a, b) => a + b, 0)}
                 </span>
               </div>
               <Button variant="ghost" size="sm" onClick={() => setShowAdvancedFilters(false)} className="h-5 w-5 p-0 hover:bg-gray-100">
@@ -484,7 +816,7 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all"><span className="flex items-center gap-2"><Globe size={14} /> All Categories</span></SelectItem>
-                    {categories.slice(0, 15).map((category) => (
+                    {categories.map((category) => (
                       <SelectItem key={category} value={category} className="text-xs">{category}</SelectItem>
                     ))}
                   </SelectContent>
@@ -493,7 +825,7 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
 
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-gray-700 flex items-center gap-1">
-                  <DollarSign size={10} className="text-orange-600" /> Amount Range
+                  <PesoIcon size={10} className="text-orange-600" /> Amount Range
                 </label>
                 <Select value={amountFilter} onValueChange={setAmountFilter}>
                   <SelectTrigger className="h-7 border-2 focus:border-orange-500 text-xs">
@@ -552,7 +884,7 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Sales</SelectItem>
-                      <SelectItem value="regular"><span className="flex items-center gap-2"><DollarSign size={14} /> Regular Price</span></SelectItem>
+                      <SelectItem value="regular"><span className="flex items-center gap-2"><PesoIcon size={14} /> Regular Price</span></SelectItem>
                       <SelectItem value="discounted"><span className="flex items-center gap-2"><Tag size={14} /> Discounted</span></SelectItem>
                     </SelectContent>
                   </Select>
@@ -602,7 +934,7 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
                     className="w-full justify-between h-7 text-xs"
                   >
                     <span className="flex items-center gap-2">
-                      <DollarSign size={12} />
+                      <PesoIcon size={12} />
                       Amount
                     </span>
                     {sortBy === "amount" && (sortDirection === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}
@@ -629,12 +961,52 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
                 </div>
               </div>
 
+              <div className="space-y-2 rounded-md border border-purple-200/80 bg-purple-50/40 p-2">
+                <label className="text-xs font-semibold text-gray-800 flex items-center gap-1">
+                  <Calendar size={10} className="text-purple-600" /> Custom date range
+                </label>
+                <p className="text-[10px] text-gray-600 leading-snug">
+                  Set From and/or To, then Apply. When a custom range is active, the quick period below is ignored.
+                </p>
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-medium text-gray-600 w-9 shrink-0">From</span>
+                    <Input
+                      type="date"
+                      value={tempDateFilter.startDate}
+                      onChange={(e) => setTempDateFilter((prev) => ({ ...prev, startDate: e.target.value }))}
+                      className="h-7 flex-1 border-2 focus:border-purple-500 text-xs px-2"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-medium text-gray-600 w-9 shrink-0">To</span>
+                    <Input
+                      type="date"
+                      value={tempDateFilter.endDate}
+                      onChange={(e) => setTempDateFilter((prev) => ({ ...prev, endDate: e.target.value }))}
+                      className="h-7 flex-1 border-2 focus:border-purple-500 text-xs px-2"
+                    />
+                  </div>
+                  <div className="flex gap-1 pt-0.5">
+                    <Button type="button" onClick={applySalesDateRange} size="sm" className="flex-1 h-7 bg-[oklch(0.65_0.22_280)] hover:bg-[oklch(0.55_0.20_280)] text-white text-xs">
+                      <Check size={10} className="mr-1" /> Apply
+                    </Button>
+                    <Button type="button" variant="outline" onClick={clearSalesDateRange} size="sm" className="h-7 text-xs px-2">
+                      Clear
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-gray-700 flex items-center gap-1">
-                  <Calendar size={10} className="text-purple-600" /> Time Period
+                  <Calendar size={10} className="text-purple-600" /> Quick period
                 </label>
-                <Select value={timePeriod} onValueChange={setTimePeriod}>
-                  <SelectTrigger className="h-7 border-2 focus:border-purple-500 text-xs">
+                <Select value={timePeriod} onValueChange={setTimePeriod} disabled={usingCustomSaleDates}>
+                  <SelectTrigger
+                    title={usingCustomSaleDates ? "Clear custom date range above to use quick period" : undefined}
+                    className="h-7 border-2 focus:border-purple-500 text-xs disabled:opacity-50"
+                  >
                     <SelectValue placeholder="Weekly" />
                   </SelectTrigger>
                   <SelectContent>
@@ -643,39 +1015,15 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
                     <SelectItem value="monthly"><span className="flex items-center gap-2"><Calendar size={14} /> This Month</span></SelectItem>
                     <SelectItem value="quarterly"><span className="flex items-center gap-2"><BarChart3 size={14} /> This Quarter</span></SelectItem>
                     <SelectItem value="annually"><span className="flex items-center gap-2"><FileText size={14} /> This Year</span></SelectItem>
+                    <SelectItem value="all"><span className="flex items-center gap-2"><Globe size={14} /> All time</span></SelectItem>
                   </SelectContent>
                 </Select>
+                {usingCustomSaleDates && (
+                  <p className="text-[10px] text-amber-700">Quick period is off while a custom range is applied.</p>
+                )}
               </div>
 
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-gray-700 flex items-center gap-1">
-                  <Calendar size={10} className="text-purple-600" /> Date Range
-                </label>
-                <div className="space-y-1">
-                  <Input type="date" value={dateFilter.startDate} onChange={(e) => setDateFilter(prev => ({ ...prev, startDate: e.target.value }))} className="h-6 border-2 focus:border-purple-500 text-xs px-2" placeholder="Start date" />
-                  <Input type="date" value={dateFilter.endDate} onChange={(e) => setDateFilter(prev => ({ ...prev, endDate: e.target.value }))} className="h-6 border-2 focus:border-purple-500 text-xs px-2" placeholder="End date" />
-                  <Button onClick={() => addToast("Date filter applied", "success")} size="sm" className="w-full h-6 bg-[oklch(0.65_0.22_280)] hover:bg-[oklch(0.55_0.20_280)] text-white text-xs">
-                    <Check size={10} className="mr-1" /> Apply Dates
-                  </Button>
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-gray-700 flex items-center gap-1">
-                  <Zap size={10} className="text-yellow-600" /> Quick Filters
-                </label>
-                <div className="grid grid-cols-2 gap-1">
-                  <Button variant="outline" onClick={() => { setSelectedCategory("all"); setDateFilter({ year: "all", month: "all", day: "all", startDate: "", endDate: "" }); setAmountFilter("all"); setSoldAtFilter("all"); setPaymentMethodFilter("all"); setNegotiationFilter("all"); setTimePeriod("weekly"); addToast("Showing weekly sales", "info"); }} className="h-6 px-2 border-violet-300 text-violet-700 hover:bg-violet-50 text-xs">All Sales</Button>
-                  <Button variant="outline" onClick={() => { setSelectedCategory("all"); setDateFilter({ year: "all", month: "all", day: "all", startDate: "", endDate: "" }); setAmountFilter("5000-plus"); setSoldAtFilter("all"); setPaymentMethodFilter("all"); setTimePeriod("weekly"); addToast("Showing high-value sales", "info"); }} className="h-6 px-2 border-green-300 text-green-700 hover:bg-green-50 text-xs">High Value</Button>
-                  <Button variant="outline" onClick={() => { setSelectedCategory("all"); setDateFilter({ year: "all", month: "all", day: "all", startDate: "", endDate: "" }); setAmountFilter("all"); setSoldAtFilter("all"); setPaymentMethodFilter("all"); setTimePeriod("today"); addToast("Showing today's sales", "info"); }} className="h-6 px-2 border-yellow-300 text-yellow-700 hover:bg-yellow-50 text-xs">Today</Button>
-                  <Button variant="outline" onClick={() => { setSelectedCategory("all"); setDateFilter({ year: "all", month: "all", day: "all", startDate: "", endDate: "" }); setAmountFilter("all"); setSoldAtFilter("all"); setPaymentMethodFilter("all"); setTimePeriod("weekly"); addToast("Showing weekly sales", "info"); }} className="h-6 px-2 border-purple-300 text-purple-700 hover:bg-purple-50 text-xs">This Week</Button>
-                  <Button variant="outline" onClick={() => { setSelectedCategory("all"); setDateFilter({ year: "all", month: "all", day: "all", startDate: "", endDate: "" }); setAmountFilter("all"); setSoldAtFilter("all"); setPaymentMethodFilter("all"); setTimePeriod("monthly"); addToast("Showing monthly sales", "info"); }} className="h-6 px-2 border-indigo-300 text-indigo-700 hover:bg-indigo-50 text-xs col-span-2">
-                    <Calendar size={8} className="mr-1" /> This Month
-                  </Button>
-                </div>
-              </div>
-
-              <Button variant="outline" onClick={() => { setSelectedCategory("all"); setDateFilter({ year: "all", month: "all", day: "all", startDate: "", endDate: "" }); setAmountFilter("all"); setSoldAtFilter("all"); setPaymentMethodFilter("all"); setNegotiationFilter("all"); setSortBy("date"); setSortDirection("desc"); setTimePeriod("weekly"); setSearchQuery(""); addToast("All filters cleared", "success"); }} className="w-full h-7 text-gray-500 hover:text-gray-700 text-xs">
+              <Button variant="outline" onClick={() => { setSelectedCategory("all"); setDateFilter({ startDate: "", endDate: "" }); setTempDateFilter({ startDate: "", endDate: "" }); setAmountFilter("all"); setSoldAtFilter("all"); setPaymentMethodFilter("all"); setNegotiationFilter("all"); setSortBy("date"); setSortDirection("desc"); setTimePeriod("today"); setSearchQuery(""); addToast("All filters cleared", "success"); }} className="w-full h-7 text-gray-500 hover:text-gray-700 text-xs">
                 Clear All Filters
               </Button>
             </div>
@@ -704,50 +1052,147 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
             </div>
           </div>
 
-          {/* Revenue Summary */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 lg:gap-4 mb-6 lg:mb-8 mt-4 max-w-2xl">
-            <Card className="relative overflow-hidden border-2 shadow-md bg-gradient-to-br from-[oklch(0.25_0.15_145)] to-[oklch(0.35_0.18_145)] border-[oklch(0.3_0.12_145)] text-white">
-              <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-white/20 to-transparent rounded-bl-full" />
-              <CardContent className="pt-3 pb-3 relative">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium uppercase tracking-wide opacity-80">
-                      Total Sales
-                    </p>
-                    <p className="text-xl font-bold">
-                      ₱{filteredSales.reduce((sum: number, sale: any) => sum + (parseFloat(sale.amount) || 0), 0).toLocaleString()}
-                    </p>
+          {/* Revenue Summary — full row width; fewer columns on XL so amounts stay readable */}
+          <div className="mb-6 mt-4 grid w-full min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5 lg:mb-8 lg:gap-5">
+            <DashboardMetricCard
+              color="green"
+              title="Total Sales"
+              value={
+                loading ? (
+                  <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-white/90">
+                    <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/50 border-t-white" />
+                    …
+                  </span>
+                ) : (
+                  <span className="tabular-nums">
+                    ₱
+                    {formatPhpAmountNonNegative(trueTotalSales)}
+                  </span>
+                )
+              }
+              description={
+                <>
+                  <span className="block">{totalSalesPeriodCaption(timePeriod, dateFilter)}</span>
+                  <span className="mt-0.5 block opacity-80">
+                    {loading
+                      ? "Loading transactions…"
+                      : `Sum of the Amount column · ${filteredSales.length} transaction${
+                          filteredSales.length === 1 ? "" : "s"
+                        } listed`}
+                  </span>
+                </>
+              }
+              icon={<ShoppingCart className="size-5 shrink-0 sm:size-6" aria-hidden />}
+            />
+
+            <DashboardMetricCard
+              color="orange"
+              title="Discounted Sales"
+              value={
+                filteredSales.filter((sale: any) =>
+                  (Array.isArray(sale.items) ? sale.items : []).some((item: any) => item.isDiscounted === true)
+                ).length
+              }
+              description={
+                negotiationFilter === "discounted" ? (
+                  <span className="inline-flex items-center gap-1 font-medium">
+                    <Check className="h-3.5 w-3.5" aria-hidden /> Filter active — click to clear
+                  </span>
+                ) : (
+                  "Click card to filter discounted lines"
+                )
+              }
+              icon={<Tag className="size-5 shrink-0 sm:size-6" aria-hidden />}
+              onClick={() => setNegotiationFilter(negotiationFilter === "discounted" ? "all" : "discounted")}
+              className={
+                negotiationFilter === "discounted"
+                  ? "ring-2 ring-white/95 ring-offset-2 ring-offset-orange-950"
+                  : ""
+              }
+            />
+
+            <DashboardMetricCard
+              color="maroon"
+              title="Cost of Goods Sold"
+              value={
+                loading ? (
+                  "…"
+                ) : (
+                  <span className="tabular-nums">₱{formatPhpAmount(lineFinanceDisplay.cogs)}</span>
+                )
+              }
+              description={
+                <>
+                  <span className="mt-0.5 block !text-white/80">Cost for selected period</span>
+                </>
+              }
+              icon={<Receipt className="size-5 shrink-0 sm:size-6" aria-hidden />}
+            />
+
+            <DashboardMetricCard
+              color="blue"
+              title="Gross revenue"
+              value={
+                loading ? (
+                  "…"
+                ) : (
+                  <span className="tabular-nums">₱{formatPhpAmount(trueTotalSales - lineFinanceDisplay.cogs)}</span>
+                )
+              }
+              description={
+                <>
+                  <span className="mt-0.5 block !text-white/80">Sales - COGS for selected period</span>
+                </>
+              }
+              icon={<Boxes className="size-5 shrink-0 sm:size-6" aria-hidden />}
+            />
+
+            <DashboardMetricCard
+              color="primary"
+              title="Net revenue"
+              value={
+                loading ? (
+                  "…"
+                ) : (
+                  <span className="tabular-nums">₱{formatPhpAmount((trueTotalSales - lineFinanceDisplay.cogs) * (1 - operatingExpensePercent / 100))}</span>
+                )
+              }
+              description={
+                <div onClick={(e) => e.stopPropagation()} className="cursor-default">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-white/80 font-medium whitespace-nowrap">Less OpEx:</span>
+                    <div className="relative flex items-center gap-1.5">
+                      {isOpexLocked ? (
+                        <div className="flex items-center h-6 px-2 bg-white/5 border border-white/10 rounded text-xs text-white/90">
+                          {operatingExpensePercent}%
+                        </div>
+                      ) : (
+                        <div className="relative">
+                          <Input
+                            type="number"
+                            min="0"
+                            max="100"
+                            value={operatingExpensePercent || ""}
+                            onChange={(e) => setOperatingExpensePercent(Number(e.target.value) || 0)}
+                            className="h-6 w-16 px-1.5 py-0 text-xs bg-white/10 border-white/20 text-white placeholder:text-white/50 text-right pr-4 focus-visible:ring-1 focus-visible:ring-white/50"
+                          />
+                          <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-white/70">%</span>
+                        </div>
+                      )}
+                      <button 
+                        onClick={() => setIsOpexLocked(!isOpexLocked)} 
+                        className="p-1 hover:bg-white/10 rounded transition-colors text-white/70 hover:text-white shrink-0"
+                        title={isOpexLocked ? "Unlock to edit" : "Lock and save"}
+                      >
+                        {isOpexLocked ? <Lock size={12} /> : <Unlock size={12} />}
+                      </button>
+                    </div>
                   </div>
-                  <div className="rounded-full p-2 bg-[oklch(0.5_0.15_145)] text-white flex-shrink-0">
-                    <DollarSign className="h-4 w-4" />
-                  </div>
+                  <span className="mt-0.5 block !text-white/80">Net calculated after expenses</span>
                 </div>
-              </CardContent>
-            </Card>
-            
-            <Card className={`relative overflow-hidden border-2 shadow-md cursor-pointer hover:shadow-lg transition-all duration-300 ${negotiationFilter === "discounted" ? "border-orange-500" : "border-[oklch(0.65_0.1_85)]"} bg-gradient-to-br from-[oklch(0.6_0.15_85)] to-[oklch(0.7_0.12_90)] text-white`} onClick={() => setNegotiationFilter(negotiationFilter === "discounted" ? "all" : "discounted")} title={negotiationFilter === "discounted" ? "Click to clear filter" : "Click to filter discounted sales"}>
-              <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-white/20 to-transparent rounded-bl-full" />
-              <CardContent className="pt-3 pb-3 relative">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium uppercase tracking-wide opacity-80">
-                      Discounted Sales
-                    </p>
-                    <p className="text-xl font-bold">
-                      {filteredSales.filter((sale: any) => 
-                        sale.items.some((item: any) => item.isDiscounted === true)
-                      ).length}
-                    </p>
-                    <p className="text-xs opacity-60">
-                      {negotiationFilter === "discounted" ? <span className="flex items-center gap-1 justify-center"><Check size={12} /></span> : "Click to filter"}
-                    </p>
-                  </div>
-                  <div className={`rounded-full p-2 flex-shrink-0 ${negotiationFilter === "discounted" ? "bg-orange-200 text-orange-700" : "bg-[oklch(0.65_0.12_85)] text-white"}`}>
-                    <Package className="h-4 w-4" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+              }
+              icon={<TrendingUp className="size-5 shrink-0 sm:size-6" aria-hidden />}
+            />
           </div>
 
           <Card className="bg-card border-primary/10 overflow-hidden">
@@ -760,7 +1205,7 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
                 <div className="flex items-center gap-2 lg:gap-3">
                   <Button
                     variant="outline"
-                    onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+                    onClick={toggleAdvancedFilters}
                     className="h-8 px-3 rounded-md border-2 border-[#3B18DA] hover:bg-[#3B18DA]/10 text-[#3B18DA] text-xs font-medium"
                     title="Toggle filters panel"
                   >
@@ -770,7 +1215,6 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
                       {(searchQuery !== "" ||
                         selectedCategory !== "all" ||
                         (dateFilter.startDate || dateFilter.endDate) ||
-                        dateFilter.year !== "all" ||
                         amountFilter !== "all" ||
                         soldAtFilter !== "all" ||
                         paymentMethodFilter !== "all" ||
@@ -780,8 +1224,11 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
                       )}
                     </div>
                   </Button>
-                  <Select value={timePeriod} onValueChange={setTimePeriod}>
-                    <SelectTrigger className="h-8 border-2 border-gray-200 hover:border-gray-300 text-xs">
+                  <Select value={timePeriod} onValueChange={setTimePeriod} disabled={usingCustomSaleDates}>
+                    <SelectTrigger
+                      title={usingCustomSaleDates ? "Clear custom date range in Filters to use quick period" : undefined}
+                      className="h-8 border-2 border-gray-200 hover:border-gray-300 text-xs disabled:opacity-50"
+                    >
                       <SelectValue placeholder="Period" />
                     </SelectTrigger>
                     <SelectContent>
@@ -790,6 +1237,7 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
                       <SelectItem value="monthly"><span className="flex items-center gap-2"><Calendar size={14} /> This Month</span></SelectItem>
                       <SelectItem value="quarterly"><span className="flex items-center gap-2"><BarChart3 size={14} /> This Quarter</span></SelectItem>
                       <SelectItem value="annually"><span className="flex items-center gap-2"><FileText size={14} /> This Year</span></SelectItem>
+                      <SelectItem value="all"><span className="flex items-center gap-2"><Globe size={14} /> All time</span></SelectItem>
                     </SelectContent>
                   </Select>
                   <div className="text-right">
@@ -880,7 +1328,7 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
                       <tr>
                         <td colSpan={11} className="py-12 text-center">
                           <div className="flex flex-col items-center">
-                            <DollarSign size={48} className="text-gray-400 mb-4" />
+                            <PesoIcon size={48} className="text-gray-400 mb-4" />
                             <h3 className="text-lg font-semibold text-gray-900 mb-2">No sales found</h3>
                             <p className="text-sm text-gray-500 mb-6">
                               {searchQuery || selectedCategory !== "all" || amountFilter !== "all" || soldAtFilter !== "all" || paymentMethodFilter !== "all" || negotiationFilter !== "all" || timePeriod !== "weekly" || dateFilter.startDate || dateFilter.endDate 
@@ -897,14 +1345,14 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
                                   variant="outline" 
                                   onClick={() => { 
                                     setSelectedCategory("all"); 
-                                    setDateFilter({ year: "all", month: "all", day: "all", startDate: "", endDate: "" }); 
+                                    setDateFilter({ startDate: "", endDate: "" }); setTempDateFilter({ startDate: "", endDate: "" }); 
                                     setAmountFilter("all"); 
                                     setSoldAtFilter("all"); 
                                     setPaymentMethodFilter("all"); 
                                     setNegotiationFilter("all"); 
                                     setSortBy("date"); 
                                     setSortDirection("desc"); 
-                                    setTimePeriod("weekly"); 
+                                    setTimePeriod("today"); 
                                     setSearchQuery(""); 
                                     addToast("All filters cleared", "success"); 
                                   }}
@@ -917,39 +1365,40 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
                         </td>
                       </tr>
                     ) : (
-                      filteredSales.map((sale: any) => (
-                        <tr key={sale.id} className="hover:bg-muted/50 transition-colors">
-                          <td className="py-4 px-5 text-muted-foreground text-sm">{formatSaleDate(sale.date)}</td>
+                      filteredSales.map((sale: any, rowIndex: number) => {
+                        const lineItems = Array.isArray(sale.items) ? sale.items : []
+                        const rowKey = String(sale?.id ?? "").trim() || `row-${rowIndex}`
+                        return (
+                        <tr key={rowKey} className="hover:bg-muted/50 transition-colors">
+                          <td className="py-4 px-5 text-muted-foreground text-sm">{formatSaleDate(String(sale.date || sale.createdAt || sale.soldAt || ""))}</td>
                           <td className="py-4 px-5 text-foreground font-medium">{createShortSaleId(sale.id)}</td>
                           <td className="py-4 px-5 text-muted-foreground text-sm">
                             <div className="max-w-md space-y-1">
-                              {sale.items.length <= 3 ? (
-                                // Show all items if 3 or less
-                                sale.items.map((item: any, index: number) => (
+                              {lineItems.length <= 3 ? (
+                                lineItems.map((item: any, index: number) => (
                                   <span key={index} className="inline-block">
-                                                                        {item.productName} ({item.quantity})
-                                    {index < sale.items.length - 1 && <span className="mr-2">, </span>}
+                                    {formatSaleLineItemLabel(item.productName, item.quantity)}
+                                    {index < lineItems.length - 1 && <span className="mr-2">, </span>}
                                   </span>
                                 ))
                               ) : (
-                                // Show truncated version with expand/collapse for more than 3 items
                                 <div>
-                                  {sale.items.slice(0, 3).map((item: any, index: number) => (
+                                  {lineItems.slice(0, 3).map((item: any, index: number) => (
                                     <span key={index} className="inline-block">
-                                                                            {item.productName} ({item.quantity})
+                                      {formatSaleLineItemLabel(item.productName, item.quantity)}
                                       <span className="mr-2">, </span>
                                     </span>
                                   ))}
                                   {!expandedSales.has(sale.id) && (
                                     <span className="text-violet-600 cursor-pointer hover:text-violet-800 text-xs" onClick={() => toggleSaleExpansion(sale.id)}>
-                                      +{sale.items.length - 3} more...
+                                      +{lineItems.length - 3} more...
                                     </span>
                                   )}
                                   {expandedSales.has(sale.id) && (
                                     <div>
-                                      {sale.items.slice(3).map((item: any, index: number) => (
+                                      {lineItems.slice(3).map((item: any, index: number) => (
                                         <span key={index + 3} className="inline-block">
-                                                                                    {item.productName} ({item.quantity})
+                                          {formatSaleLineItemLabel(item.productName, item.quantity)}
                                           <span className="mr-2">, </span>
                                         </span>
                                       ))}
@@ -964,14 +1413,14 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
                           </td>
                           <td className="py-4 px-5 text-muted-foreground text-sm">
                             <div className="flex flex-wrap gap-1">
-                              {(Array.from(new Set(sale.items.map((item: any) => item.category))) as string[]).slice(0, 2).map((cat, idx) => (
+                              {(Array.from(new Set(lineItems.map((item: any) => item.category))) as string[]).slice(0, 2).map((cat, idx) => (
                                 <span key={idx} className="px-2 py-0.5 bg-[#3B18DA]/10 text-[#3B18DA] rounded text-xs">
                                   {cat}
                                 </span>
                               ))}
-                              {sale.items.length > 2 && (
+                              {lineItems.length > 2 && (
                                 <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">
-                                  +{sale.items.length - 2}
+                                  +{lineItems.length - 2}
                                 </span>
                               )}
                             </div>
@@ -987,14 +1436,14 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
                               <span className="text-muted-foreground text-sm">-</span>
                             )}
                           </td>
-                          <td className="py-4 px-5 text-right font-medium text-foreground">₱{sale.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          <td className="py-4 px-5 text-right font-medium text-foreground tabular-nums">₱{formatPhpAmountNonNegative(saleAmountNumber(sale))}</td>
                           <td className="py-4 px-5 text-muted-foreground text-sm text-center">
                             <span className={`px-3 py-1.5 rounded-full text-xs ${sale.soldAt === 'physical' ? 'bg-green-100 text-green-700' : 'bg-violet-100 text-violet-700'}`}>
                               {sale.soldAt === 'physical' ? 'Store' : 'Online'}
                             </span>
                           </td>
                           <td className="py-4 px-5 text-center">
-                            {sale.items.some((item: any) => item.isDiscounted === true) ? (
+                            {lineItems.some((item: any) => item.isDiscounted === true) ? (
                               <span className="px-3 py-1.5 rounded-full text-xs bg-orange-100 text-orange-700 font-medium">
                                 Discounted
                               </span>
@@ -1010,7 +1459,8 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
                             </Button>
                           </td>
                         </tr>
-                      ))
+                        )
+                      })
                     )}
                   </tbody>
                 </table>
@@ -1021,7 +1471,12 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
       </div>
 
       {/* Export Dialog */}
-      <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
+      <Dialog open={showExportDialog} onOpenChange={(open) => {
+        if (!open && !exportSuccess) {
+          addToast("Export action cancelled", "info");
+        }
+        setShowExportDialog(open);
+      }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Export Sales Report</DialogTitle>
@@ -1127,18 +1582,24 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
                 </h4>
                 <div className="space-y-2 max-h-48 overflow-y-auto border rounded-lg p-3">
                   {selectedSale.items.map((item: any, index: number) => (
-                    <div key={index} className="flex justify-between items-start py-2 border-b border-gray-100 last:border-0">
-                      <div>
+                    <div key={index} className="flex justify-between items-start py-2 border-b border-gray-100 last:border-0 gap-2">
+                      <div className="min-w-0">
                         <div className="font-medium text-sm">{item.productName}</div>
                         <div className="text-xs text-gray-500">
-                          {item.quantity} × ₱{item.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          Qty {item.quantity} · Sell ₱
+                          {formatPhpAmountNonNegative(lineRevenue(item) / Math.max(1, lineQuantity(item)))} ea
                           {item.isDiscounted && (
                             <span className="ml-2 text-orange-600 bg-orange-100 px-1.5 py-0.5 rounded text-xs">DISCOUNTED</span>
                           )}
                         </div>
+                        <div className="text-[11px] text-gray-500 mt-0.5">
+                          Cost ₱
+                          {formatPhpAmountNonNegative(lineCogs(item) / Math.max(1, lineQuantity(item)))} ea · Line profit ₱
+                          {formatPhpAmountNonNegative(lineProfit(item))}
+                        </div>
                       </div>
-                      <div className="font-semibold text-sm">
-                        ₱{(item.price * item.quantity).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      <div className="font-semibold text-sm tabular-nums shrink-0">
+                        ₱{formatPhpAmountNonNegative(lineRevenue(item))}
                       </div>
                     </div>
                   ))}
@@ -1148,13 +1609,46 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
               {/* Totals */}
               <div className="border-t pt-3 space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Subtotal:</span>
-                  <span>₱{selectedSale.items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <span className="text-gray-600">Items revenue:</span>
+                  <span>₱{formatPhpAmountNonNegative(saleTotalRevenue(selectedSale))}</span>
                 </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Cost of Goods Sold:</span>
+                  <span>₱{formatPhpAmountNonNegative(saleTotalCogs(selectedSale))}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Gross profit (lines):</span>
+                  <span>
+                    ₱
+                    {formatPhpAmountNonNegative(
+                      saleTotalRevenue(selectedSale) - saleTotalCogs(selectedSale)
+                    )}
+                  </span>
+                </div>
+                {(() => {
+                  const lineRev = saleTotalRevenue(selectedSale);
+                  const recordedAmount = saleAmountNumber(selectedSale);
+                  const taxAmount = Number(selectedSale.tax) || (recordedAmount > lineRev ? recordedAmount - lineRev : 0);
+                  
+                  return taxAmount > 0 ? (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Tax / Adjustments:</span>
+                      <span>₱{formatPhpAmountNonNegative(taxAmount)}</span>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Tax applied:</span>
+                      <span>None</span>
+                    </div>
+                  );
+                })()}
                 <div className="flex justify-between text-lg font-bold">
-                  <span>Total:</span>
-                  <span className="text-[#3B18DA]">₱{selectedSale.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <span>Recorded total:</span>
+                  <span className="text-[#3B18DA]">₱{formatPhpAmountNonNegative(saleAmountNumber(selectedSale))}</span>
                 </div>
+                <p className="text-[10px] text-muted-foreground">
+                  Recorded total may include tax or adjustments vs line sums.
+                </p>
               </div>
 
               {/* Close Button */}

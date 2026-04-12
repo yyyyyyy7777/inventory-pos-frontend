@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAllProducts, findOrCreateCategory, createProduct } from '@/lib/pg-direct';
+import { getAllProducts, getAllProductsAllCabinets, findOrCreateCategory, createProduct } from '@/lib/pg-direct';
 import { validateProductForm } from '@/utils/validation';
+
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
   try {
@@ -23,10 +26,19 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Fetch products filtered by cabinet
-    const products = await getAllProducts(cabinet);
+    // Fetch products filtered by cabinet (or all cabinets)
+    const products = cabinet === 'all'
+      ? await getAllProductsAllCabinets()
+      : await getAllProducts(cabinet);
 
-    return NextResponse.json(products);
+    return NextResponse.json(products, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+        'Surrogate-Control': 'no-store'
+      }
+    });
   } catch (error: any) {
     console.error('Error fetching products:', error);
     const errorMessage = error instanceof Error ? error.message : 'Failed to fetch products';
@@ -58,8 +70,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Use comprehensive validation
-    const validation = validateProductForm(body, false, false); // Don't require quantity/price for new products
+    const validation = validateProductForm(body, true, true);
     if (!validation.isValid) {
       return NextResponse.json(
         { 
@@ -70,7 +81,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { name, price, category, stock, cabinet, sku, description } = body;
+    const {
+      name,
+      price,
+      category,
+      stock,
+      cabinet,
+      sku,
+      description,
+      costPrice,
+      purchaseDate,
+      purchasePlace,
+      supplierName,
+      dimLengthCm,
+      dimWidthCm,
+      dimHeightCm,
+      weightKg,
+      imageUrl,
+      createdBy,
+    } = body;
     
     // Additional business logic validation
     if (name && name.length > 100) {
@@ -101,9 +130,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (description && description.length > 500) {
+    if (description && description.length > 2000) {
       return NextResponse.json(
-        { error: 'Description must not exceed 500 characters' },
+        { error: 'Product details must not exceed 2000 characters' },
+        { status: 400 }
+      );
+    }
+
+    if (!sku || !String(sku).trim()) {
+      return NextResponse.json({ error: 'SKU is required' }, { status: 400 });
+    }
+    if (!purchaseDate || !String(purchaseDate).trim()) {
+      return NextResponse.json({ error: 'Date of purchase is required' }, { status: 400 });
+    }
+    if (!purchasePlace || !String(purchasePlace).trim()) {
+      return NextResponse.json({ error: 'Place of purchase is required' }, { status: 400 });
+    }
+    const costNum =
+      costPrice !== undefined && costPrice !== '' && costPrice !== null
+        ? parseFloat(String(costPrice))
+        : NaN;
+    if (!Number.isFinite(costNum) || costNum <= 0) {
+      return NextResponse.json(
+        { error: 'Acquired price is required and must be greater than zero' },
         { status: 400 }
       );
     }
@@ -116,20 +165,35 @@ export async function POST(request: NextRequest) {
       // Create product
       const product = await createProduct({
         name: name.trim(),
-        sku: sku ? sku.trim().toUpperCase() : undefined, // Normalize SKU to uppercase
+        sku: String(sku).trim().toUpperCase(),
         price: price ? parseFloat(price) : 0,
         stock: stock ? parseInt(stock) : 0,
         cabinet: cabinet || 'main',
         categoryId: categoryRecord.id,
-        description: description ? description.trim() : undefined
+        description: description ? description.trim() : undefined,
+        costPrice: costNum,
+        purchaseDate: purchaseDate || null,
+        purchasePlace: String(purchasePlace).trim() || null,
+        supplierName: supplierName?.trim() || null,
+        dimLengthCm:
+          dimLengthCm !== undefined && dimLengthCm !== '' ? parseFloat(dimLengthCm) : null,
+        dimWidthCm:
+          dimWidthCm !== undefined && dimWidthCm !== '' ? parseFloat(dimWidthCm) : null,
+        dimHeightCm:
+          dimHeightCm !== undefined && dimHeightCm !== '' ? parseFloat(dimHeightCm) : null,
+        weightKg: weightKg !== undefined && weightKg !== '' ? parseFloat(weightKg) : null,
+        imageUrl: typeof imageUrl === 'string' && imageUrl.trim() ? imageUrl.trim() : null,
+        createdBy:
+          typeof createdBy === 'string' && createdBy.trim()
+            ? createdBy.trim().slice(0, 120)
+            : null,
       });
-      
-      // Include category name in the response
+
       const productWithCategory = {
         ...product,
-        category: categoryRecord.name // Add category name to response
+        category: categoryRecord.name,
       };
-      
+
       return NextResponse.json(productWithCategory, { status: 201 });
     } catch (dbError: any) {
       console.error('Database operation failed:', dbError);

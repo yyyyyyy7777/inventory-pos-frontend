@@ -47,7 +47,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, sku, price, stock, category, location, cabinet, description } = body;
+    const { name, sku, price, stock, category, location, cabinet, description, updatedBy } = body;
 
     // Validate required fields
     if (!name || price === undefined || stock === undefined || !category) {
@@ -79,7 +79,11 @@ export async function PUT(request: NextRequest) {
       stock: numStock,
       cabinet: cabinet || 'main',
       categoryId: categoryRecord.id,
-      description
+      description,
+      updatedBy:
+        typeof updatedBy === 'string' && updatedBy.trim()
+          ? updatedBy.trim().slice(0, 120)
+          : undefined,
     });
 
     return NextResponse.json(updatedProduct);

@@ -26,20 +26,42 @@ export interface Product {
   sku: string;
   quantity: number;
   price: number;
+  /** Per-unit amount paid to acquire stock (inventory “acquired price”). */
   costPrice?: number;
   category: string;
+  categoryId?: number;
   stock: number;
   location: ProductLocation;
   lastUpdated: string;
-  lastRestockDate?: string; // Added last restock date
-  cabinet: string; // Added cabinet property
-  description?: string; // Added optional description field
-  stockBatches?: StockBatch[]; // Added stock batches for tracking
-  synced?: boolean; // Added for sync tracking
-  lastModified?: number; // Added for sync timestamp comparison
-  deleted?: boolean; // Added for offline deletion tracking
-  markedForDelete?: boolean; // Added for offline deletion tracking
-  deletedAt?: number; // Added for deletion timestamp
+  lastRestockDate?: string;
+  cabinet: string;
+  /** Long product details / notes */
+  description?: string;
+  purchaseDate?: string;
+  purchasePlace?: string;
+  supplierName?: string;
+  dimLengthCm?: number;
+  dimWidthCm?: number;
+  dimHeightCm?: number;
+  weightKg?: number;
+  /** Data URL (jpeg) or https URL */
+  imageUrl?: string;
+  /** Staff username who created the product (server). */
+  createdBy?: string;
+  /** Staff username who last saved changes (server). */
+  lastUpdatedBy?: string;
+  /** When the product row was first created (server). */
+  dateCreated?: string;
+  /** When the product row was last updated (server). */
+  lastModifiedDate?: string;
+  /** Sent on PUT only; not stored on the client model after merge. */
+  updatedBy?: string;
+  stockBatches?: StockBatch[];
+  synced?: boolean;
+  lastModified?: number;
+  deleted?: boolean;
+  markedForDelete?: boolean;
+  deletedAt?: number;
 }
 
 interface ProductsContextType {
@@ -150,7 +172,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch(`/api/products?cabinet=${cabinet}`);
+      const response = await fetch(`/api/products?cabinet=${cabinet}`, { cache: 'no-store', headers: { 'Pragma': 'no-cache' } });
       
       if (!response.ok) {
         throw new Error('Failed to fetch products');
@@ -188,7 +210,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
         setError(null); // Clear any previous errors
         
         // Fetch all products first
-        const response = await fetch('/api/products');
+        const response = await fetch('/api/products?cabinet=all', { cache: 'no-store', headers: { 'Pragma': 'no-cache' } });
         
         if (!response.ok) {
           const errorText = await response.text();
@@ -343,7 +365,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       refreshTimer = setTimeout(() => {
         // Pulling products keeps local IndexedDB + UI consistent across users.
         // Use lightweight /api/products, not full pullFromServer().
-        fetch('/api/products')
+        fetch('/api/products?cabinet=all', { cache: 'no-store' })
           .then((r) => (r.ok ? r.json() : null))
           .then(async (allProducts) => {
             if (!allProducts || !Array.isArray(allProducts) || allProducts.length === 0) return;
@@ -726,7 +748,46 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
         return { success: true, data: { ...updates, id } as Product };
       }
 
-      const response = await fetch(`/api/products/${parseInt(id)}`, {
+      const idTrim = String(id).trim()
+      const isServerNumericId = /^\d+$/.test(idTrim) && Number(idTrim) > 0
+
+      // Offline-created `temp_*` or any non-numeric id cannot use REST /api/products/[id]
+      if (!isServerNumericId) {
+        const existing =
+          (await db.products.get(id)) ||
+          (() => {
+            const list = products[cabinet] || []
+            return list.find((p) => p.id === id)
+          })()
+        const merged = existing
+          ? ({ ...existing, ...updates, id, synced: false, lastModified: Date.now() } as Product)
+          : ({ ...updates, id, synced: false, lastModified: Date.now() } as Product)
+
+        setProducts((prev) => {
+          const list = [...(prev[cabinet] || [])]
+          const ix = list.findIndex((p) => p.id === id)
+          if (ix >= 0) list[ix] = merged
+          else list.unshift(merged)
+          return { ...prev, [cabinet]: list }
+        })
+
+        if (existing) {
+          await db.products.update(id, { ...updates, synced: false, lastModified: Date.now() })
+        } else {
+          await db.products.put(merged)
+        }
+
+        await enhancedSyncService.queueChange(
+          'product_update',
+          'update',
+          { id, updates, cabinet },
+          cabinet
+        )
+
+        return { success: true, data: merged }
+      }
+
+      const response = await fetch(`/api/products/${idTrim}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -1028,7 +1089,7 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       setError(null);
       
       // Fetch all products
-      const response = await fetch('/api/products');
+      const response = await fetch('/api/products?cabinet=all', { cache: 'no-store', headers: { 'Pragma': 'no-cache' } });
       if (!response.ok) {
         throw new Error('Failed to fetch products');
       }

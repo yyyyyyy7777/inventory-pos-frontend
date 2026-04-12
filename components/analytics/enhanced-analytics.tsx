@@ -25,7 +25,6 @@ import {
 import { 
   TrendingUp, 
   TrendingDown, 
-  DollarSign, 
   ShoppingCart, 
   Package, 
   Users,
@@ -39,7 +38,14 @@ import { useProducts } from "@/contexts/products-context"
 import { useSales, SaleItem } from "@/contexts/sales-context"
 import { db } from "@/lib/indexeddb"
 import { countUnitsInSale } from "@/lib/sale-metrics"
-import { summarizeSalesForPeriod, parseSaleDate, type SalesPeriodFilter } from "@/lib/analytics-from-sales"
+import {
+  summarizeSalesForPeriod,
+  parseSaleDate,
+  finalizeSaleRowsForTable,
+  type SalesPeriodFilter,
+} from "@/lib/analytics-from-sales"
+import { getPhilippineDayBounds } from "@/lib/philippine-time"
+import { PesoIcon } from "@/components/ui/peso-icon"
 
 interface AnalyticsData {
   summary: {
@@ -75,7 +81,6 @@ interface EnhancedAnalyticsProps {
 }
 
 const COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444'];
-const PH_TIMEZONE = 'Asia/Manila';
 
 const formatCurrency = (amount: number | null | undefined) => {
   const num = typeof amount === 'number' ? amount : parseFloat(amount as any) || 0;
@@ -85,28 +90,6 @@ const formatCurrency = (amount: number | null | undefined) => {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(num);
-};
-
-const getPhilippineDayBounds = (baseDate: Date = new Date()) => {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: PH_TIMEZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(baseDate);
-
-  const year = Number(parts.find((p) => p.type === 'year')?.value || 0);
-  const month = Number(parts.find((p) => p.type === 'month')?.value || 1);
-  const day = Number(parts.find((p) => p.type === 'day')?.value || 1);
-
-  // PH midnight is UTC-8 hours.
-  const startUtcMs = Date.UTC(year, month - 1, day, -8, 0, 0, 0);
-  const endUtcMs = startUtcMs + 24 * 60 * 60 * 1000;
-
-  return {
-    start: new Date(startUtcMs),
-    end: new Date(endUtcMs),
-  };
 };
 
 const MetricCard = ({ 
@@ -223,7 +206,7 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
   const [periodLoading, setPeriodLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [timePeriod, setTimePeriod] = useState<"weekly" | "monthly" | "quarterly" | "annually">("weekly");
+  const [timePeriod, setTimePeriod] = useState<"weekly" | "monthly" | "quarterly" | "annually" | "all">("weekly");
   const { getProductsByCabinet, loading: productsLoading } = useProducts();
   const { sales, loading: salesLoading } = useSales();
   const [todaySalesData, setTodaySalesData] = useState<{ revenue: number; transactions: number; items: number }>({ revenue: 0, transactions: 0, items: 0 });
@@ -240,21 +223,26 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
         ? sales.filter((sale) => !isSaleArchived((sale as any).archived))
         : sales.filter((sale) => sale.cabinet === cabinetValue && !isSaleArchived((sale as any).archived));
       
-      // Filter by date range if provided
+      // Filter by date range if provided ([start, end) — same as Sales tab "today" / PH day bounds)
       let finalSales = filteredSales;
       if (dateRange) {
-        finalSales = filteredSales.filter(sale => {
+        finalSales = filteredSales.filter((sale) => {
           try {
-            const saleDate = parseSaleDate(sale.date || sale.createdAt || sale.soldAt);
-            return saleDate >= dateRange.start && saleDate <= dateRange.end;
+            const saleDate = parseSaleDate(
+              String(sale.date || sale.createdAt || sale.soldAt || "")
+            );
+            if (Number.isNaN(saleDate.getTime())) return false;
+            return saleDate >= dateRange.start && saleDate < dateRange.end;
           } catch {
             return false;
           }
         });
       }
-      
-      console.log(`Unified transactions: ${finalSales.length} total after filtering`);
-      return finalSales;
+
+      const deduped = finalizeSaleRowsForTable(finalSales as any);
+
+      console.log(`Unified transactions: ${deduped.length} total after filtering`);
+      return deduped;
       
     } catch (error) {
       console.error('Error getting unified transactions:', error);
@@ -291,6 +279,11 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
       const periodBuckets = new Map<string, { label: string; revenue: number; sales: number; transactions: number; items: number }>();
 
       const getPeriodBucket = (saleDate: Date) => {
+        if (timePeriod === 'all') {
+          const key = `${saleDate.getFullYear()}-${String(saleDate.getMonth() + 1).padStart(2, '0')}`;
+          const label = saleDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+          return { key, label };
+        }
         // Keep weekly detailed (per-day), aggregate larger ranges to meaningful buckets.
         if (timePeriod === 'weekly') {
           const key = new Date(saleDate.getFullYear(), saleDate.getMonth(), saleDate.getDate()).toISOString();
@@ -713,7 +706,7 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
           value={analyticsLoading ? "..." : formatCurrency(periodSummaryData.revenue)}
           change={summary?.revenueGrowth ?? 0}
           changeType={(summary?.revenueGrowth ?? 0) >= 0 ? 'increase' : 'decrease'}
-          icon={<DollarSign className="h-6 w-6" />}
+          icon={<PesoIcon size={24} className="h-6 w-6" />}
           description={analyticsLoading ? "Loading..." : `Revenue for selected period`}
           color="green"
         />
@@ -794,10 +787,10 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
               <div className="flex items-center gap-2">
                 <Select 
                   value={timePeriod} 
-                  onValueChange={(value: "weekly" | "monthly" | "quarterly" | "annually") => setTimePeriod(value)}
+                  onValueChange={(value: "weekly" | "monthly" | "quarterly" | "annually" | "all") => setTimePeriod(value)}
                   disabled={periodLoading}
                 >
-                  <SelectTrigger className="w-32">
+                  <SelectTrigger className="w-36">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -805,6 +798,7 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
                     <SelectItem value="monthly">Monthly</SelectItem>
                     <SelectItem value="quarterly">Quarterly</SelectItem>
                     <SelectItem value="annually">Annually</SelectItem>
+                    <SelectItem value="all">All time</SelectItem>
                   </SelectContent>
                 </Select>
                 <Button onClick={() => fetchAnalytics(true)} variant="outline" size="sm" disabled={periodLoading}>
@@ -832,8 +826,19 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis dataKey="period" stroke="#6b7280" />
-                <YAxis stroke="#6b7280" />
+                <XAxis 
+                  dataKey="period" 
+                  stroke="#6b7280" 
+                  tick={{ fontSize: 12 }} 
+                  tickMargin={10} 
+                  minTickGap={20} 
+                />
+                <YAxis 
+                  stroke="#6b7280" 
+                  width={65} 
+                  tick={{ fontSize: 12 }} 
+                  tickFormatter={(val) => (val >= 1000 ? `₱${(val/1000)}k` : `₱${val}`)} 
+                />
                 <Tooltip
                   contentStyle={{
                     backgroundColor: "#ffffff",
@@ -843,7 +848,7 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
                   formatter={(value: number) => [formatCurrency(value), 'Revenue']}
                 />
                 <Area
-                  type="natural"
+                  type="monotone"
                   dataKey="revenue"
                   stroke="#6366f1"
                   strokeWidth={3}
@@ -888,7 +893,12 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
                   textAnchor="end"
                   height={80}
                 />
-                <YAxis stroke="#6b7280" />
+                <YAxis 
+                  stroke="#6b7280" 
+                  width={65}
+                  tick={{ fontSize: 12 }}
+                  tickFormatter={(val) => (val >= 1000 ? `₱${(val/1000)}k` : `₱${val}`)}
+                />
                 <Tooltip
                   contentStyle={{
                     backgroundColor: "#ffffff",
@@ -928,8 +938,19 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
                   <ResponsiveContainer width="100%" height={300}>
                     <LineChart data={revenueData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                      <XAxis dataKey="period" stroke="#6b7280" />
-                      <YAxis stroke="#6b7280" />
+                      <XAxis 
+                        dataKey="period" 
+                        stroke="#6b7280"
+                        tick={{ fontSize: 12 }} 
+                        tickMargin={10} 
+                        minTickGap={20} 
+                      />
+                      <YAxis 
+                        stroke="#6b7280" 
+                        width={45}
+                        tick={{ fontSize: 12 }}
+                        tickFormatter={(val) => (val >= 1000 ? `${(val/1000)}k` : `${val}`)}
+                      />
                       <Tooltip
                         contentStyle={{
                           backgroundColor: "#ffffff",

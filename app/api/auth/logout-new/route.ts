@@ -26,7 +26,8 @@ export async function POST(request: NextRequest) {
       } else {
         // Only fallback to server time if somehow clientTimestamp wasn't sent
         const now = new Date();
-        timestamp = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${now.getHours() >= 12 ? 'PM' : 'AM'}`;
+        const hours12 = now.getHours() % 12 || 12;
+        timestamp = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${hours12}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${now.getHours() >= 12 ? 'PM' : 'AM'}`;
         console.warn('WARNING: clientTimestamp not provided, using server time');
       }
       

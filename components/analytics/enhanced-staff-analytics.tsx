@@ -17,7 +17,6 @@ import {
   AreaChart,
 } from "recharts"
 import { 
-  DollarSign, 
   ShoppingCart, 
   Package, 
   TrendingUp,
@@ -33,7 +32,14 @@ import { useProducts } from "@/contexts/products-context"
 import { useSales } from "@/contexts/sales-context"
 import { db } from "@/lib/indexeddb"
 import { countUnitsInSale } from "@/lib/sale-metrics"
-import { mapStaffTimePeriodToSalesPeriod, parseSaleDate, summarizeSalesForPeriod } from "@/lib/analytics-from-sales"
+import {
+  mapStaffTimePeriodToSalesPeriod,
+  parseSaleDate,
+  summarizeSalesForPeriod,
+  finalizeSaleRowsForTable,
+} from "@/lib/analytics-from-sales"
+import { getPhilippineDayBounds } from "@/lib/philippine-time"
+import { PesoIcon } from "@/components/ui/peso-icon"
 
 interface StaffAnalyticsProps {
   cabinet: string
@@ -41,7 +47,56 @@ interface StaffAnalyticsProps {
   onViewChange?: (view: "dashboard" | "inventory" | "sales" | "pos") => void
 }
 
-type TimePeriod = "daily" | "weekly" | "monthly" | "quarterly" | "yearly"
+type TimePeriod = "daily" | "weekly" | "monthly" | "quarterly" | "yearly" | "all"
+
+function isSaleArchived(value: unknown): boolean {
+  return value === true || value === "true" || value === 1 || value === "1"
+}
+
+function saleDateField(sale: { date?: string; createdAt?: string; soldAt?: string }): string {
+  return String(sale.date || sale.createdAt || sale.soldAt || "")
+}
+
+function staffTodaySalesDeduped(
+  source: { date?: string; createdAt?: string; soldAt?: string; cabinet?: string; archived?: unknown; amount?: unknown; items?: unknown; id?: string }[],
+  cabinet: string,
+  dayStart: Date,
+  dayEnd: Date
+) {
+  const normalizedCabinet = String(cabinet || "").trim().toLowerCase()
+  const pool = source.filter((sale) => {
+    if (isSaleArchived(sale.archived)) return false
+    if (normalizedCabinet === "all" || !normalizedCabinet) return true
+    return String(sale.cabinet || "").trim().toLowerCase() === normalizedCabinet
+  }) as any
+  const inDay = pool.filter((sale: any) => {
+    const saleDate = parseSaleDate(saleDateField(sale))
+    if (Number.isNaN(saleDate.getTime())) return false
+    return saleDate >= dayStart && saleDate < dayEnd
+  })
+  return finalizeSaleRowsForTable(inDay, (a, b) =>
+    parseSaleDate(saleDateField(b)).getTime() - parseSaleDate(saleDateField(a)).getTime()
+  )
+}
+
+function staffPeriodTitle(period: TimePeriod): string {
+  switch (period) {
+    case "daily":
+      return "Today's";
+    case "weekly":
+      return "Weekly";
+    case "monthly":
+      return "Monthly";
+    case "quarterly":
+      return "Quarterly";
+    case "yearly":
+      return "Yearly";
+    case "all":
+      return "All-time";
+    default:
+      return "";
+  }
+}
 
 interface StaffAnalyticsData {
   summary: {
@@ -73,27 +128,6 @@ const formatCurrency = (amount: number | string | null | undefined) => {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(safeAmount);
-};
-
-const PH_TIMEZONE = 'Asia/Manila';
-
-const getPhilippineDayBounds = (baseDate: Date = new Date()) => {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: PH_TIMEZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(baseDate);
-
-  const year = Number(parts.find((p) => p.type === 'year')?.value || 0);
-  const month = Number(parts.find((p) => p.type === 'month')?.value || 1);
-  const day = Number(parts.find((p) => p.type === 'day')?.value || 1);
-
-  const startUtcMs = Date.UTC(year, month - 1, day, -8, 0, 0, 0);
-  return {
-    start: new Date(startUtcMs),
-    end: new Date(startUtcMs + 24 * 60 * 60 * 1000),
-  };
 };
 
 const StaffMetricCard = ({ 
@@ -200,23 +234,7 @@ export function EnhancedStaffAnalytics({ cabinet, username, onViewChange }: Staf
   const [todaySalesLoading, setTodaySalesLoading] = useState(false);
   const todayMetrics = useMemo(() => {
     const { start, end } = getPhilippineDayBounds(new Date());
-    const normalizedCabinet = String(cabinet || '').trim().toLowerCase();
-
-    const filteredByCabinet = sales.filter((sale) => {
-      const saleCabinet = String(sale.cabinet || '').trim().toLowerCase();
-      if (normalizedCabinet !== 'all' && saleCabinet !== normalizedCabinet) return false;
-      const saleDate = parseSaleDate(sale.date || '');
-      if (Number.isNaN(saleDate.getTime())) return false;
-      return saleDate >= start && saleDate < end;
-    });
-
-    const todaysSales = filteredByCabinet.length > 0 || normalizedCabinet === 'all'
-      ? filteredByCabinet
-      : sales.filter((sale) => {
-          const saleDate = parseSaleDate(sale.date || '');
-          if (Number.isNaN(saleDate.getTime())) return false;
-          return saleDate >= start && saleDate < end;
-        });
+    const todaysSales = staffTodaySalesDeduped(sales, cabinet, start, end);
 
     const revenue = todaysSales.reduce((sum, sale) => {
       const amount = typeof sale.amount === 'number' ? sale.amount : parseFloat(String(sale.amount)) || 0;
@@ -240,64 +258,36 @@ export function EnhancedStaffAnalytics({ cabinet, username, onViewChange }: Staf
 
   // Calculate today's sales from both online and offline data
   const calculateTodaySales = useCallback(async () => {
-    // Prevent multiple simultaneous calculations
     if (todaySalesLoading) {
       return;
     }
 
     setTodaySalesLoading(true);
     try {
-      // Get today's date range in local timezone
-      const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // Start of today (00:00:00)
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1); // Start of tomorrow (00:00:00)
+      const { start: dayStart, end: dayEnd } = getPhilippineDayBounds(new Date());
 
-      let todaySales: any[] = [];
+      let todaySales = staffTodaySalesDeduped(sales ?? [], cabinet, dayStart, dayEnd);
 
-      // Try to get sales from context first
-      if (sales && sales.length > 0) {
-        todaySales = sales.filter(sale => {
-          try {
-            const saleDate = parseSaleDate(sale.date);
-            const matchesCabinet = !cabinet || cabinet === 'all' || sale.cabinet === cabinet;
-            const isToday = saleDate >= today && saleDate < tomorrow;
-            return matchesCabinet && isToday;
-          } catch (dateError) {
-            return false;
-          }
-        });
-      }
-
-      // If no sales from context, try direct IndexedDB query
       if (todaySales.length === 0) {
         try {
           const allSales = await db.sales.toArray();
-          todaySales = allSales.filter(sale => {
-            try {
-              const saleDate = parseSaleDate(sale.date);
-              const matchesCabinet = !cabinet || cabinet === 'all' || sale.cabinet === cabinet;
-              const isToday = saleDate >= today && saleDate < tomorrow;
-              return matchesCabinet && isToday;
-            } catch (e) {
-              return false;
-            }
-          });
-        } catch (dbError) {
-          // Silent fail; keep UX smooth.
+          todaySales = staffTodaySalesDeduped(allSales, cabinet, dayStart, dayEnd);
+        } catch {
+          // ignore
         }
       }
 
-      // If still no sales, try API as last resort
       if (todaySales.length === 0 && navigator.onLine) {
         try {
-          const response = await fetch(`/api/sales?cabinet=${cabinet}&startDate=${today.toISOString()}&endDate=${tomorrow.toISOString()}`);
+          const response = await fetch(
+            `/api/sales?cabinet=${cabinet}&startDate=${dayStart.toISOString()}&endDate=${dayEnd.toISOString()}`
+          );
           if (response.ok) {
-            const apiSales = await response.json();
-            todaySales = apiSales || [];
+            const apiSales = (await response.json()) || [];
+            todaySales = staffTodaySalesDeduped(apiSales, cabinet, dayStart, dayEnd);
           }
-        } catch (apiError) {
-          // Silent fail; keep UX smooth.
+        } catch {
+          // ignore
         }
       }
 
@@ -308,30 +298,8 @@ export function EnhancedStaffAnalytics({ cabinet, username, onViewChange }: Staf
       const todayTransactions = todaySales.length;
       const todayItems = todaySales.reduce((sum, sale) => sum + countUnitsInSale(sale), 0);
 
-      // If no sales found with cabinet filter, try without cabinet filter as fallback
-      if (todaySales.length === 0 && sales && sales.length > 0) {
-        const allTodaySales = sales.filter(sale => {
-          try {
-            const saleDate = parseSaleDate(sale.date);
-            const isToday = saleDate >= today && saleDate < tomorrow;
-            return isToday;
-          } catch (dateError) {
-            return false;
-          }
-        });
-        
-        const allTodayRevenue = allTodaySales.reduce((sum, sale) => {
-          const amount = typeof sale.amount === 'number' ? sale.amount : parseFloat(String(sale.amount)) || 0;
-          return sum + amount;
-        }, 0);
-        const allTodayTransactions = allTodaySales.length;
-        const allTodayItems = allTodaySales.reduce((sum, sale) => sum + countUnitsInSale(sale), 0);
-        
-        setTodaySalesData({ revenue: allTodayRevenue, transactions: allTodayTransactions, items: allTodayItems });
-      } else {
-        setTodaySalesData({ revenue: todayRevenue, transactions: todayTransactions, items: todayItems });
-      }
-    } catch (error) {
+      setTodaySalesData({ revenue: todayRevenue, transactions: todayTransactions, items: todayItems });
+    } catch {
       setTodaySalesData({ revenue: 0, transactions: 0, items: 0 });
     } finally {
       setTodaySalesLoading(false);
@@ -382,17 +350,20 @@ export function EnhancedStaffAnalytics({ cabinet, username, onViewChange }: Staf
         mapStaffTimePeriodToSalesPeriod(timePeriod)
       );
 
-      // Process data for staff view
-      const today = new Date();
-      const todayData = data.revenueData?.find((d: any) => 
-        d.period === today.toLocaleDateString('en-US', { weekday: 'short' })
-      );
+      // Process data for staff view — today's summary matches Sales tab (not raw SQL chart slice)
+      const { start: phTodayStart, end: phTodayEnd } = getPhilippineDayBounds(new Date())
+      const todaySalesAligned = staffTodaySalesDeduped(sales, cabinet, phTodayStart, phTodayEnd)
+      const todayRevenueClient = todaySalesAligned.reduce((sum, sale) => {
+        const amount = typeof sale.amount === "number" ? sale.amount : parseFloat(String(sale.amount)) || 0
+        return sum + amount
+      }, 0)
+      const todayItemsClient = todaySalesAligned.reduce((sum, sale) => sum + countUnitsInSale(sale), 0)
 
       const staffAnalytics: StaffAnalyticsData = {
         summary: {
-          todayRevenue: todayData?.revenue || 0,
-          todayTransactions: todayData?.transactions || 0,
-          todayItems: todayData?.items || 0,
+          todayRevenue: todayRevenueClient,
+          todayTransactions: todaySalesAligned.length,
+          todayItems: todayItemsClient,
           weeklyRevenue: periodSummary.revenue,
           weeklyTransactions: periodSummary.transactions,
           weeklyItems: periodSummary.items,
@@ -425,12 +396,12 @@ export function EnhancedStaffAnalytics({ cabinet, username, onViewChange }: Staf
   useEffect(() => {
     if (productsLoading || salesLoading) return;
     fetchStaffAnalytics();
-  }, [cabinet, productsLoading, salesLoading]);
+  }, [cabinet, productsLoading, salesLoading, sales]);
 
   useEffect(() => {
     if (productsLoading || salesLoading) return;
     fetchStaffAnalytics(true);
-  }, [timePeriod, productsLoading, salesLoading]);
+  }, [timePeriod, productsLoading, salesLoading, sales]);
 
   // Calculate today's sales whenever sales data changes
   useEffect(() => {
@@ -537,9 +508,9 @@ export function EnhancedStaffAnalytics({ cabinet, username, onViewChange }: Staf
       {/* Key Metrics Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
         <StaffMetricCard
-          title={`${timePeriod === 'daily' ? "Today's" : timePeriod === 'weekly' ? "Weekly" : timePeriod === 'monthly' ? "Monthly" : timePeriod === 'quarterly' ? "Quarterly" : "Yearly"} Sales`}
+          title={`${staffPeriodTitle(timePeriod)} Sales`}
           value={formatCurrency(periodSummaryData.revenue)}
-          icon={<DollarSign className="h-6 w-6" />}
+          icon={<PesoIcon size={24} className="h-6 w-6" />}
           description={`${periodSummaryData.transactions} transactions`}
           color="green"
         />
@@ -553,7 +524,7 @@ export function EnhancedStaffAnalytics({ cabinet, username, onViewChange }: Staf
         />
         
         <StaffMetricCard
-          title={`${timePeriod === 'daily' ? "Today's" : timePeriod === 'weekly' ? "Weekly" : timePeriod === 'monthly' ? "Monthly" : timePeriod === 'quarterly' ? "Quarterly" : "Yearly"} Items Sold`}
+          title={`${staffPeriodTitle(timePeriod)} Items Sold`}
           value={periodSummaryData.items.toLocaleString()}
           icon={<Package className="h-6 w-6" />}
           description="Units sold"
@@ -578,7 +549,7 @@ export function EnhancedStaffAnalytics({ cabinet, username, onViewChange }: Staf
               <div>
                 <CardTitle className="flex items-center gap-2 text-violet-900">
                   <Target className="h-5 w-5" />
-                  {timePeriod === 'daily' ? "Today's" : timePeriod === 'weekly' ? "Weekly" : timePeriod === 'monthly' ? "Monthly" : timePeriod === 'quarterly' ? "Quarterly" : "Yearly"} Performance
+                  {staffPeriodTitle(timePeriod)} Performance
                 </CardTitle>
                 <CardDescription className="text-violet-700">
                   Your sales performance for the selected period
@@ -590,7 +561,7 @@ export function EnhancedStaffAnalytics({ cabinet, username, onViewChange }: Staf
                   onValueChange={(value: TimePeriod) => setTimePeriod(value)}
                   disabled={periodLoading}
                 >
-                  <SelectTrigger className="w-32">
+                  <SelectTrigger className="w-36">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -599,6 +570,7 @@ export function EnhancedStaffAnalytics({ cabinet, username, onViewChange }: Staf
                     <SelectItem value="monthly">Monthly</SelectItem>
                     <SelectItem value="quarterly">Quarterly</SelectItem>
                     <SelectItem value="yearly">Yearly</SelectItem>
+                    <SelectItem value="all">All time</SelectItem>
                   </SelectContent>
                 </Select>
                 <Button onClick={() => fetchStaffAnalytics(true)} variant="outline" size="sm" disabled={periodLoading}>

@@ -190,6 +190,8 @@ export const validateProductForm = (data: {
   category?: string
   sku?: string
   description?: string
+  costPrice?: string | number
+  imageUrl?: string
 }, requireQuantity: boolean = true, requirePrice: boolean = true): ValidationResult => {
   const errors: ValidationError[] = []
 
@@ -251,13 +253,22 @@ export const validateProductForm = (data: {
   const catMaxErr = validators.maxLength(data.category || "", 50, "Category")
   if (catMaxErr) errors.push(catMaxErr)
 
-  // Description validation (optional)
   if (data.description) {
-    const descMaxErr = validators.maxLength(data.description, 500, "Description")
+    const descMaxErr = validators.maxLength(data.description, 2000, "Product details / description")
     if (descMaxErr) errors.push(descMaxErr)
+  }
 
-    const descSpecialErr = validators.noSpecialChars(data.description, "Description")
-    if (descSpecialErr) errors.push(descSpecialErr)
+  if (data.costPrice !== undefined && data.costPrice !== "") {
+    const cErr = validators.nonNegativeNumber(data.costPrice, "Acquired price (cost)")
+    if (cErr) errors.push(cErr)
+    const cDec = validators.decimalPlaces(data.costPrice, 2, "Acquired price (cost)")
+    if (cDec) errors.push(cDec)
+    const cMax = validators.maxNumber(data.costPrice, 999999.99, "Acquired price (cost)")
+    if (cMax) errors.push(cMax)
+  }
+
+  if (data.imageUrl && data.imageUrl.length > 450000) {
+    errors.push({ field: "imageUrl", message: "Image is too large after compression; try a smaller photo" })
   }
 
   return { isValid: errors.length === 0, errors }

@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { LogOut, Menu, X, LayoutDashboard, Package, DollarSign, ShoppingCart, Users, FileText } from "lucide-react"
+import { LogOut, Menu, X, LayoutDashboard, Package, ShoppingCart, Users, FileText } from "lucide-react"
+import { PesoIcon } from "@/components/ui/peso-icon"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 
 interface StaffSidebarProps {
@@ -19,7 +20,7 @@ export function StaffSidebar({ currentView, onViewChange, onLogout, username }: 
   const menuItems = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { id: "inventory", label: "Inventory", icon: Package },
-    { id: "sales", label: "Sales", icon: DollarSign },
+    { id: "sales", label: "Sales", icon: PesoIcon },
     { id: "pos", label: "POS System", icon: ShoppingCart },
   ]
 

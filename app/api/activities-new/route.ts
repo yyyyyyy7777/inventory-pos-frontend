@@ -56,10 +56,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { username, activity, details, category, cabinet, clientTimestamp } = body
+    const { username, activity, details, category, cabinet, clientTimestamp, timestamp: bodyTimestamp } = body
 
     console.log('=== API ACTIVITIES POST ===');
-    console.log('Received clientTimestamp:', clientTimestamp);
+    console.log('Received timestamp:', bodyTimestamp || clientTimestamp);
     console.log('Server time:', new Date().toString());
 
     if (!username || !activity || !details || !category) {
@@ -73,13 +73,14 @@ export async function POST(request: NextRequest) {
     
     // Use client timestamp if provided, otherwise use current local time
     let timestamp: string;
-    if (clientTimestamp) {
-      timestamp = clientTimestamp;
+    if (bodyTimestamp || clientTimestamp) {
+      timestamp = bodyTimestamp || clientTimestamp;
       console.log('Using client timestamp:', timestamp);
     } else {
       // Fallback: use current local time
       const now = new Date();
-      timestamp = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${now.getHours() >= 12 ? 'PM' : 'AM'}`;
+      const hours12 = now.getHours() % 12 || 12;
+      timestamp = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}, ${hours12}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} ${now.getHours() >= 12 ? 'PM' : 'AM'}`;
       console.log('Using server timestamp (fallback):', timestamp);
     }
 
@@ -104,7 +105,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('Activity creation error:', error)
     return NextResponse.json(
-      { error: 'Failed to create activity' },
+      { error: error.message || 'Failed to create activity', detail: error.stack },
       { status: 500 }
     )
   }

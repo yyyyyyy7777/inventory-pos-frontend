@@ -4,7 +4,8 @@ import React, { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Search, Filter, Calendar, User, Activity, RefreshCw, X, Package, DollarSign, Users, Boxes, Settings, LayoutList, ArrowUpDown, Archive, FolderOpen } from "lucide-react"
+import { Search, Filter, Calendar, User, Activity, RefreshCw, X, Package, Users, Boxes, Settings, LayoutList, ArrowUpDown, Archive, FolderOpen } from "lucide-react"
+import { PesoIcon } from "@/components/ui/peso-icon"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useActivity } from "@/contexts/activity-context"
 import { formatToLocalTime } from "@/lib/datetime-utils"
@@ -15,7 +16,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 const activityCategories = [
   { value: "all", label: "All Activities", icon: LayoutList },
   { value: "product", label: "Products", icon: Package },
-  { value: "sale", label: "Sales", icon: DollarSign },
+  { value: "sale", label: "Sales", icon: PesoIcon },
   { value: "employee", label: "Employees", icon: Users },
   { value: "inventory", label: "Inventory", icon: Boxes },
   { value: "system", label: "System", icon: Settings }

@@ -61,46 +61,37 @@ self.addEventListener('fetch', event => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // API requests - cache first, network fallback
+  // API requests - Network First, Cache Fallback
   if (request.url.includes('/api/')) {
     event.respondWith(
-      caches.match(request).then(cached => {
-        if (cached) {
-          return cached;
-        }
-        
-        // Only try network if actually online
-        if (navigator.onLine) {
-          return fetch(request).then(response => {
-            const responseClone = response.clone();
-            caches.open(API_CACHE).then(cache => {
-              cache.put(request, responseClone);
-            });
-            return response;
-          }).catch(() => {
-            // Network failed, return cached version if available
-            return caches.match(request);
+      fetch(request).then(response => {
+        // Only cache successful GET requests
+        if (request.method === 'GET' && response.ok) {
+          const responseClone = response.clone();
+          caches.open(API_CACHE).then(cache => {
+            cache.put(request, responseClone);
           });
-        } else {
-          // Offline, return cached version or offline fallback (no network attempts)
-          return caches.match(request).then(cached => {
-            if (cached) {
-              return cached;
+        }
+        return response;
+      }).catch(() => {
+        // Network failed (offline), try to serve from cache
+        return caches.match(request).then(cached => {
+          if (cached) {
+            return cached;
+          }
+          // Return offline fallback for API requests (simulate offline state queue)
+          return new Response(
+            JSON.stringify({ 
+              error: 'Offline - request queued or unavailable',
+              queued: true,
+              url: request.url 
+            }),
+            { 
+              status: 503, 
+              headers: { 'Content-Type': 'application/json' }
             }
-            // Return offline fallback for API requests (no console spam)
-            return new Response(
-              JSON.stringify({ 
-                error: 'Offline - request queued for sync',
-                queued: true,
-                url: request.url 
-              }),
-              { 
-                status: 503, 
-                headers: { 'Content-Type': 'application/json' }
-              }
-            );
-          });
-        }
+          );
+        });
       })
     );
     return;

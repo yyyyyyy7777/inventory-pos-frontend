@@ -13,7 +13,7 @@ import { ToastContainer } from "@/components/ui/toast-container"
 import { ErrorBoundary } from "@/components/ui/error-boundary"
 import { HydrationFix } from "@/components/hydration-fix"
 import { ServiceWorkerRegister } from "@/components/pwa-service-worker"
-import { BeforeUnloadWarning } from "@/components/before-unload-warning"
+
 import { AutosaveProvider } from "@/contexts/autosave-context"
 import { SyncStatusIndicator } from "@/components/sync-status-indicator"
 
@@ -50,7 +50,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={`font-sans antialiased`}>
         <HydrationFix />
-        <BeforeUnloadWarning />
+
         <ErrorBoundary>
           <ToastProvider>
             <OfflineProvider>

@@ -6,6 +6,7 @@ interface BatchPriceDisplayProps {
   cabinet: string;
   className?: string;
   showBatchInfo?: boolean;
+  metric?: 'price' | 'unitCost';
   onPriceChange?: (price: number) => void;
 }
 
@@ -14,9 +15,10 @@ export const BatchPriceDisplay: React.FC<BatchPriceDisplayProps> = ({
   cabinet, 
   className = "", 
   showBatchInfo = false,
+  metric = 'price',
   onPriceChange 
 }) => {
-  const [price, setPrice] = useState<number>(0);
+  const [displayValue, setDisplayValue] = useState<number>(0);
   const [batchInfo, setBatchInfo] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [updating, setUpdating] = useState<boolean>(false);
@@ -96,23 +98,24 @@ export const BatchPriceDisplay: React.FC<BatchPriceDisplayProps> = ({
       const result = await getCurrentPriceFromBatches(productId, cabinet);
       
       if (!isCancelled && mountedRef.current) {
-        const oldPrice = price;
-        setPrice(result.price);
+        const oldVal = displayValue;
+        const newVal = metric === 'unitCost' ? (result.unitCost ?? 0) : result.price;
+        setDisplayValue(newVal);
         setBatchInfo(result.batchInfo || null);
         setLoading(false);
         setUpdating(false);
         
         // Notify parent component of price change using ref to avoid dependency issues
         if (onPriceChangeRef.current) {
-          onPriceChangeRef.current(result.price);
+          onPriceChangeRef.current(newVal);
         }
         
         // Log price changes for debugging
-        if (isUpdate && oldPrice !== result.price) {
-          console.log(`BatchPriceDisplay: Price changed from ₱${oldPrice} to ₱${result.price} for product ${productId}`);
+        if (isUpdate && oldVal !== newVal) {
+          console.log(`BatchPriceDisplay: Value changed from ₱${oldVal} to ₱${newVal} for product ${productId}`);
         }
         
-        console.log(`BatchPriceDisplay: ${action} complete - price ${result.price} for product ${productId}`);
+        console.log(`BatchPriceDisplay: ${action} complete - value ${newVal} for product ${productId}`);
       }
     } catch (err) {
       if (!isCancelled && mountedRef.current) {
@@ -144,7 +147,7 @@ export const BatchPriceDisplay: React.FC<BatchPriceDisplayProps> = ({
   if (loading) {
     return (
       <span className={className}>
-        <span className="text-gray-400">Loading...</span>
+        <span className="opacity-60">Loading...</span>
       </span>
     );
   }
@@ -173,10 +176,10 @@ export const BatchPriceDisplay: React.FC<BatchPriceDisplayProps> = ({
     );
   }
 
-  if (price === 0) {
+  if (displayValue === 0) {
     return (
       <span className={className}>
-        <span className="text-gray-500">No Price</span>
+        <span className="opacity-75">No {metric === 'unitCost' ? 'Cost' : 'Price'}</span>
         {showBatchInfo && (
           <button 
             onClick={refreshPrice}
@@ -191,7 +194,7 @@ export const BatchPriceDisplay: React.FC<BatchPriceDisplayProps> = ({
 
   return (
     <span className={`${className} ${updating ? 'animate-pulse' : ''}`}>
-      ₱{price.toLocaleString()}
+      ₱{displayValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
       {showBatchInfo && batchInfo && (
         <div className="text-xs text-gray-500 mt-1">
           Batch: {batchInfo.id} ({batchInfo.status})

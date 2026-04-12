@@ -86,7 +86,7 @@ export class EnhancedSyncService {
       await db.open();
       console.log('✅ IndexedDB initialized');
     } catch (error) {
-      console.error('❌ Failed to initialize IndexedDB:', error);
+      console.warn('❌ Failed to initialize IndexedDB:', error);
     }
   }
 
@@ -150,7 +150,7 @@ export class EnhancedSyncService {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       this.notifyListeners('error', `Sync failed: ${errorMessage}`);
-      console.error('❌ Sync failed:', error);
+      console.warn('❌ Sync failed:', error);
     } finally {
       this.syncInProgress = false;
     }
@@ -213,7 +213,7 @@ export class EnhancedSyncService {
         console.log(`✅ Synced: ${item.type} ${item.action}`);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        console.error(`❌ Failed to sync ${item.type}:`, errorMessage);
+        console.warn(`❌ Failed to sync ${item.type}:`, errorMessage);
         await db.updateSyncRetry(Number(item.id), errorMessage);
         
         // Remove items that keep failing to prevent permanent "pending 1" stalls.
@@ -335,14 +335,14 @@ export class EnhancedSyncService {
     
     // Enhanced validation for product data
     if (!data || typeof data !== 'object') {
-      console.error('Invalid product data for sync - not an object:', data);
+      console.warn('Invalid product data for sync - not an object:', data);
       return;
     }
     
     // Check for essential product fields
     const keys = Object.keys(data);
     if (keys.length === 0) {
-      console.error('Empty product object for sync:', data, '- marking as synced to prevent retries');
+      console.warn('Empty product object for sync:', data, '- marking as synced to prevent retries');
       // Mark as synced to prevent infinite retry loops
       try {
         await db.markAsSynced('products', 'empty-object');
@@ -359,7 +359,7 @@ export class EnhancedSyncService {
     
     // Check for essential product fields
     if (!data.name || typeof data.name !== 'string' || data.name.trim() === '') {
-      console.error('Product missing valid name for sync:', data, '- marking as synced to prevent retries');
+      console.warn('Product missing valid name for sync:', data, '- marking as synced to prevent retries');
       // Mark as synced to prevent infinite retry loops
       if (data.id) {
         try {
@@ -380,7 +380,7 @@ export class EnhancedSyncService {
     
     // Additional validation to prevent empty or invalid product objects
     if (Object.keys(data).length <= 2 && data.id && !data.name) {
-      console.error('Product object only contains minimal data, skipping sync:', data);
+      console.warn('Product object only contains minimal data, skipping sync:', data);
       // Mark as synced to prevent infinite retry loops
       if (data.id) {
         try {
@@ -394,7 +394,7 @@ export class EnhancedSyncService {
     
     // Ensure essential product fields exist
     if (!data.cabinet || typeof data.cabinet !== 'string' || data.cabinet.trim() === '') {
-      console.error('Product missing valid cabinet for sync:', data);
+      console.warn('Product missing valid cabinet for sync:', data);
       return;
     }
     
@@ -459,7 +459,7 @@ export class EnhancedSyncService {
               }
             }
           } catch (findError) {
-            console.error('Could not find existing product:', findError);
+            console.warn('Could not find existing product:', findError);
           }
         }
         
@@ -497,7 +497,7 @@ export class EnhancedSyncService {
         console.log('Product created successfully:', createdProduct.id);
         return;
       } catch (error) {
-        console.error('Failed to create product without ID:', error);
+        console.warn('Failed to create product without ID:', error);
         return;
       }
     }
@@ -513,7 +513,7 @@ export class EnhancedSyncService {
     // Convert string ID to integer for API
     const productId = parseInt(data.id);
     if (isNaN(productId) || productId <= 0) {
-      console.error('Invalid product ID for sync:', data.id, '- marking as synced to prevent retries');
+      console.warn('Invalid product ID for sync:', data.id, '- marking as synced to prevent retries');
       // Mark as synced to prevent infinite retry loops
       if (data.id) {
         await db.markAsSynced('products', data.id);
@@ -560,7 +560,7 @@ export class EnhancedSyncService {
       // Get the temporary product
       const tempProduct = await db.products.get(tempId);
       if (!tempProduct) {
-        console.error('Temporary product not found:', tempId);
+        console.warn('Temporary product not found:', tempId);
         return;
       }
       
@@ -623,7 +623,7 @@ export class EnhancedSyncService {
             }, batch.cabinet || cabinet);
           }
         } catch (batchError) {
-          console.error(`Error creating stock batch for product ${serverId}:`, batchError);
+          console.warn(`Error creating stock batch for product ${serverId}:`, batchError);
           // Keep unsynced and queue retry; do not mark synced on failure.
           await db.stockBatches.update(batch.id!, {
             productId: serverId,
@@ -642,7 +642,7 @@ export class EnhancedSyncService {
       
       console.log(`Successfully updated product ID from ${tempId} to ${serverId} with ${batches.length} stock batches`);
     } catch (error) {
-      console.error('Error updating local product ID:', error);
+      console.warn('Error updating local product ID:', error);
     }
   }
 
@@ -688,7 +688,7 @@ export class EnhancedSyncService {
       
       console.log(`Successfully updated sale ID from ${tempId} to ${serverId}`);
     } catch (error) {
-      console.error('Error updating local sale ID:', error);
+      console.warn('Error updating local sale ID:', error);
     }
   }
 
@@ -822,7 +822,7 @@ export class EnhancedSyncService {
               }
             }
           } catch (error) {
-            console.error(`Error syncing stock for product ${productId}:`, error);
+            console.warn(`Error syncing stock for product ${productId}:`, error);
           }
           
           // Always mark batches as synced to prevent infinite loops
@@ -831,11 +831,11 @@ export class EnhancedSyncService {
             await db.stockBatches.update(batch.id!, { synced: true, lastModified: Date.now() });
           }
         } catch (error) {
-          console.error(`Error processing batches for product ${productId}:`, error);
+          console.warn(`Error processing batches for product ${productId}:`, error);
         }
       }
     } catch (error) {
-      console.error('Error in syncPendingStockBatches:', error);
+      console.warn('Error in syncPendingStockBatches:', error);
     }
   }
 
@@ -900,7 +900,7 @@ export class EnhancedSyncService {
             console.log(`Skipping temporary product ${localProduct.name}`);
           }
         } catch (productError) {
-          console.error(`Error syncing stock for product ${localProduct.name}:`, productError);
+          console.warn(`Error syncing stock for product ${localProduct.name}:`, productError);
         }
       }
       
@@ -909,7 +909,7 @@ export class EnhancedSyncService {
       await this.verifyStockSync(cabinet);
       
     } catch (error) {
-      console.error('❌ FORCE COMPLETE STOCK SYNC FAILED:', error);
+      console.warn('❌ FORCE COMPLETE STOCK SYNC FAILED:', error);
     }
   }
 
@@ -947,7 +947,7 @@ export class EnhancedSyncService {
         }
       }
     } catch (fallbackError) {
-      console.error(`❌ FALLBACK STOCK SYNC FAILED for ${localProduct.name}:`, fallbackError);
+      console.warn(`❌ FALLBACK STOCK SYNC FAILED for ${localProduct.name}:`, fallbackError);
     }
   }
 
@@ -1002,7 +1002,7 @@ export class EnhancedSyncService {
         console.warn(`⚠️ ${mismatches} products still have stock mismatches`);
       }
     } catch (error) {
-      console.error('❌ STOCK VERIFICATION FAILED:', error);
+      console.warn('❌ STOCK VERIFICATION FAILED:', error);
     }
   }
 
@@ -1032,7 +1032,7 @@ export class EnhancedSyncService {
     // Convert string ID to integer for API
     const productId = parseInt(data.id);
     if (isNaN(productId) || productId <= 0) {
-      console.error('Invalid product ID for sync:', data.id, '- marking as synced to prevent retries');
+      console.warn('Invalid product ID for sync:', data.id, '- marking as synced to prevent retries');
       // Mark as synced to prevent infinite retry loops
       if (data.id) {
         await db.markAsSynced('products', data.id);
@@ -1076,7 +1076,7 @@ export class EnhancedSyncService {
     
     // Validate sale data
     if (!data || !data.items || data.items.length === 0) {
-      console.error('Invalid sale data for sync:', data);
+      console.warn('Invalid sale data for sync:', data);
       return;
     }
     
@@ -1151,7 +1151,7 @@ export class EnhancedSyncService {
     }
     
     if (processedItems.length === 0) {
-      console.error('No valid items found in sale for sync');
+      console.warn('No valid items found in sale for sync');
       return;
     }
     
@@ -1178,7 +1178,7 @@ export class EnhancedSyncService {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Sale sync failed:', errorText);
+      console.warn('Sale sync failed:', errorText);
       
       // If it's a stock issue, try multiple recovery strategies
       if (errorText.includes('Insufficient on-shelf stock')) {
@@ -1235,7 +1235,7 @@ export class EnhancedSyncService {
                 }
               }
             } catch (updateError) {
-              console.error(`❌ Critical error updating ${item.productName} stock:`, updateError);
+              console.warn(`❌ Critical error updating ${item.productName} stock:`, updateError);
             }
           }
         }
@@ -1293,14 +1293,14 @@ export class EnhancedSyncService {
             await this.updateLocalSaleId(data.id, syncedSale.id);
             return;
           } else {
-            console.error('❌ EVEN STOCK BYPASS FAILED:', await bypassResponse.text());
+            console.warn('❌ EVEN STOCK BYPASS FAILED:', await bypassResponse.text());
           }
         } catch (bypassError) {
-          console.error('❌ STOCK BYPASS EXCEPTION:', bypassError);
+          console.warn('❌ STOCK BYPASS EXCEPTION:', bypassError);
         }
         
         // If all strategies failed, mark as locally completed and remove from sync queue
-        console.error('🚨 ALL STOCK SYNC STRATEGIES FAILED - MARKING SALE AS LOCALLY COMPLETED');
+        console.warn('🚨 ALL STOCK SYNC STRATEGIES FAILED - MARKING SALE AS LOCALLY COMPLETED');
         try {
           // Mark the sale as locally completed to prevent it from getting stuck
           await db.sales.update(data.id, {
@@ -1319,7 +1319,7 @@ export class EnhancedSyncService {
           
           return; // Don't throw error, just return to complete the sync process
         } catch (localCompleteError) {
-          console.error('❌ Failed to mark sale as locally completed:', localCompleteError);
+          console.warn('❌ Failed to mark sale as locally completed:', localCompleteError);
           throw new Error(`Stock sync failed and local completion also failed: ${errorText}`);
         }
       }
@@ -1378,7 +1378,7 @@ export class EnhancedSyncService {
     // Convert string ID to integer for API
     const productId = parseInt(data.productId);
     if (isNaN(productId) || productId <= 0) {
-      console.error('Invalid product ID for stock update:', data.productId, '- marking as synced to prevent retries');
+      console.warn('Invalid product ID for stock update:', data.productId, '- marking as synced to prevent retries');
       // Mark as synced to prevent infinite retry loops
       try {
         await db.markAsSynced('products', data.productId);
@@ -1459,7 +1459,7 @@ export class EnhancedSyncService {
           await offlineStorage.removePendingSale(sale.id);
         }
       } catch (error) {
-        console.error('Failed to sync legacy sale:', error);
+        console.warn('Failed to sync legacy sale:', error);
       }
     }
 
@@ -1476,7 +1476,7 @@ export class EnhancedSyncService {
           await offlineStorage.removePendingInventory(inventory.id);
         }
       } catch (error) {
-        console.error('Failed to sync legacy inventory:', error);
+        console.warn('Failed to sync legacy inventory:', error);
       }
     }
 
@@ -1493,7 +1493,7 @@ export class EnhancedSyncService {
           await offlineStorage.removePendingActivity(activity.id);
         }
       } catch (error) {
-        console.error('Failed to sync legacy activity:', error);
+        console.warn('Failed to sync legacy activity:', error);
       }
     }
   }
@@ -1553,7 +1553,7 @@ export class EnhancedSyncService {
 
       console.log('✅ Data pulled from server to IndexedDB');
     } catch (error) {
-      console.error('❌ Failed to pull data:', error);
+      console.warn('❌ Failed to pull data:', error);
       throw error;
     }
   }
@@ -1645,7 +1645,7 @@ export class EnhancedSyncService {
       
       console.log(`Cleared ${itemsToRemove.length} sync items for product ${productId}`);
     } catch (err) {
-      console.error('Error clearing product from sync queue:', err);
+      console.warn('Error clearing product from sync queue:', err);
     }
   }
 
@@ -1678,14 +1678,14 @@ export class EnhancedSyncService {
           
           console.log(`✅ Sale ${sale.id} re-added to sync queue for retry`);
         } catch (error) {
-          console.error(`❌ Failed to retry sale ${sale.id}:`, error);
+          console.warn(`❌ Failed to retry sale ${sale.id}:`, error);
         }
       }
       
       console.log(`🔄 Retrying ${failedSales.length} failed sales`);
       await this.syncAll();
     } catch (error) {
-      console.error('❌ Failed to retry failed sales:', error);
+      console.warn('❌ Failed to retry failed sales:', error);
     }
   }
 
@@ -1699,7 +1699,7 @@ export class EnhancedSyncService {
       await (db.syncQueue as any).clear();
       console.log('Sync queue force cleared');
     } catch (err) {
-      console.error('Error force clearing sync queue:', err);
+      console.warn('Error force clearing sync queue:', err);
     }
   }
 
@@ -1727,7 +1727,7 @@ export class EnhancedSyncService {
       console.log('Activities:', unsyncedCounts.activities);
       
     } catch (err) {
-      console.error('Error checking sync queue:', err);
+      console.warn('Error checking sync queue:', err);
     }
   }
 
@@ -1752,7 +1752,7 @@ export class EnhancedSyncService {
 
       console.log(`Successfully synced stock batch delete: ${data.batchId}`);
     } catch (error) {
-      console.error('Error syncing stock batch delete:', error);
+      console.warn('Error syncing stock batch delete:', error);
       throw error;
     }
   }
@@ -1776,7 +1776,7 @@ export class EnhancedSyncService {
         throw new Error(`Failed to sync stock batch status update: ${errorText}`);
       }
     } catch (error) {
-      console.error('Error syncing stock batch status update:', error);
+      console.warn('Error syncing stock batch status update:', error);
       throw error;
     }
   }

@@ -8,11 +8,11 @@ export const runtime = 'nodejs';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // Validate product ID parameter
-    const productId = params.id;
+    const { id: productId } = await params;
     if (!productId || isNaN(parseInt(productId)) || parseInt(productId) <= 0) {
       return NextResponse.json(
         { error: 'Invalid product ID. Must be a positive integer.' },
@@ -50,11 +50,11 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // Validate product ID parameter
-    const productId = params.id;
+    const { id: productId } = await params;
     if (!productId || isNaN(parseInt(productId)) || parseInt(productId) <= 0) {
       return NextResponse.json(
         { error: 'Invalid product ID. Must be a positive integer.' },
@@ -84,7 +84,26 @@ export async function PUT(
       );
     }
 
-    const { name, sku, price, stock, category, location, cabinet, description, lastRestockDate } = body;
+    const {
+      name,
+      sku,
+      price,
+      stock,
+      category,
+      cabinet,
+      description,
+      lastRestockDate,
+      costPrice,
+      purchaseDate,
+      purchasePlace,
+      supplierName,
+      dimLengthCm,
+      dimWidthCm,
+      dimHeightCm,
+      weightKg,
+      imageUrl,
+      updatedBy,
+    } = body;
 
     // Additional business logic validation
     if (name && name.length > 100) {
@@ -115,9 +134,9 @@ export async function PUT(
       );
     }
 
-    if (description && description.length > 500) {
+    if (description && description.length > 2000) {
       return NextResponse.json(
-        { error: 'Description must not exceed 500 characters' },
+        { error: 'Product details must not exceed 2000 characters' },
         { status: 400 }
       );
     }
@@ -137,12 +156,28 @@ export async function PUT(
     // Update product using the updateProduct function (which includes SKU validation)
     const updatedProduct = await updateProduct(productId, {
       name: name.trim(),
-      sku: sku ? sku.trim().toUpperCase() : undefined, // Normalize SKU to uppercase
+      sku: sku ? sku.trim().toUpperCase() : undefined,
       price: parseFloat(price),
       stock: parseInt(stock),
       cabinet: cabinet || 'main',
       categoryId: categoryRecord.id,
-      description: description ? description.trim() : undefined
+      description: description ? description.trim() : undefined,
+      lastRestockDate: lastRestockDate ?? undefined,
+      costPrice: costPrice !== undefined && costPrice !== '' ? parseFloat(costPrice) : undefined,
+      purchaseDate: purchaseDate ?? undefined,
+      purchasePlace: purchasePlace ?? undefined,
+      supplierName: supplierName ?? undefined,
+      dimLengthCm: dimLengthCm !== undefined && dimLengthCm !== '' ? parseFloat(dimLengthCm) : undefined,
+      dimWidthCm: dimWidthCm !== undefined && dimWidthCm !== '' ? parseFloat(dimWidthCm) : undefined,
+      dimHeightCm: dimHeightCm !== undefined && dimHeightCm !== '' ? parseFloat(dimHeightCm) : undefined,
+      weightKg: weightKg !== undefined && weightKg !== '' ? parseFloat(weightKg) : undefined,
+      imageUrl: imageUrl !== undefined ? imageUrl : undefined,
+      updatedBy:
+        updatedBy !== undefined
+          ? typeof updatedBy === 'string' && updatedBy.trim()
+            ? updatedBy.trim().slice(0, 120)
+            : null
+          : undefined,
     });
 
     return NextResponse.json(updatedProduct);
@@ -200,11 +235,11 @@ export async function PUT(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // Validate product ID parameter
-    const productId = params.id;
+    const { id: productId } = await params;
     if (!productId || isNaN(parseInt(productId)) || parseInt(productId) <= 0) {
       return NextResponse.json(
         { error: 'Invalid product ID. Must be a positive integer.' },
@@ -246,8 +281,26 @@ export async function PATCH(
     }
 
     // Handle partial updates for other fields
-    const { name, sku, price, stock, category, location, cabinet, description } = body;
-    const updateData: any = {};
+    const {
+      name,
+      sku,
+      price,
+      stock,
+      category,
+      cabinet,
+      description,
+      costPrice,
+      purchaseDate,
+      purchasePlace,
+      supplierName,
+      dimLengthCm,
+      dimWidthCm,
+      dimHeightCm,
+      weightKg,
+      imageUrl,
+      updatedBy,
+    } = body;
+    const updateData: Record<string, unknown> = {};
 
     if (name !== undefined) updateData.name = name.trim();
     if (sku !== undefined) updateData.sku = sku.trim().toUpperCase();
@@ -255,14 +308,33 @@ export async function PATCH(
     if (stock !== undefined) updateData.stock = parseInt(stock);
     if (cabinet !== undefined) updateData.cabinet = cabinet || 'main';
     if (description !== undefined) updateData.description = description.trim();
+    if (costPrice !== undefined)
+      updateData.costPrice = costPrice === '' || costPrice === null ? null : parseFloat(String(costPrice));
+    if (purchaseDate !== undefined) updateData.purchaseDate = purchaseDate || null;
+    if (purchasePlace !== undefined) updateData.purchasePlace = purchasePlace || null;
+    if (supplierName !== undefined) updateData.supplierName = supplierName || null;
+    if (dimLengthCm !== undefined)
+      updateData.dimLengthCm = dimLengthCm === '' || dimLengthCm === null ? null : parseFloat(String(dimLengthCm));
+    if (dimWidthCm !== undefined)
+      updateData.dimWidthCm = dimWidthCm === '' || dimWidthCm === null ? null : parseFloat(String(dimWidthCm));
+    if (dimHeightCm !== undefined)
+      updateData.dimHeightCm = dimHeightCm === '' || dimHeightCm === null ? null : parseFloat(String(dimHeightCm));
+    if (weightKg !== undefined)
+      updateData.weightKg = weightKg === '' || weightKg === null ? null : parseFloat(String(weightKg));
+    if (imageUrl !== undefined) updateData.imageUrl = imageUrl;
+    if (updatedBy !== undefined) {
+      updateData.updatedBy =
+        typeof updatedBy === 'string' && updatedBy.trim()
+          ? updatedBy.trim().slice(0, 120)
+          : null;
+    }
 
-    // Handle category if provided
     if (category !== undefined) {
       const categoryRecord = await findOrCreateCategory(category);
       updateData.categoryId = categoryRecord.id;
     }
 
-    const updatedProduct = await updateProduct(productId, updateData);
+    const updatedProduct = await updateProduct(productId, updateData as any);
     return NextResponse.json(updatedProduct);
     
   } catch (error: any) {
@@ -294,11 +366,11 @@ export async function PATCH(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // Validate product ID parameter
-    const productId = params.id;
+    const { id: productId } = await params;
     if (!productId || isNaN(parseInt(productId)) || parseInt(productId) <= 0) {
       return NextResponse.json(
         { error: 'Invalid product ID. Must be a positive integer.' },

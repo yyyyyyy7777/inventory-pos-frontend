@@ -51,6 +51,7 @@ model StockBatch {
   product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
   quantity    Int
   costPerUnit Float?    // Optional cost tracking
+  sellingPrice Float?   // Batch-specific selling price
   batchDate   DateTime  @default(now()) // When this batch was added
   expiryDate  DateTime? // Optional expiry date for perishable items
   cabinet     String
@@ -112,4 +113,5 @@ model SaleItem {
   category    String
   quantity    Int
   price       Float
+  unitCost    Float    @default(0) // Exact acquired cost at the moment of sale
 }

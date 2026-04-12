@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { addStockAddition, getStockAdditions, query } from '@/lib/pg-direct';
 import { validateStockBatch } from '@/utils/validation';
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -120,7 +123,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { productId, quantity, costPerUnit, cabinet } = body;
+    const { productId, quantity, costPerUnit, sellingPrice, cabinet, isInitialBatch } = body;
 
     // Additional business logic validation
     if (quantity > 10000) {
@@ -136,6 +139,7 @@ export async function POST(request: NextRequest) {
       quantity: parseInt(quantity),
       cabinet: cabinet || 'main',
       costPerUnit: costPerUnit ? parseFloat(costPerUnit) : undefined,
+      sellingPrice: sellingPrice ? parseFloat(sellingPrice) : undefined,
     });
 
     // AUTO BATCH TRANSFER: Check if there's a depleted batch that should be transferred
@@ -206,10 +210,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Update the product's stock
-    await query(
-      'UPDATE product SET stock = stock + $1, "updatedAt" = NOW() WHERE id = $2',
-      [parseInt(quantity), parseInt(productId)]
-    );
+    if (!isInitialBatch) {
+      await query(
+        'UPDATE product SET stock = stock + $1, "updatedAt" = NOW() WHERE id = $2',
+        [parseInt(quantity), parseInt(productId)]
+      );
+    }
 
     return NextResponse.json(batch, { status: 201 });
   } catch (error: any) {

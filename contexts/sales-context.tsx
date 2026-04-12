@@ -6,6 +6,7 @@ import { useOffline } from './offline-context';
 import { db } from '@/lib/indexeddb';
 import { enhancedSyncService } from '@/lib/enhanced-sync';
 import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
+import { mergeAfterCabinetRefresh, mergeServerWithUnsyncedLocal } from '@/lib/sales-merge';
 
 // Client-side UUID generator
 const generateUUID = (): string => {
@@ -41,6 +42,7 @@ export interface SalesRecord {
   staffName: string;
   cabinet: string;
   soldAt: 'online' | 'physical';
+  tax?: number;
   requestKey?: string;
   referenceNumber?: string;
   createdAt?: string;
@@ -72,6 +74,27 @@ export function SalesProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const { isOnline } = useOffline(); // Move hook to top level
 
+  /** Upsert sales in IndexedDB without wiping unsynced rows (bulkPut by id). */
+  const persistSalesToIndexedDB = useCallback(async (salesData: SalesRecord[]) => {
+    try {
+      await db.sales.bulkPut(
+        salesData.map((s) => ({
+          ...s,
+          lastModified: Date.now(),
+          synced: s.synced === false ? false : true,
+        }))
+      );
+      console.log('Persisted sales to IndexedDB:', salesData.length);
+    } catch (err) {
+      console.error('Error persisting sales to IndexedDB:', err);
+      try {
+        localStorage.setItem('cached_sales', JSON.stringify(salesData));
+      } catch {
+        // ignore
+      }
+    }
+  }, []);
+
   // Load sales from server when online, or IndexedDB when offline
   useEffect(() => {
     const loadSales = async () => {
@@ -79,16 +102,19 @@ export function SalesProvider({ children }: { children: ReactNode }) {
       try {
         // If online, fetch from server first
         if (isOnline) {
-          console.log('🌐 Online - fetching sales from server...');
+          console.log('🌐 Online - fetching sales from server (all cabinets)...');
           try {
-            const response = await fetch('/api/sales');
+            const response = await fetch('/api/sales?cabinet=all');
             if (response.ok) {
-              const data = await response.json();
-              console.log('📊 Sales loaded from API:', data.length, 'sales');
-              setSales(data);
-              // Update IndexedDB with fresh server data
-              await cacheSales(data);
-              return; // Exit early since we have server data
+              const data = (await response.json()) as SalesRecord[];
+              const unsyncedLocal = await db.sales
+                .filter((s) => s.synced === false)
+                .toArray();
+              const merged = mergeServerWithUnsyncedLocal(data, unsyncedLocal);
+              console.log('📊 Sales loaded from API:', data.length, 'server +', unsyncedLocal.length, 'local unsynced →', merged.length, 'merged');
+              setSales(merged);
+              await persistSalesToIndexedDB(merged);
+              return;
             }
           } catch (apiErr) {
             console.warn('⚠️ Failed to fetch from server, falling back to IndexedDB:', apiErr);
@@ -120,20 +146,7 @@ export function SalesProvider({ children }: { children: ReactNode }) {
     };
     
     loadSales();
-  }, [isOnline]);
-
-  // Cache sales to IndexedDB
-  const cacheSales = async (salesData: SalesRecord[]) => {
-    try {
-      await db.sales.clear();
-      await db.sales.bulkPut(salesData.map(s => ({ ...s, synced: true, lastModified: Date.now() })));
-      console.log('Cached sales to IndexedDB:', salesData.length);
-    } catch (err) {
-      console.error('Error caching to IndexedDB:', err);
-      // Fallback to localStorage
-      localStorage.setItem('cached_sales', JSON.stringify(salesData));
-    }
-  };
+  }, [isOnline, persistSalesToIndexedDB]);
 
   const refreshSales = useCallback(async (cabinet: string) => {
     try {
@@ -160,10 +173,13 @@ export function SalesProvider({ children }: { children: ReactNode }) {
         return;
       }
       
-      const data = await response.json();
+      const data = (await response.json()) as SalesRecord[];
       console.log('Raw API response:', data);
-      setSales(data);
-      cacheSales(data);
+      setSales((prev) => {
+        const next = mergeAfterCabinetRefresh(prev, cabinet, data);
+        void persistSalesToIndexedDB(next);
+        return next;
+      });
     } catch (err) {
       console.warn('refreshSales: fetch failed, using cached fallback when possible:', err);
       
@@ -179,7 +195,7 @@ export function SalesProvider({ children }: { children: ReactNode }) {
         console.warn('refreshSales: IndexedDB fallback failed:', cacheErr);
       }
     }
-  }, [isOnline]);
+  }, [isOnline, persistSalesToIndexedDB]);
 
   // Realtime cross-user sales updates (admin/staff)
   useEffect(() => {
@@ -342,13 +358,28 @@ const addSale = async (sale: Omit<SalesRecord, 'id' | 'createdAt' | 'updatedAt'>
     try {
       setLoading(true);
       setError(null);
+
+      const requestKey =
+        (sale.requestKey && String(sale.requestKey).trim()) || generateUUID();
+      const saleWithKey: Omit<SalesRecord, 'id' | 'createdAt' | 'updatedAt'> = {
+        ...sale,
+        requestKey,
+      };
+
+      const existingByKey = await db.sales
+        .filter((s) => String(s.requestKey || '') === requestKey)
+        .first();
+      if (existingByKey) {
+        console.warn('Blocked duplicate sale (same requestKey):', requestKey);
+        return;
+      }
       
       // Generate sale ID and timestamps
       const saleId = generateUUID();
       const now = new Date().toISOString();
       
       const saleRecord: SalesRecord = {
-        ...sale,
+        ...saleWithKey,
         id: saleId,
         createdAt: now,
         updatedAt: now,
@@ -380,33 +411,32 @@ const addSale = async (sale: Omit<SalesRecord, 'id' | 'createdAt' | 'updatedAt'>
       }
       
       if (isOnline) {
-        // Online: sync in background so POS "processing" is not blocked by network latency.
-        void (async () => {
-          try {
-            const response = await fetch('/api/sales', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(sale),
-            });
+        // Await server create so follow-up refresh (e.g. POS `refreshSales` ~100ms later)
+        // cannot replace state with a snapshot taken before the row exists — which previously
+        // dropped the optimistic sale and left the Sales tab empty until a later refetch.
+        try {
+          const response = await fetch('/api/sales', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(saleWithKey),
+          });
 
-            if (response.ok) {
-              const newSale = await response.json();
-              // Update with server response and mark as synced
-              await db.sales.update(saleId, { ...newSale, synced: true });
-              setSales(prev => prev.map(s => s.id === saleId ? { ...newSale, synced: true } : s));
-              console.log('✅ Sale synced to server successfully:', newSale.id);
-            } else {
-              const errorText = await response.text();
-              console.log('❌ Server failed to create sale, keeping locally:', errorText);
-              await enhancedSyncService.queueChange('sale', 'create', saleRecord, sale.cabinet);
-            }
-          } catch (error) {
-            console.log('❌ Server request failed, keeping sale locally:', error);
+          if (response.ok) {
+            const newSale = await response.json();
+            await db.sales.update(saleId, { ...newSale, synced: true });
+            setSales(prev => prev.map(s => s.id === saleId ? { ...newSale, synced: true } : s));
+            console.log('✅ Sale synced to server successfully:', newSale.id);
+          } else {
+            const errorText = await response.text();
+            console.log('❌ Server failed to create sale, keeping locally:', errorText);
             await enhancedSyncService.queueChange('sale', 'create', saleRecord, sale.cabinet);
           }
-        })();
+        } catch (error) {
+          console.log('❌ Server request failed, keeping sale locally:', error);
+          await enhancedSyncService.queueChange('sale', 'create', saleRecord, sale.cabinet);
+        }
       } else {
         // Offline: Queue for later sync
         await enhancedSyncService.queueChange('sale', 'create', saleRecord, sale.cabinet);
@@ -589,7 +619,7 @@ const addSale = async (sale: Omit<SalesRecord, 'id' | 'createdAt' | 'updatedAt'>
         refreshSales,
         addUnarchivedSales,
         archiveSalesInState,
-        retryFailedSales
+        retryFailedSales,
       }}
     >
       {children}

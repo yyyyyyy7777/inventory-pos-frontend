@@ -1,7 +1,14 @@
 import { countUnitsInSale } from "@/lib/sale-metrics";
+import { getPhilippineDayBounds } from "@/lib/philippine-time";
 
 /** Same labels as Sales tab time period filter */
-export type SalesPeriodFilter = "today" | "weekly" | "monthly" | "quarterly" | "annually";
+export type SalesPeriodFilter =
+  | "today"
+  | "weekly"
+  | "monthly"
+  | "quarterly"
+  | "annually"
+  | "all";
 
 export type SaleLike = {
   id?: string;
@@ -9,6 +16,7 @@ export type SaleLike = {
   archived?: boolean;
   cabinet: string;
   date: string;
+  createdAt?: string;
   staffName?: string;
   paymentMethod?: string;
   soldAt?: string;
@@ -86,6 +94,45 @@ export function dedupeLikelyDuplicateSales<T extends SaleLike>(rows: T[]): T[] {
 }
 
 /**
+ * Keep the first row per `id` so the sales table and totals stay aligned (duplicate ids from
+ * sync/merge would otherwise inflate the header total while React only shows one row per key).
+ */
+export function dedupeBySaleId<T extends { id?: unknown }>(rows: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const row of rows) {
+    const id = String(row.id ?? "").trim();
+    if (id) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+    }
+    out.push(row);
+  }
+  return out;
+}
+
+/** Default table sort: newest sale date first (matches Sales tab default). */
+export function defaultSaleDateSortDesc<T extends SaleLike>(a: T, b: T): number {
+  return (
+    parseSaleDate(String(b.date || b.createdAt || b.soldAt || "")).getTime() -
+    parseSaleDate(String(a.date || a.createdAt || a.soldAt || "")).getTime()
+  );
+}
+
+/**
+ * After all business filters (date range, search, etc.), apply the same dedupe + sort + id pass
+ * the Sales table uses so totals and row count always match the rendered list.
+ */
+export function finalizeSaleRowsForTable<T extends SaleLike>(
+  rows: T[],
+  sortCompare: (a: T, b: T) => number = defaultSaleDateSortDesc
+): T[] {
+  const step1 = dedupeLikelyDuplicateSales(rows);
+  const sorted = [...step1].sort(sortCompare);
+  return dedupeBySaleId(sorted);
+}
+
+/**
  * Parse mixed sale date formats safely.
  * Supports:
  * - ISO timestamps
@@ -150,9 +197,11 @@ export function parseSaleDate(dateValue: string | Date): Date {
 export function saleMatchesPeriod(saleDate: Date, timePeriod: SalesPeriodFilter, now: Date = new Date()): boolean {
   let startDate: Date;
   switch (timePeriod) {
+    case "all":
+      return !Number.isNaN(saleDate.getTime());
     case "today": {
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      return saleDate.toDateString() === today.toDateString();
+      const { start, end } = getPhilippineDayBounds(now);
+      return saleDate >= start && saleDate < end;
     }
     case "weekly":
       startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -174,20 +223,27 @@ export function saleMatchesPeriod(saleDate: Date, timePeriod: SalesPeriodFilter,
 
 /** Staff dashboard uses different enum names; map to Sales tab logic */
 export function mapStaffTimePeriodToSalesPeriod(
-  period: "daily" | "weekly" | "monthly" | "quarterly" | "yearly"
+  period: "daily" | "weekly" | "monthly" | "quarterly" | "yearly" | "all"
 ): SalesPeriodFilter {
   switch (period) {
     case "daily":
       return "today";
     case "yearly":
       return "annually";
+    case "all":
+      return "all";
     default:
       return period;
   }
 }
 
+function saleDateForFilters(sale: SaleLike): Date {
+  return parseSaleDate(sale.date || sale.createdAt || sale.soldAt || "");
+}
+
 /**
  * Same pool + date rules as Sales tab (getSalesByCabinet + time period, no search/filters).
+ * Applies the same finalize pass as the Sales table (`finalizeSaleRowsForTable`) so totals match visible rows.
  */
 export function summarizeSalesForPeriod(
   sales: SaleLike[],
@@ -198,14 +254,23 @@ export function summarizeSalesForPeriod(
     cabinet === "all"
       ? sales.filter((sale) => !isSaleArchived((sale as any).archived))
       : sales.filter((sale) => sale.cabinet === cabinet && !isSaleArchived((sale as any).archived));
-  const dedupedFiltered = dedupeLikelyDuplicateSales(filtered);
 
   const now = new Date();
-  const periodSales = dedupedFiltered.filter((sale) => {
-    const saleDate = parseSaleDate(sale.date);
-    if (Number.isNaN(saleDate.getTime())) return false;
-    return saleMatchesPeriod(saleDate, timePeriod, now);
-  });
+  // Match Sales tab: restrict to the period first, then dedupe within that window so a duplicate
+  // pair split across periods does not drop the in-period row.
+  const periodSalesRaw =
+    timePeriod === "all"
+      ? filtered.filter((sale) => {
+          const saleDate = saleDateForFilters(sale);
+          return !Number.isNaN(saleDate.getTime());
+        })
+      : filtered.filter((sale) => {
+          const saleDate = saleDateForFilters(sale);
+          if (Number.isNaN(saleDate.getTime())) return false;
+          return saleMatchesPeriod(saleDate, timePeriod, now);
+        });
+
+  const periodSales = finalizeSaleRowsForTable(periodSalesRaw as SaleLike[]);
 
   const revenue = periodSales.reduce((sum, sale) => {
     const amount = typeof sale.amount === "number" ? sale.amount : parseFloat(String(sale.amount)) || 0;
