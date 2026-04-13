@@ -6,7 +6,7 @@ interface BatchPriceDisplayProps {
   cabinet: string;
   className?: string;
   showBatchInfo?: boolean;
-  metric?: 'price' | 'unitCost';
+  metric?: 'price' | 'unitCost' | 'profit';
   onPriceChange?: (price: number) => void;
 }
 
@@ -99,7 +99,7 @@ export const BatchPriceDisplay: React.FC<BatchPriceDisplayProps> = ({
       
       if (!isCancelled && mountedRef.current) {
         const oldVal = displayValue;
-        const newVal = metric === 'unitCost' ? (result.unitCost ?? 0) : result.price;
+        const newVal = metric === 'unitCost' ? (result.unitCost ?? 0) : metric === 'profit' ? (result.price - (result.unitCost ?? 0)) : result.price;
         setDisplayValue(newVal);
         setBatchInfo(result.batchInfo || null);
         setLoading(false);
@@ -179,7 +179,9 @@ export const BatchPriceDisplay: React.FC<BatchPriceDisplayProps> = ({
   if (displayValue === 0) {
     return (
       <span className={className}>
-        <span className="opacity-75">No {metric === 'unitCost' ? 'Cost' : 'Price'}</span>
+        <span className="opacity-75">
+          {metric === 'profit' ? '-' : `No ${metric === 'unitCost' ? 'Cost' : 'Price'}`}
+        </span>
         {showBatchInfo && (
           <button 
             onClick={refreshPrice}

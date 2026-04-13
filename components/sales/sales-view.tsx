@@ -631,7 +631,7 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
         logoBuffer,
       })
 
-      const blob = new Blob([bytes], {
+      const blob = new Blob([bytes as BlobPart], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       })
       const link = document.createElement("a")

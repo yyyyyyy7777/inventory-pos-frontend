@@ -465,9 +465,11 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
           <td class="${stock === 0 ? 'zero-stock' : stock < 20 ? 'low-stock' : ''}">${stock}</td>
           <td class="amount">₱${finalCost.toLocaleString("en-US", { minimumFractionDigits: 2 })}</td>
           <td class="amount">₱${finalPrice.toLocaleString("en-US", { minimumFractionDigits: 2 })}</td>
+          <td class="amount">₱${(finalPrice - finalCost).toLocaleString("en-US", { minimumFractionDigits: 2 })}</td>
           <td class="amount">₱${capital.toLocaleString("en-US", { minimumFractionDigits: 2 })}</td>
           <td>${dims}</td>
           <td>${item.weightKg != null ? item.weightKg + " kg" : "-"}</td>
+          <td>${item.purchaseDate ? new Date(item.purchaseDate).toLocaleDateString() : "-"}</td>
           <td>${item.purchasePlace || "-"}</td>
           <td>${item.supplierName || "-"}</td>
           <td>${item.createdBy || "-"}</td>
@@ -523,9 +525,11 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                 <th>Stock</th>
                 <th class="amount">Unit Cost</th>
                 <th class="amount">Selling Price</th>
+                <th class="amount">Profit Amount</th>
                 <th class="amount">Capital</th>
                 <th>Dimensions</th>
                 <th>Weight (kg)</th>
+                <th>Purchase Date</th>
                 <th>Place of Purchase</th>
                 <th>Supplier</th>
                 <th>Created By</th>
@@ -570,8 +574,8 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
 
   const filteredInventory = products.filter(item => {
     // Search filter
-    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          item.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    const matchesSearch = (item.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          (item.sku || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
                           (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()));
     
     // Category filter
@@ -621,10 +625,10 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
     .sort((a, b) => {
       let comparison = 0;
       switch (sortBy) {
-        case "name": comparison = a.name.localeCompare(b.name); break;
-        case "stock": comparison = b.stock - a.stock; break;
-        case "price": comparison = a.price - b.price; break;
-        case "category": comparison = a.category.localeCompare(b.category); break;
+        case "name": comparison = (a.name || "").localeCompare(b.name || ""); break;
+        case "stock": comparison = (b.stock || 0) - (a.stock || 0); break;
+        case "price": comparison = (a.price || 0) - (b.price || 0); break;
+        case "category": comparison = (a.category || "").localeCompare(b.category || ""); break;
         case "lastRestock":
           const aDate = new Date(a.lastRestockDate || "1970-01-01");
           const bDate = new Date(b.lastRestockDate || "1970-01-01");
@@ -2029,7 +2033,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="overflow-auto max-h-[calc(100vh-250px)] relative rounded-md border border-border">
+                <div className="overflow-x-auto relative rounded-md border border-border">
                   <table className="w-full min-w-[1280px]">
                     <thead className="border-b-2 border-border bg-muted/60 sticky top-0 z-10 shadow-sm backdrop-blur-md">
                       <tr>
@@ -2080,9 +2084,11 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                         <th className={`${INV_TH} text-center`}>Stock</th>
                         <th className={`${INV_TH} text-center`}>Current Unit Cost</th>
                         <th className={`${INV_TH} text-center`}>Current Selling Price</th>
+                        <th className={`${INV_TH} text-center`}>Profit Amount</th>
                         <th className={`${INV_TH} text-center`}>Capital ₱</th>
                         <th className={`${INV_TH} text-center`}>L×W×H (cm)</th>
                         <th className={`${INV_TH} text-center`}>Weight (kg)</th>
+                        <th className={`${INV_TH} text-center`}>Purchase Date</th>
                         <th className={`${INV_TH} text-center`}>Place of Purchase</th>
                         <th className={`${INV_TH} text-center`}>Supplier</th>
                         <th className={`${INV_TH} text-center`}>Created by</th>
@@ -2096,7 +2102,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                     <tbody className="divide-y divide-border">
                         {filteredInventory.length === 0 ? (
                           <tr>
-                            <td colSpan={18} className="py-12 text-center">
+                            <td colSpan={19} className="py-12 text-center">
                               <div className="flex flex-col items-center">
                                 <Package size={48} className="text-gray-400 mb-4" />
                                 <h3 className="text-lg font-semibold text-gray-900 mb-2">No products found</h3>
@@ -2179,6 +2185,14 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                                 />
                               </td>
                               <td className="py-3.5 px-4 text-center text-sm font-bold tabular-nums text-foreground">
+                                <BatchPriceDisplay
+                                  productId={String(item.id)}
+                                  cabinet={cabinet}
+                                  metric="profit"
+                                  className="text-sm font-bold text-foreground"
+                                />
+                              </td>
+                              <td className="py-3.5 px-4 text-center text-sm font-bold tabular-nums text-foreground">
                                 ₱{((Number(item.stock) || 0) * (Number(item.costPrice) || 0)).toLocaleString("en-PH", {
                                   minimumFractionDigits: 2,
                                   maximumFractionDigits: 2,
@@ -2197,6 +2211,9 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
                                 {item.weightKg != null
                                   ? Number(item.weightKg).toLocaleString("en-PH", { maximumFractionDigits: 3 })
                                   : "—"}
+                              </td>
+                              <td className="whitespace-nowrap py-3.5 px-3 text-center text-xs tabular-nums text-muted-foreground">
+                                {item.purchaseDate ? formatInventoryMMDDYY(item.purchaseDate) : "—"}
                               </td>
                               <td className="py-3.5 px-3 text-center text-xs text-muted-foreground">
                                 {item.purchasePlace || "—"}

@@ -477,8 +477,8 @@ export function ProductsProvider({ children }: { children: ReactNode }) {
       (product) =>
         product &&
         typeof product === 'object' &&
-        typeof product.id === 'string' &&
-        product.id.length > 0 &&
+        product.id != null &&
+        String(product.id).trim().length > 0 &&
         !product.deleted &&
         !product.markedForDelete
     );

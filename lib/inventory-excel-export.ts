@@ -5,7 +5,7 @@ function bytesFromWriteBuffer(data: ArrayBuffer | ArrayBufferView): Uint8Array {
   return new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
 }
 
-const COLS = 17
+const COLS = 19
 
 const FILL_TITLE = {
   type: "pattern" as const,
@@ -43,9 +43,11 @@ export interface InventoryExcelDetailRow {
   stock: number
   unitCost: number
   sellingPrice: number
+  profit: number
   capital: number
   dimensions: string
   weight: string
+  purchaseDate: string
   purchasePlace: string
   supplierName: string
   createdBy: string
@@ -107,9 +109,11 @@ export async function buildInventoryExcelBuffer(input: InventoryExcelExportInput
     { key: "e", width: 10 }, // Stock
     { key: "f", width: 16 }, // Unit Cost
     { key: "g", width: 16 }, // Selling Price
+    { key: "profit", width: 16 }, // Profit
     { key: "h", width: 16 }, // Capital
     { key: "i", width: 14 }, // Dimensions
     { key: "j", width: 12 }, // Weight
+    { key: "purchaseDate", width: 14 }, // Purchase Date
     { key: "k", width: 18 }, // Place of Purchase
     { key: "l", width: 18 }, // Supplier
     { key: "m", width: 14 }, // Created By
@@ -226,9 +230,11 @@ export async function buildInventoryExcelBuffer(input: InventoryExcelExportInput
     "Stock",
     "Unit Cost (PHP)",
     "Selling Price (PHP)",
+    "Profit (PHP)",
     "Capital (PHP)",
     "Dimensions (L×W×H)",
     "Weight (kg)",
+    "Purchase Date",
     "Place of Purchase",
     "Supplier",
     "Created By",
@@ -261,9 +267,11 @@ export async function buildInventoryExcelBuffer(input: InventoryExcelExportInput
       d.stock,
       d.unitCost,
       d.sellingPrice,
+      d.profit,
       d.capital,
       d.dimensions,
       d.weight,
+      d.purchaseDate,
       d.purchasePlace,
       d.supplierName,
       d.createdBy,
@@ -279,8 +287,8 @@ export async function buildInventoryExcelBuffer(input: InventoryExcelExportInput
       
       let hAlign: "left" | "right" | "center" = "left";
       if (idx === 4) hAlign = "center"; // Stock
-      else if (idx === 5 || idx === 6 || idx === 7) hAlign = "right"; // Currency
-      else if (idx === 8 || idx === 9) hAlign = "center"; // Dimensions, Weight
+      else if (idx >= 5 && idx <= 8) hAlign = "right"; // Currency (Unit Cost, Price, Profit, Capital)
+      else if (idx === 9 || idx === 10) hAlign = "center"; // Dimensions, Weight
       
       cell.alignment = {
         vertical: "top",
@@ -288,7 +296,7 @@ export async function buildInventoryExcelBuffer(input: InventoryExcelExportInput
         wrapText: true,
       }
       
-      if (idx === 5 || idx === 6 || idx === 7) {
+      if (idx >= 5 && idx <= 8) {
         cell.numFmt = "#,##0.00"
       }
     })

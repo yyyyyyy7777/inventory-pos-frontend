@@ -67,18 +67,19 @@ export async function getCurrentPriceFromBatches(
       try {
         const { db } = await import('./indexeddb');
         const product = await db.products.get(String(productId));
-        const basePrice = Number((product as any)?.price);
-        if (Number.isFinite(basePrice) && basePrice > 0) {
-          console.log(`Using product base price ${basePrice} for product ${productId}`);
-          const result = { price: basePrice };
-          priceCache.set(cacheKey, { price: basePrice, timestamp: now });
+        const basePrice = Number((product as any)?.price) || 0;
+        const baseCost = Number((product as any)?.costPrice) || 0;
+        if (basePrice > 0 || baseCost > 0) {
+          console.log(`Using product base price ${basePrice} and cost ${baseCost} for product ${productId}`);
+          const result = { price: basePrice, unitCost: baseCost };
+          priceCache.set(cacheKey, { price: basePrice, unitCost: baseCost, timestamp: now });
           return result;
         }
       } catch (productError) {
         console.error('Error getting product base price:', productError);
       }
       
-      console.log(`No product base price found for product ${productId} - price set to 0`);
+      console.log(`No product base price/cost found for product ${productId} - price set to 0`);
       return { price: 0 };
     }
     
@@ -107,7 +108,16 @@ export async function getCurrentPriceFromBatches(
         )[0];
         console.log(`Using FIFO storage batch ${selectedBatch.id} (added: ${selectedBatch.addedDate}) price: ${selectedBatch.costPerUnit} for product ${productId}`);
       } else {
-        console.log(`No storage batches with stock found for product ${productId}`);
+        // Third priority: Most recently depleted batch
+        const depletedBatches = activeBatches.filter(batch => batch.quantity <= 0);
+        if (depletedBatches.length > 0) {
+          selectedBatch = depletedBatches.sort((a, b) => 
+             new Date(b.addedDate).getTime() - new Date(a.addedDate).getTime()
+          )[0];
+          console.log(`No active stock batches. Using most recently depleted batch ${selectedBatch.id} for product ${productId}`);
+        } else {
+          console.log(`No storage/depleted batches found for product ${productId}`);
+        }
       }
     }
     
