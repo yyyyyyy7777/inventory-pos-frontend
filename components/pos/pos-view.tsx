@@ -375,13 +375,15 @@ export function POSView({ cabinet, username }: POSViewProps) {
     const timeout = setTimeout(() => {
       const currentItem = cart.find(item => item.id === id);
       if (currentItem) {
-        if (currentItem.costPrice && newPrice < currentItem.costPrice) {
-          addToast(`Warning: Price is below the acquired cost (₱${currentItem.costPrice.toLocaleString()}).`, "error");
-        } else if (newPrice < currentItem.originalPrice && newPrice !== currentItem.price) {
+        if (newPrice < currentItem.originalPrice && newPrice !== currentItem.price) {
           const discountAmount = (currentItem.originalPrice - newPrice) * currentItem.quantity;
           if (discountAmount > 0) {
             addToast(`Discount applied: ₱${discountAmount.toLocaleString()} saved on ${currentItem.name}`, "success");
           }
+        }
+
+        if (currentItem.costPrice && newPrice < currentItem.costPrice) {
+          addToast(`Note: Negotiated price is below the acquired cost (₱${currentItem.costPrice.toLocaleString()}).`, "warning");
         }
       }
       // Remove timeout from map
@@ -419,91 +421,70 @@ export function POSView({ cabinet, username }: POSViewProps) {
   const handleCompleteSale = () => {
     if (cart.length === 0) return;
 
-    // Validate that no item is priced below cost
-    const invalidItems = cart.filter(item => item.costPrice && item.price < item.costPrice);
-    if (invalidItems.length > 0) {
-      addToast(`Cannot complete sale: ${invalidItems[0].name} is priced below its acquired cost (₱${invalidItems[0].costPrice.toLocaleString()}).`, "error");
-      return;
-    }
+    // Sales below cost are now allowed to support negotiation/discounts
 
     setShowPaymentDialog(true);
   }
 
-  const exportToExcel = (saleData: ReceiptData) => {
-    // Create CSV that matches receipt design
-    let csvContent = '\ufeff'; // UTF-8 BOM for Excel
-    csvContent += 'The WheezardPH\n';
-    csvContent += 'The WheezardPH\n\n';
-    csvContent += 'Cabinet: ' + saleData.cabinet + '\n';
-    csvContent += saleData.date + ' • ' + saleData.time + '\n';
-    csvContent += 'Staff: ' + saleData.staff + '\n\n';
-    
-    csvContent += 'ITEMS PURCHASED\n';
-    csvContent += 'Item,Quantity × Price = Total\n';
-    
-    saleData.items.forEach((item: any) => {
-      csvContent += `"${item.name}","${item.quantity} × ₱${item.unitPrice.toLocaleString()} = ₱${item.totalPrice.toLocaleString()}"\n`;
-    });
-    
-    csvContent += '\nPRICE BREAKDOWN\n';
-    csvContent += 'Subtotal,₱' + saleData.subtotal.toLocaleString() + '\n';
-    if (taxEnabled) {
-      csvContent += 'Tax (' + taxRate + '%),₱' + saleData.tax.toLocaleString() + '\n';
-    }
-    csvContent += 'TOTAL,₱' + saleData.total.toLocaleString() + '\n';
-    
-    if (saleData.paymentMethod === 'Cash') {
-      csvContent += '\nPAYMENT INFO\n';
-      csvContent += 'Payment Method,Cash\n';
-      csvContent += 'Cash Received,' + saleData.cashReceived + '\n';
-      csvContent += 'Change,' + saleData.change + '\n';
-    } else {
-      csvContent += '\nPAYMENT INFO\n';
-      csvContent += 'Payment Method,QRPH\n';
-      if (saleData.referenceNumber) {
-        csvContent += 'Reference Number,' + saleData.referenceNumber + '\n';
+  const exportToExcel = async (saleData: ReceiptData) => {
+    try {
+      addToast("Generating Excel receipt...", "info");
+      
+      let logoBuffer: ArrayBuffer | undefined;
+      try {
+        const res = await fetch('/Wheezard%20logo.png');
+        if (res.ok) {
+          logoBuffer = await res.arrayBuffer();
+        }
+      } catch (err) {
+        console.warn('Could not fetch logo for excel export', err);
       }
+      
+      const { buildReceiptExcelBuffer } = await import("@/lib/receipt-excel-export");
+      const bytes = await buildReceiptExcelBuffer({
+        receipt: saleData,
+        logoBuffer
+      });
+      
+      const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const filename = `TheWheezardPH_Receipt_${currentTime.getTime()}.xlsx`;
+      
+      const link = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+      link.setAttribute("href", url);
+      link.setAttribute("download", filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      addToast("Excel receipt downloaded successfully", "success");
+    } catch (err) {
+      console.error(err);
+      addToast("Failed to generate Excel receipt.", "error");
     }
-    
-    csvContent += '\n*** Thank You! ***\n';
-    csvContent += 'Please come again!\n';
-    csvContent += saleData.location + '\n';
-    
-    // Create blob and download
-    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `TheWheezardPH_Receipt_${currentTime.getTime()}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-
-    addToast(
-      `Receipt CSV: ${saleData.items.length} line(s), total ₱${saleData.total.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · ${saleData.paymentMethod === "Cash" ? "Cash" : "QRPH"}.`,
-      "success",
-      9500
-    );
   }
 
   const printReceipt = (saleData: ReceiptData) => {
     // Create HTML content for printing with direct image reference
+    const baseUrl = window.location.origin;
     let printContent = `
     <html>
     <head>
+      <title>Receipt</title>
       <style>
         @page {
-          size: 80mm 200mm;
-          margin: 5mm;
+          size: 80mm 297mm;
+          margin: 0;
         }
         body {
           font-family: 'Courier New', monospace;
           font-size: 10px;
-          margin: 0;
-          padding: 8px;
+          margin: 0 auto;
+          padding: 8mm;
           line-height: 1.2;
+          width: 80mm;
+          box-sizing: border-box;
         }
         .receipt {
           width: 100%;
@@ -580,7 +561,7 @@ export function POSView({ cabinet, username }: POSViewProps) {
       <div class="receipt">
         <div class="header">
           <div class="logo-container">
-            <img src="/Wheezard%20logo.png" alt="The WheezardPH" class="logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
+            <img src="${baseUrl}/Wheezard%20logo.png" alt="The WheezardPH" class="logo" onload="window.readyToPrint=true" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline'; window.readyToPrint=true">
             <span style="display:none;"><Sparkles size={32} /></span>
             <div class="store-name">The WheezardPH</div>
           </div>
@@ -655,13 +636,29 @@ export function POSView({ cabinet, username }: POSViewProps) {
     `;
     
     // Create print window
-    const printWindow = window.open('', '_blank');
+    const printWindow = window.open('', '_blank', 'width=400,height=600');
     if (printWindow) {
       printWindow.document.write(printContent);
       printWindow.document.close();
       printWindow.focus();
-      printWindow.print();
-      printWindow.close();
+      
+      const checkReady = () => {
+        if ((printWindow as any).readyToPrint) {
+          printWindow.print();
+          printWindow.close();
+        } else {
+          setTimeout(checkReady, 100);
+        }
+      };
+      
+      setTimeout(() => {
+        if (!(printWindow as any).readyToPrint) {
+          printWindow.print();
+          printWindow.close();
+        }
+      }, 1000);
+      
+      checkReady();
     }
   }
 
@@ -1111,13 +1108,9 @@ export function POSView({ cabinet, username }: POSViewProps) {
                       <div className="text-center border-b-2 border-gray-300 pb-4">
                         <div className="flex items-center justify-center mb-2">
                           <img 
-                            src={encodeURI('/Wheezard logo.png')} 
+                            src="/Wheezard%20logo.png" 
                             alt="The WheezardPH" 
                             className="h-10 w-10 sm:h-12 sm:w-12 mr-2 object-contain"
-                            onError={(e) => {
-                              const target = e.target as HTMLImageElement;
-                              target.style.display = 'none';
-                            }}
                           />
                           <h3 className="font-bold text-base sm:text-lg text-gray-900">The WheezardPH</h3>
                         </div>

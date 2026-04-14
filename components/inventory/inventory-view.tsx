@@ -443,6 +443,10 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
 
     const printableRows = [];
     let totalValue = 0;
+    let sumStock = 0;
+    let sumUnitCost = 0;
+    let sumSellingPrice = 0;
+    let sumProfitAmount = 0;
     
     for (const item of filteredInventory) {
       const batchStats = await getCurrentPriceFromBatches(String(item.id), cabinet);
@@ -451,6 +455,10 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
       const stock = Number(item.stock) || 0;
       const capital = stock * finalCost;
       totalValue += capital;
+      sumStock += stock;
+      sumUnitCost += finalCost;
+      sumSellingPrice += finalPrice;
+      sumProfitAmount += (finalPrice - finalCost);
       
       const dims = (item.dimLengthCm != null || item.dimWidthCm != null || item.dimHeightCm != null) 
         ? `${item.dimLengthCm?item.dimLengthCm+"L":""} ${item.dimWidthCm?"× "+item.dimWidthCm+"W":""} ${item.dimHeightCm?"× "+item.dimHeightCm+"H":""}`.trim().replace(/^×\s*/, '')
@@ -460,7 +468,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
         <tr>
           <td>${item.sku || "N/A"}</td>
           <td>${item.name}</td>
-          <td>${item.description || "-"}</td>
+          <td class="desc-col">${item.description || "-"}</td>
           <td>${item.category}</td>
           <td class="${stock === 0 ? 'zero-stock' : stock < 20 ? 'low-stock' : ''}">${stock}</td>
           <td class="amount">₱${finalCost.toLocaleString("en-US", { minimumFractionDigits: 2 })}</td>
@@ -486,21 +494,22 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
         <head>
           <title>Inventory List - ${new Date().toLocaleDateString()}</title>
           <style>
-            body { font-family: Arial, sans-serif; margin: 20px; color: #333; }
-            .logo-container { display: flex; align-items: center; justify-content: center; gap: 15px; margin-bottom: 20px; }
-            .logo-container img { max-height: 50px; }
-            h1 { color: #1e293b; margin: 0; font-size: 1.5rem; text-transform: uppercase; }
-            .meta { text-align: center; margin-bottom: 30px; font-size: 0.9em; color: #64748b; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.75rem; }
-            th, td { border: 1px solid #e2e8f0; padding: 6px 8px; text-align: left; word-break: break-word; }
-            th { background-color: #f1f5f9; font-weight: bold; color: #334155; }
+            body { font-family: Arial, sans-serif; margin: 10px; color: #333; }
+            .logo-container { display: flex; align-items: center; justify-content: center; gap: 15px; margin-bottom: 10px; }
+            .logo-container img { max-height: 40px; }
+            h1 { color: #1e293b; margin: 0; font-size: 1.2rem; text-transform: uppercase; }
+            .meta { text-align: center; margin-bottom: 20px; font-size: 0.85em; color: #64748b; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 9px; }
+            th, td { border: 1px solid #e2e8f0; padding: 4px; text-align: left; }
+            th { background-color: #f1f5f9; font-weight: bold; color: #334155; white-space: nowrap; }
+            td.desc-col { max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
             tr:nth-child(even) { background-color: #f8fafc; }
             .low-stock { color: #dc2626; font-weight: bold; }
             .zero-stock { color: #dc2626; font-weight: bold; background-color: #fef2f2; }
-            .amount { text-align: right; }
+            .amount { text-align: right; white-space: nowrap; }
             @media print {
-              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-              @page { size: landscape; margin: 10mm; }
+              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; margin: 0; }
+              @page { size: landscape; margin: 5mm; }
               .no-print { display: none; }
             }
           </style>
@@ -542,6 +551,17 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
             <tbody>
               ${printableRows.join('')}
             </tbody>
+            <tfoot>
+              <tr style="background-color: #f1f5f9; font-weight: bold; color: #334155;">
+                <td colspan="4" style="text-align: right;">TOTALS</td>
+                <td>${sumStock}</td>
+                <td class="amount">₱${sumUnitCost.toLocaleString("en-US", { minimumFractionDigits: 2 })}</td>
+                <td class="amount">₱${sumSellingPrice.toLocaleString("en-US", { minimumFractionDigits: 2 })}</td>
+                <td class="amount">₱${sumProfitAmount.toLocaleString("en-US", { minimumFractionDigits: 2 })}</td>
+                <td class="amount">₱${totalValue.toLocaleString("en-US", { minimumFractionDigits: 2 })}</td>
+                <td colspan="10"></td>
+              </tr>
+            </tfoot>
           </table>
         </body>
       </html>
@@ -674,11 +694,13 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
           stock,
           unitCost: finalCost,
           sellingPrice: finalPrice,
+          profit: finalPrice - finalCost,
           capital,
           dimensions: (item.dimLengthCm != null || item.dimWidthCm != null || item.dimHeightCm != null) 
             ? `${item.dimLengthCm?item.dimLengthCm+"L":""} ${item.dimWidthCm?"× "+item.dimWidthCm+"W":""} ${item.dimHeightCm?"× "+item.dimHeightCm+"H":""}`.trim().replace(/^×\s*/, '')
             : "—",
           weight: item.weightKg != null ? `${item.weightKg}` : "—",
+          purchaseDate: item.purchaseDate ? new Date(item.purchaseDate).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—",
           purchasePlace: item.purchasePlace || "—",
           supplierName: item.supplierName || "—",
           createdBy: item.createdBy || "—",
@@ -713,7 +735,7 @@ export function InventoryView({ isAdmin, cabinet, username }: InventoryViewProps
         logoBuffer
       });
 
-      const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const safeCab = String(cabinet || "all").replace(/[^\w.-]+/g, "_");
       const filename = `inventory_${safeCab}_${new Date().toISOString().split("T")[0]}.xlsx`;
 
