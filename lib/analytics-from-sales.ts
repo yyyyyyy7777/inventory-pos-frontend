@@ -217,10 +217,12 @@ export function saleMatchesPeriod(saleDate: Date, timePeriod: SalesPeriodFilter,
       return saleDate >= start && saleDate < end;
     }
     case "weekly":
-      startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      // Weekly trend: Show last 4 weeks
+      startDate = new Date(now.getTime() - 28 * 24 * 60 * 60 * 1000);
       return saleDate >= startDate;
     case "monthly":
-      startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      // Monthly trend: Show last 6 months
+      startDate = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
       return saleDate >= startDate;
     case "quarterly":
       startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);

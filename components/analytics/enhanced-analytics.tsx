@@ -284,20 +284,20 @@ export function EnhancedAnalytics({ cabinet, username }: EnhancedAnalyticsProps)
           const label = saleDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
           return { key, label };
         }
-        // Keep weekly detailed (per-day), aggregate larger ranges to meaningful buckets.
         if (timePeriod === 'weekly') {
-          const key = new Date(saleDate.getFullYear(), saleDate.getMonth(), saleDate.getDate()).toISOString();
-          const label = saleDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-          return { key, label };
-        }
-
-        if (timePeriod === 'monthly') {
-          // Group by week start (Sunday) for readable month trend.
+          // Group by week start (Sunday) for weekly trend.
           const start = new Date(saleDate);
           start.setDate(start.getDate() - start.getDay());
           start.setHours(0, 0, 0, 0);
           const key = start.toISOString();
           const label = `Week of ${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+          return { key, label };
+        }
+
+        if (timePeriod === 'monthly') {
+          // Group by month for monthly trend.
+          const key = `${saleDate.getFullYear()}-${String(saleDate.getMonth() + 1).padStart(2, '0')}`;
+          const label = `Month of ${saleDate.toLocaleDateString('en-US', { month: 'long' })}`;
           return { key, label };
         }
 

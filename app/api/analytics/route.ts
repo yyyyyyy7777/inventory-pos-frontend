@@ -61,10 +61,12 @@ async function generateAnalyticsFromDB(cabinet: string, period: string) {
       startDate = new Date(0);
       break;
     case 'weekly':
-      startDate = startOfWeek(now);
+      // Show last 4 weeks for weekly trend
+      startDate = subWeeks(now, 4);
       break;
     case 'monthly':
-      startDate = startOfMonth(now);
+      // Show last 6 months for monthly trend
+      startDate = subMonths(now, 6);
       break;
     case 'quarterly':
       // Show the most recent complete quarter
@@ -120,7 +122,7 @@ async function generateAnalyticsFromDB(cabinet: string, period: string) {
     if (period === 'weekly') {
       revenueDataQuery = await query(`
         SELECT 
-          TO_CHAR(date, 'Dy') as period,
+          'Week of ' || TO_CHAR(DATE_TRUNC('week', s.date - interval '1 day'), 'Mon DD') as period,
           COALESCE(SUM(amount), 0) as revenue,
           COUNT(*) as transactions,
           COALESCE(SUM(si.quantity), 0) as items
@@ -129,13 +131,13 @@ async function generateAnalyticsFromDB(cabinet: string, period: string) {
         WHERE s.archived = false
           AND s.date >= $1::timestamp
           ${cabinet !== 'all' ? 'AND s.cabinet = $2' : ''}
-        GROUP BY TO_CHAR(s.date, 'Dy')
-        ORDER BY MIN(s.date)
+        GROUP BY DATE_TRUNC('week', s.date - interval '1 day')
+        ORDER BY DATE_TRUNC('week', s.date - interval '1 day')
       `, cabinet === 'all' ? [startDate] : [startDate, cabinet]);
     } else if (period === 'monthly') {
       revenueDataQuery = await query(`
         SELECT 
-          TO_CHAR(DATE_TRUNC('day', s.date), 'Mon DD') as period,
+          'Month of ' || TO_CHAR(s.date, 'TMMonth') as period,
           COALESCE(SUM(s.amount), 0) as revenue,
           COUNT(*) as transactions,
           COALESCE(SUM(si.quantity), 0) as items
@@ -144,8 +146,8 @@ async function generateAnalyticsFromDB(cabinet: string, period: string) {
         WHERE s.archived = false
           AND s.date >= $1::timestamp
           ${cabinet !== 'all' ? 'AND s.cabinet = $2' : ''}
-        GROUP BY DATE_TRUNC('day', s.date)
-        ORDER BY DATE_TRUNC('day', s.date)
+        GROUP BY DATE_TRUNC('month', s.date), TO_CHAR(s.date, 'TMMonth')
+        ORDER BY DATE_TRUNC('month', s.date)
       `, cabinet === 'all' ? [startDate] : [startDate, cabinet]);
     } else if (period === 'quarterly') {
       revenueDataQuery = await query(`
@@ -308,8 +310,8 @@ function getFallbackAnalyticsData(cabinet: string, period: string, now: Date) {
   let revenueData = [];
   const periods: Record<string, string[]> = {
     daily: ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00'],
-    weekly: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-    monthly: ['Apr 01', 'Apr 08', 'Apr 15', 'Apr 22', 'Apr 29'],
+    weekly: ['Week of Apr 06', 'Week of Apr 13', 'Week of Apr 20', 'Week of Apr 27'],
+    monthly: ['January', 'February', 'March', 'April', 'May', 'June'],
     quarterly: ['Q1 2026', 'Q2 2026', 'Q3 2026', 'Q4 2026'],
     yearly: ['2023', '2024', '2025', '2026']
   };
