@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Search, Filter, Calendar, User, Activity, RefreshCw, X, Package, Users, Boxes, Settings, LayoutList, ArrowUpDown, Archive, FolderOpen } from "lucide-react"
+import { Search, Filter, Calendar, User, Activity, RefreshCw, X, Package, Users, Boxes, Settings, LayoutList, ArrowUpDown, Archive, FolderOpen, Check } from "lucide-react"
 import { PesoIcon } from "@/components/ui/peso-icon"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useActivity } from "@/contexts/activity-context"
@@ -17,9 +17,7 @@ const activityCategories = [
   { value: "all", label: "All Activities", icon: LayoutList },
   { value: "product", label: "Products", icon: Package },
   { value: "sale", label: "Sales", icon: PesoIcon },
-  { value: "employee", label: "Employees", icon: Users },
-  { value: "inventory", label: "Inventory", icon: Boxes },
-  { value: "system", label: "System", icon: Settings }
+  { value: "employee", label: "Employees", icon: Users }
 ]
 
 export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
@@ -33,6 +31,7 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
   const [dateFilter, setDateFilter] = useState({ 
     year: "all", month: "all", day: "all", startDate: "", endDate: "" 
   })
+  const [tempDateFilter, setTempDateFilter] = useState({ startDate: "", endDate: "" })
   const [mounted, setMounted] = useState(false)
   const [showManageArchives, setShowManageArchives] = useState(false)
   const [manageArchiveMonth, setManageArchiveMonth] = useState("")
@@ -59,31 +58,58 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const usingCustomDates = Boolean(dateFilter.startDate || dateFilter.endDate)
+
+  const applyActivityDateRange = () => {
+    setDateFilter(prev => ({
+      ...prev,
+      startDate: tempDateFilter.startDate,
+      endDate: tempDateFilter.endDate,
+    }))
+    addToast("Date range applied", "success")
+  }
+
+  const clearActivityDateRange = () => {
+    setTempDateFilter({ startDate: "", endDate: "" })
+    setDateFilter(prev => ({ ...prev, startDate: "", endDate: "" }))
+    addToast("Date range cleared", "info")
+  }
+
+  // Sync temp filter when panel opens
+  useEffect(() => {
+    if (showAdvancedFilters) {
+      setTempDateFilter({
+        startDate: dateFilter.startDate,
+        endDate: dateFilter.endDate
+      })
+    }
+  }, [showAdvancedFilters, dateFilter.startDate, dateFilter.endDate])
+
   // Use absolute timestamp for all activities
   const formatPhilippinesTime = (timestamp: string, category: string) => {
     return formatToLocalTime(timestamp, { includeSeconds: true });
   }
 
-  // Parse timestamp for comparison without timezone issues
-  const parseTimestampForSort = (timestamp: string): number => {
-    // Try to match timezone-aware format first (e.g., "3/20/2026, 5:30:00 PM (UTC+8)")
-    let match = timestamp.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:, | )(\d{1,2}):(\d{2}):(\d{2}) (AM|PM) \(UTC([+-]\d+)\)$/);
+  // Parse timestamp for comparison consistently as milliseconds
+  const parseTimestampToMs = (timestamp: string): number => {
+    if (!timestamp) return 0;
     
-    // Fall back to old format without timezone
-    if (!match) {
-      match = timestamp.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:, | )(\d{1,2}):(\d{2}):(\d{2}) (AM|PM)$/);
-    }
+    // Try to match timezone-aware format: "3/20/2026, 5:30:00 PM (UTC+8)" or "3/20/2026 5:30:00 PM"
+    let match = timestamp.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:, | )(\d{1,2}):(\d{2}):(\d{2}) (AM|PM)(?: \(UTC[+-]\d+\))?$/);
     
     if (match) {
       const [, month, day, year, hours, minutes, seconds, ampm] = match;
       let hour24 = parseInt(hours);
       if (ampm === 'PM' && hour24 !== 12) hour24 += 12;
       if (ampm === 'AM' && hour24 === 12) hour24 = 0;
-      // Create a sortable string: YYYYMMDDHHmmss
-      return parseInt(`${year}${month.padStart(2, '0')}${day.padStart(2, '0')}${hour24.toString().padStart(2, '0')}${minutes}${seconds}`);
+      
+      // Create date object in local time and return milliseconds
+      return new Date(parseInt(year), parseInt(month) - 1, parseInt(day), hour24, parseInt(minutes), parseInt(seconds)).getTime();
     }
+    
     // Fallback to Date parsing (for ISO format)
-    return new Date(timestamp).getTime();
+    const d = new Date(timestamp);
+    return isNaN(d.getTime()) ? 0 : d.getTime();
   }
 
   const checkArchiveStatus = async (month: string) => {
@@ -245,20 +271,29 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
              (activity.details?.toLowerCase().includes(searchLower) || false)
       const matchesCategory = selectedCategory === "all" || activity.category === selectedCategory
       
-      // Date filter - skip during SSR to avoid timezone issues
+      // Date filter - compare by milliseconds
       let matchesDate = true
       if (mounted && (dateFilter.startDate || dateFilter.endDate)) {
-        const activityTime = parseTimestampForSort(activity.timestamp)
-        const startTime = dateFilter.startDate ? parseInt(dateFilter.startDate.replace(/-/g, '')) * 1000000 : 0
-        const endTime = dateFilter.endDate ? parseInt(dateFilter.endDate.replace(/-/g, '')) * 1000000 : 999999999999
-        matchesDate = activityTime >= startTime && activityTime <= endTime
+        const activityTimeMs = parseTimestampToMs(activity.timestamp)
+        
+        if (dateFilter.startDate) {
+          const start = new Date(dateFilter.startDate)
+          start.setHours(0, 0, 0, 0)
+          if (activityTimeMs < start.getTime()) matchesDate = false
+        }
+        
+        if (matchesDate && dateFilter.endDate) {
+          const end = new Date(dateFilter.endDate)
+          end.setHours(23, 59, 59, 999)
+          if (activityTimeMs > end.getTime()) matchesDate = false
+        }
       }
       
       return matchesSearch && matchesCategory && matchesDate
     })
     .sort((a, b) => {
       switch (sortBy) {
-        case "timestamp": return parseTimestampForSort(b.timestamp) - parseTimestampForSort(a.timestamp)
+        case "timestamp": return parseTimestampToMs(b.timestamp) - parseTimestampToMs(a.timestamp)
         case "username": return a.username.localeCompare(b.username)
         case "activity": return a.activity.localeCompare(b.activity)
         default: return 0
@@ -325,24 +360,41 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
               </Select>
             </div>
 
-            {/* Date Range */}
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-gray-700 flex items-center gap-1">
-                <Calendar size={10} className="text-purple-600" /> Date Range
+            {/* Date Range styled box like Sales Tab */}
+            <div className="space-y-2 rounded-md border border-purple-200/80 bg-purple-50/40 p-2">
+              <label className="text-xs font-semibold text-gray-800 flex items-center gap-1">
+                <Calendar size={10} className="text-purple-600" /> Custom date range
               </label>
-              <div className="space-y-1">
-                <Input 
-                  type="date" 
-                  value={dateFilter.startDate} 
-                  onChange={(e) => setDateFilter(prev => ({ ...prev, startDate: e.target.value }))} 
-                  className="h-6 border-2 focus:border-purple-500 text-xs px-2" 
-                />
-                <Input 
-                  type="date" 
-                  value={dateFilter.endDate} 
-                  onChange={(e) => setDateFilter(prev => ({ ...prev, endDate: e.target.value }))} 
-                  className="h-6 border-2 focus:border-purple-500 text-xs px-2" 
-                />
+              <p className="text-[10px] text-gray-600 leading-snug">
+                Set From and/or To, then Apply.
+              </p>
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-medium text-gray-600 w-9 shrink-0">From</span>
+                  <Input 
+                    type="date" 
+                    value={tempDateFilter.startDate} 
+                    onChange={(e) => setTempDateFilter(prev => ({ ...prev, startDate: e.target.value }))} 
+                    className="h-7 flex-1 border-2 focus:border-purple-500 text-xs px-2" 
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-medium text-gray-600 w-9 shrink-0">To</span>
+                  <Input 
+                    type="date" 
+                    value={tempDateFilter.endDate} 
+                    onChange={(e) => setTempDateFilter(prev => ({ ...prev, endDate: e.target.value }))} 
+                    className="h-7 flex-1 border-2 focus:border-purple-500 text-xs px-2" 
+                  />
+                </div>
+                <div className="flex gap-1 pt-0.5">
+                  <Button type="button" onClick={applyActivityDateRange} size="sm" className="flex-1 h-7 bg-[oklch(0.65_0.22_280)] hover:bg-[oklch(0.55_0.20_280)] text-white text-xs">
+                    <Check size={10} className="mr-1" /> Apply
+                  </Button>
+                  <Button type="button" variant="outline" onClick={clearActivityDateRange} size="sm" className="h-7 text-xs px-2">
+                    Clear
+                  </Button>
+                </div>
               </div>
             </div>
 
@@ -352,6 +404,7 @@ export function ActivityLogView({ isAdmin }: { isAdmin: boolean }) {
               onClick={() => {
                 setSelectedCategory("all")
                 setDateFilter({ year: "all", month: "all", day: "all", startDate: "", endDate: "" })
+                setTempDateFilter({ startDate: "", endDate: "" })
                 setSortBy("timestamp")
                 setSearchQuery("")
               }} 

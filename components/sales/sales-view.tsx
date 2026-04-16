@@ -1154,7 +1154,22 @@ export function SalesView({ isAdmin, cabinet, onNewSale }: SalesViewProps) {
                 loading ? (
                   "…"
                 ) : (
-                  <span className="tabular-nums">₱{formatPhpAmount((trueTotalSales - lineFinanceDisplay.cogs) * (1 - operatingExpensePercent / 100))}</span>
+                  <div className="flex items-baseline gap-2">
+                    <span className="tabular-nums">₱{formatPhpAmount((trueTotalSales - lineFinanceDisplay.cogs) * (1 - operatingExpensePercent / 100))}</span>
+                    {trueTotalSales > 0 && (
+                      <span className={`text-xs font-medium ${
+                        (() => {
+                          const netRev = (trueTotalSales - lineFinanceDisplay.cogs) * (1 - operatingExpensePercent / 100);
+                          const margin = (netRev / trueTotalSales) * 100;
+                          if (margin > 20) return "text-emerald-400";
+                          if (margin >= 10) return "text-amber-400";
+                          return "text-rose-400";
+                        })()
+                      }`}>
+                        ({((trueTotalSales - lineFinanceDisplay.cogs) * (1 - operatingExpensePercent / 100) / trueTotalSales * 100).toFixed(1)}%)
+                      </span>
+                    )}
+                  </div>
                 )
               }
               description={

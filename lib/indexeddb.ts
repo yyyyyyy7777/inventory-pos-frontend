@@ -69,6 +69,7 @@ export interface SalesRecord {
   staffName: string;
   cabinet: string;
   soldAt: 'online' | 'physical';
+  requestKey?: string;
   referenceNumber?: string;
   createdAt?: string;
   synced?: boolean;
